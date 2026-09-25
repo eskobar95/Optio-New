@@ -1,0 +1,6 @@
+# Optio-New orchestrator / BullMQ worker — skeleton stub
+FROM node:22-alpine
+WORKDIR /app
+COPY package.json ./
+RUN echo "orchestrator stub — replace with real build"
+CMD ["node", "-e", "console.log('optio-new orchestrator stub'); setInterval(()=>{}, 1e9)"]

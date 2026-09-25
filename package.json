@@ -1,0 +1,49 @@
+{
+  "name": "@optio-new/harness",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Optio-New — TypeScript self-hosted coding-agent factory (BullMQ pipeline, New Bot decision layer, Cursor skills)",
+  "language": "typescript",
+  "type": "module",
+  "scripts": {
+    "prepare": "husky",
+    "typecheck": "tsc -p . --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke": "bash scripts/smoke-local.sh",
+    "ci": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run smoke"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "bullmq": "^5.34.0",
+    "ioredis": "^5.4.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.2",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.11",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.2",
+    "vitest": "^2.1.8"
+  },
+  "lint-staged": {
+    "*.{ts,js,mjs,cjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
+}

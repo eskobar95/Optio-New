@@ -1,0 +1,79 @@
+# Optio-New
+
+Self-hosted coding-agent factory — **BullMQ** pipeline, **New Bot** decision layer, Cursor skills.
+
+**Directory:** `Optio-New` (sibling of the separate `~/Projects/optio` product monorepo — do not merge).  
+**Compose project name:** `optio-new`  
+**Package:** `@optio-new/harness`  
+**Env prefix:** `OPTIO_NEW_`
+
+## Spec
+
+Authoritative design: **[docs/SPEC.md](docs/SPEC.md)**  
+Tree → section map: **[MAP.md](MAP.md)**  
+Skeleton source copy: `specs/agent-harness-skeleton-spec.md`
+
+## Architecture (v1)
+
+- **New Bot** (Grok Bot) decides what to build, receives feedback, and drives stage gates.
+- **BullMQ + Redis** orchestrates the pipeline: plan → implement → review → ready → merge (SPEC §14.0).
+- **Linear product integration is out** (ADR in SPEC §8). Optional intake webhook later for New Bot / CI.
+- Eve agents, adapters (Cursor/Codex), Jev via Vercel AI Gateway, and optional Laya remain as designed.
+
+## Language & layout
+
+- **TypeScript** is the standard language (`src/`, strict `tsconfig.json`, Node 20+ ESM).
+- Top-level: `src/` (harness TS), `tests/`, `docs/`, plus config/content dirs (`agents/`, `.cursor/`, `workflows/`, Compose).
+- See **[AGENTS.md](AGENTS.md)** for how New Bot, BullMQ, Eve agents, and skills work together.
+
+## Cursor-native SoT (in-repo)
+
+Skills and specialist agents live under **this repo’s** `.cursor/skills/` and `.cursor/agents/`.  
+`skills/index.json` and `specialists/index.json` point here.  
+Staging folders `harness/staging/` and `specs/harness-working-skills/` are **historical snapshots** only.
+
+## Quick layout
+
+Project root **is** the harness tree (`agents/`, `specialists/`, `skills/`, `workflows/`, `orchestrator/`, `adapters/`, `gateway/`, `state/`, `docs/`, `.cursor/`) plus ops files (`docker-compose.yml`, `Caddyfile`, `deploy/`, `secrets/`, `scripts/`).
+
+## Local setup
+
+```bash
+npm install          # also installs Husky pre-commit hooks via prepare
+cp secrets/.env.example secrets/.env   # edit locally; never commit real secrets
+bash scripts/smoke-local.sh
+```
+
+Optional data plane:
+
+```bash
+docker compose up -d redis postgres litellm
+docker compose --profile laya up -d laya
+docker compose --profile edge up -d caddy
+```
+
+Secrets: see `secrets/README.md` (sops+age or Infisical).  
+Postgres backup example: `scripts/backup-postgres-to-storagebox.sh.example`.
+
+## CI and pre-commit (always on)
+
+- **GitHub Actions:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on **every push** and **every pull_request** (any branch for push; PRs targeting `main`). Runs `format:check`, `lint`, `typecheck`, `test` (Vitest), and `smoke`. Failures fail the workflow.
+- **Pre-commit:** Husky + lint-staged (`.husky/pre-commit`) installs via `npm install` (`prepare` → `husky`). Formats/lints staged files and runs `typecheck` (no Docker required).
+- **Tooling:** ESLint + Prettier + Vitest + `tsc --noEmit`. Scripts: `lint`, `lint:fix`, `format`, `format:check`, `typecheck`, `test`, `test:watch`, `smoke`, `ci`.
+
+## First issue / Getting started
+
+1. Copy `.env.example` → `.env` (no real secrets in git).
+2. `npm install` then `npm run ci`.
+3. Grab the **good first issue**: implement `src/agent/loop.ts` (prompt → model adapter → response) with a Vitest mock — see [issues labeled good first issue](https://github.com/eskobar95/Optio-New/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
+4. Read [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), and [docs/SPEC.md](docs/SPEC.md) §8 / §14.0.
+
+License: [MIT](LICENSE).
+
+## Jev (v1)
+
+`jev` router base URL → **Vercel AI Gateway** (`JEV_BASE_URL` / `VERCEL_AI_GATEWAY_URL`, default `https://ai-gateway.vercel.sh`). Not TypeSafe direct.
+
+## Status
+
+Live bootstrap snapshot: **[docs/status.md](docs/status.md)**. Refresh with `bash scripts/update-status.sh` (uses `gh`).

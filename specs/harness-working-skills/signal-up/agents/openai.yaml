@@ -1,0 +1,3 @@
+interface:
+  display_name: "Signal Up"
+  short_description: "File out-of-scope work as a new Triage issue"

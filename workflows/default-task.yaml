@@ -1,0 +1,50 @@
+# workflows/default-task.yaml — Optio-New default task workflow (spec §3.2)
+# Driven by New Bot gates + BullMQ — not Linear status vocabulary.
+name: default-task
+trigger: bot.intake.created
+base_branch: development
+
+steps:
+  - id: planner
+    agent: agents/planner
+    skill_budget_mode: short_term # see SPEC §6
+    specialists_allowed: []
+    skills_allowed: [skills/_shared, skills/bot-session]
+    entry_gates: [session_acked]
+    exit_gates: [plan_present, jev_route_ok]
+    on_fail: escalate_bot
+
+  - id: implementation
+    agent: agents/implementation
+    skill_budget_mode: short_term # later: orchestrator_restricted
+    specialists_allowed:
+      - specialists/front-end
+      - specialists/back-end
+      - specialists/devops
+      - specialists/database
+    skills_allowed: from_planner_selection # intersected with global allow-list
+    entry_gates: [worktree_ready, plan_approved]
+    exit_gates: [jev_completion, local_checks]
+    on_fail: retry_then_replan
+
+  - id: review
+    agent: agents/review
+    specialists_allowed: []
+    skills_allowed: [skills/code-review]
+    entry_gates: [diff_present]
+    exit_gates: [jev_review_pass]
+    on_fail: return_to_implementation
+
+  - id: ready
+    agent: agents/ready
+    skills_allowed: [skills/land, skills/sync-development]
+    entry_gates: [review_pass]
+    exit_gates: [pr_open, ci_pending_or_green]
+    on_fail: escalate_bot
+
+  - id: merge
+    agent: agents/merge
+    skills_allowed: [skills/land, skills/reap-worktree]
+    entry_gates: [ci_green, merge_policy_allow]
+    exit_gates: [merged_into_development]
+    on_success: delete_worktree

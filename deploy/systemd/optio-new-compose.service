@@ -1,0 +1,21 @@
+# Optio-New — ensure Docker Compose stack starts on boot (SPEC §12.5)
+# Install: copy to /etc/systemd/system/optio-new-compose.service (or keep this filename)
+# and set WorkingDirectory to the deploy checkout path.
+
+[Unit]
+Description=Optio-New Docker Compose stack
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/optio-new
+EnvironmentFile=-/opt/optio-new/secrets/.env
+ExecStart=/usr/bin/docker compose -f /opt/optio-new/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose -f /opt/optio-new/docker-compose.yml down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

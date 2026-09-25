@@ -1,0 +1,35 @@
+# Secrets
+secrets/.env
+secrets/.sops.yaml
+.env
+.env.*
+!.env.example
+!secrets/.env.example
+!secrets/.sops.yaml.example
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Worktrees / runtime
+orphaned/
+wt-*/
+.worktrees/
+
+# LiteLLM runtime config (keep example)
+gateway/litellm/config.yaml
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs / coverage
+logs/
+*.log
+coverage/
+
+# Docker
+*.override.yml

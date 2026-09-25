@@ -1,0 +1,5 @@
+interface:
+  display_name: "Issue Session Start"
+  short_description: "Implement, review-fix, and land one issue or a batch"
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Land"
+  short_description: "Merge to the integration lane after Merging"

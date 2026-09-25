@@ -1,0 +1,52 @@
+# AGENTS.md — how agents work in Optio-New
+
+**Language:** TypeScript (Node 20+, ESM, strict `tsc`).  
+**Decision layer:** **New Bot** (Grok Bot / Cursor agent) — not Linear.  
+**Pipeline orchestrator:** **BullMQ** on Redis (SPEC §14.0).
+
+## Roles
+
+| Layer                    | Responsibility                                                                                                               |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| **New Bot**              | Intake and decisions: what to build, when to pause/advance, human elicitation in chat. Enqueues work; no Linear API.         |
+| **BullMQ workers**       | Own the job graph: plan → implement → review → ready → merge. Resume after crashes.                                          |
+| **Eve phase agents**     | `agents/planner`, `implementation`, `review`, `ready`, `merge` — contracts (`agent.ts` + `instructions.md`).                 |
+| **Specialists**          | Thin roles in `.cursor/agents/` (frontend, backend, devops, database). Loaded on demand.                                     |
+| **Skills**               | Full bodies in `.cursor/skills/` (SoT). Indexed by `skills/index.json`. Use `bot-session` instead of Linear `issue-session`. |
+| **CodingAgent adapters** | `src/adapters/cursor`, `src/adapters/codex` — mutate the worktree only; do not advance the workflow.                         |
+
+## Source layout
+
+- `src/` — TypeScript harness code (intake, jobs, adapters, gateway types).
+- `agents/` — Eve phase contracts (markdown + thin TS stubs).
+- `tests/` — unit/smoke tests (`tsx --test`).
+- `docs/` — SPEC and design docs.
+- `.cursor/skills`, `.cursor/agents` — in-repo Cursor SoT.
+- `workflows/default-task.yaml` — stage graph.
+- `orchestrator/*/README.md` — domain notes; runnable TS for intake/jobs lives under `src/orchestrator/`.
+
+## Adding a task
+
+1. New Bot accepts intent (chat) or optional HTTP intake (`orchestrator/intake`).
+2. Validate with `buildIntakeJob` → enqueue BullMQ job.
+3. Workers run Eve stages; New Bot gates ambiguous steps.
+4. GitHub PR/CI signals feed ready/merge; worktree cleaned after merge.
+
+## Do not
+
+- Integrate Linear webhooks, GraphQL, Agent Sessions, or Linear status vocabulary.
+- Commit secrets (`.env`, real API keys).
+- Modify `~/Projects/optio` or `kit-collective` from this repo.
+- Let adapters own workflow advancement or worktree lifecycle.
+- Dump the entire skill library into context — load selectively per step.
+
+## Local agent loop
+
+```bash
+npm install          # installs Husky pre-commit
+npm run typecheck
+npm test
+npm run smoke
+```
+
+CI (`.github/workflows/ci.yml`) runs the same checks on every push and every PR to `main`.

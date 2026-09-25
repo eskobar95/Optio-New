@@ -1,0 +1,5 @@
+interface:
+  display_name: "Sync Development"
+  short_description: "Safely fast-forward local integration lane with origin"
+policy:
+  allow_implicit_invocation: false

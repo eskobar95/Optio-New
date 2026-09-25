@@ -1,0 +1,11 @@
+# Optio-New — TLS webhook edge (SPEC §12.5)
+# Replace {$OPTIO_NEW_WEBHOOK_HOST} with your public hostname.
+
+{$OPTIO_NEW_WEBHOOK_HOST:localhost} {
+	# Intake webhook (optional) for New Bot / CI + GitHub webhooks
+	handle /webhooks/* {
+		reverse_proxy orchestrator:3100
+	}
+
+	respond /healthz 200
+}

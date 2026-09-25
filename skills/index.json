@@ -1,0 +1,78 @@
+{
+  "$schema_comment": "In-repo SoT: full skill bodies live under .cursor/skills/. Staging under harness/staging and specs/harness-working-skills is historical snapshot only.",
+  "source_of_truth_root": ".cursor/skills",
+  "skills": [
+    {
+      "id": "skills/_shared",
+      "cursor_native_id": "_shared",
+      "cursor_native_path": ".cursor/skills/_shared",
+      "phase_tags": ["dependency"]
+    },
+    {
+      "id": "skills/implement",
+      "cursor_native_id": "implement",
+      "cursor_native_path": ".cursor/skills/implement",
+      "phase_tags": ["implementation"]
+    },
+    {
+      "id": "skills/tdd",
+      "cursor_native_id": "tdd",
+      "cursor_native_path": ".cursor/skills/tdd",
+      "phase_tags": ["implementation"]
+    },
+    {
+      "id": "skills/codebase-design",
+      "cursor_native_id": "codebase-design",
+      "cursor_native_path": ".cursor/skills/codebase-design",
+      "phase_tags": ["implementation"]
+    },
+    {
+      "id": "skills/diagnosing-bugs",
+      "cursor_native_id": "diagnosing-bugs",
+      "cursor_native_path": ".cursor/skills/diagnosing-bugs",
+      "phase_tags": ["implementation"]
+    },
+    {
+      "id": "skills/code-review",
+      "cursor_native_id": "code-review",
+      "cursor_native_path": ".cursor/skills/code-review",
+      "phase_tags": ["review"]
+    },
+    {
+      "id": "skills/land",
+      "cursor_native_id": "land",
+      "cursor_native_path": ".cursor/skills/land",
+      "phase_tags": ["merge", "git"]
+    },
+    {
+      "id": "skills/sync-development",
+      "cursor_native_id": "sync-development",
+      "cursor_native_path": ".cursor/skills/sync-development",
+      "phase_tags": ["git"]
+    },
+    {
+      "id": "skills/reap-worktree",
+      "cursor_native_id": "reap-worktree",
+      "cursor_native_path": ".cursor/skills/reap-worktree",
+      "phase_tags": ["git"]
+    },
+    {
+      "id": "skills/signal-up",
+      "cursor_native_id": "signal-up",
+      "cursor_native_path": ".cursor/skills/signal-up",
+      "phase_tags": ["meta"]
+    },
+    {
+      "id": "skills/bot-session",
+      "cursor_native_id": "bot-session",
+      "cursor_native_path": ".cursor/skills/bot-session",
+      "phase_tags": ["meta", "orchestration"]
+    },
+    {
+      "id": "skills/handoff",
+      "cursor_native_id": "handoff",
+      "cursor_native_path": ".cursor/skills/handoff",
+      "phase_tags": ["meta"]
+    }
+  ]
+}

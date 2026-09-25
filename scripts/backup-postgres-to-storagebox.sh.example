@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Optio-New — Postgres dump → restic/borg → Hetzner Storage Box (SPEC §12.5)
+# Copy to backup-postgres-to-storagebox.sh, chmod +x, schedule via systemd timer/cron.
+set -euo pipefail
+
+: "${OPTIO_NEW_DATABASE_URL:?set OPTIO_NEW_DATABASE_URL}"
+: "${OPTIO_NEW_BACKUP_REPO:?set OPTIO_NEW_BACKUP_REPO (restic/borg repo URL)}"
+: "${OPTIO_NEW_BACKUP_PASSWORD:?set OPTIO_NEW_BACKUP_PASSWORD}"
+
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+DUMP="/tmp/optio-new-pg-${STAMP}.sql.gz"
+
+echo "[optio-new] dumping postgres…"
+pg_dump "$OPTIO_NEW_DATABASE_URL" | gzip -c > "$DUMP"
+
+# Prefer restic; swap to borg if desired.
+if command -v restic >/dev/null 2>&1; then
+  export RESTIC_REPOSITORY="$OPTIO_NEW_BACKUP_REPO"
+  export RESTIC_PASSWORD="$OPTIO_NEW_BACKUP_PASSWORD"
+  restic backup "$DUMP" --tag optio-new --tag postgres
+  restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune
+elif command -v borg >/dev/null 2>&1; then
+  export BORG_REPO="$OPTIO_NEW_BACKUP_REPO"
+  export BORG_PASSPHRASE="$OPTIO_NEW_BACKUP_PASSWORD"
+  borg create --stats "::{hostname}-optio-new-pg-${STAMP}" "$DUMP"
+else
+  echo "install restic or borg" >&2
+  exit 1
+fi
+
+rm -f "$DUMP"
+echo "[optio-new] backup done"

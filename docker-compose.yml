@@ -1,0 +1,121 @@
+# Optio-New — practical v1 Compose stack (SPEC §12.6)
+name: optio-new
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - optio_new_redis:/data
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${OPTIO_NEW_POSTGRES_USER:-optio}
+      POSTGRES_PASSWORD: ${OPTIO_NEW_POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${OPTIO_NEW_POSTGRES_DB:-optio_new}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - optio_new_postgres:/var/lib/postgresql/data
+
+  # BullMQ / orchestrator worker stub
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    profiles: ["full"]
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - postgres
+    environment:
+      OPTIO_NEW_REDIS_URL: redis://redis:6379
+      OPTIO_NEW_DATABASE_URL: postgres://${OPTIO_NEW_POSTGRES_USER:-optio}:${OPTIO_NEW_POSTGRES_PASSWORD:-changeme}@postgres:5432/${OPTIO_NEW_POSTGRES_DB:-optio_new}
+      JEV_BASE_URL: ${JEV_BASE_URL:-https://ai-gateway.vercel.sh}
+      VERCEL_AI_GATEWAY_URL: ${VERCEL_AI_GATEWAY_URL:-https://ai-gateway.vercel.sh}
+    ports:
+      - "127.0.0.1:3100:3100"
+
+  # Eve / agent runner stub
+  eve-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.eve-runner
+    profiles: ["full"]
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - postgres
+    environment:
+      OPTIO_NEW_REDIS_URL: redis://redis:6379
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    restart: unless-stopped
+    volumes:
+      - ./gateway/litellm/config.yaml.example:/app/config.yaml:ro
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-change-me}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    ports:
+      - "127.0.0.1:4000:4000"
+
+  # Optional local Laya decision service (SPEC §14.3 / call req #10)
+  laya:
+    profiles: ["laya"]
+    image: python:3.12-slim
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      LAYA_DEVICE: cpu
+      LAYA_PRELOAD: "1"
+    command:
+      - bash
+      - -lc
+      - "pip install --no-cache-dir 'laya[serve]' && python -m laya.serve --host 0.0.0.0 --port 8000"
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    restart: unless-stopped
+    # Stub: add collector config when wiring Langfuse/SigNoz exporters
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./deploy/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    profiles: ["observability"]
+
+  # langfuse:
+  #   # Self-hosted Langfuse (MIT) — enable when ClickHouse+Postgres+Redis capacity allows.
+  #   # Prefer sessions keyed by task_id / session id.
+  #   image: langfuse/langfuse:latest
+  #   profiles: ["observability"]
+
+  # signoz:
+  #   # SigNoz all-in-one — infra traces/logs/metrics; keep agent deep-dive in Langfuse.
+  #   # image: signoz/signoz:latest
+  #   profiles: ["observability"]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - optio_new_caddy_data:/data
+      - optio_new_caddy_config:/config
+    profiles: ["edge"]
+
+volumes:
+  optio_new_redis:
+  optio_new_postgres:
+  optio_new_caddy_data:
+  optio_new_caddy_config:

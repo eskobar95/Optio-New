@@ -1,0 +1,3 @@
+interface:
+  display_name: "Reap Worktree"
+  short_description: "Verify land on integration, remove issue worktree, delete merged remote branch"
