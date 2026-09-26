@@ -308,7 +308,7 @@ Rules:
 ## 8. Intake — New Bot decision layer (ADR)
 
 > **ADR:** Linear **Agent Sessions** stay **out of scope** for Optio-New v1.  
-> **Exception:** Linear **intake** is in scope. `POST /webhooks/linear` accepts Issue status-change events for team FIN and enqueues `bot.intake.created`. See `docs/SPEC.md` §8.  
+> **Exception:** Linear **intake** is in scope. `POST /webhooks/linear` accepts Issue status-change events for teams enabled in `config/linear-projects.yaml` and enqueues `bot.intake.created`. See `docs/SPEC.md` §8.  
 > **New Bot** (Grok Bot / Cursor agent) is the **control and decision plane**: it decides what to build, receives human feedback, and drives pipeline gates.  
 > **BullMQ** remains the **pipeline orchestrator** (see §14.0). Do not build OAuth agent scopes or Agent Sessions into this product.
 
@@ -323,7 +323,7 @@ Rules:
 
 **Explicitly out (v1):**
 
-- Linear Agent Session webhooks, Agent Activities, backlog polling, and Linear status names as factory stage vocabulary. FIN status-change intake is the §8 exception (`docs/SPEC.md`).
+- Linear Agent Session webhooks, Agent Activities, backlog polling, and Linear status names as factory stage vocabulary. Status-change intake for teams in `config/linear-projects.yaml` is the §8 exception (`docs/SPEC.md`).
 - Any requirement that Linear must exist for the factory to run.
 
 **Auth (optional webhook):** shared secret / HMAC for intake; GitHub webhooks remain for PR/CI signals.

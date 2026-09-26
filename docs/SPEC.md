@@ -308,7 +308,7 @@ Rules:
 ## 8. Intake — New Bot decision layer (ADR)
 
 > **ADR:** Linear **Agent Sessions** stay **out of scope** for Optio-New v1.  
-> **Exception:** Linear **intake** is in scope. `POST /webhooks/linear` accepts Issue **status-change** events for team **FIN**, verifies `Linear-Signature`, and enqueues `bot.intake.created` with `repoId` from `OPTIO_NEW_LINEAR_DEFAULT_REPO_ID`. On accept the orchestrator posts a Linear comment whose body is exactly `queued`. The API key may call `commentCreate`. `issueUpdate` may set status (`stateId`) only. `issueCreate`, `issueDelete`, and `issueArchive` are forbidden.  
+> **Exception:** Linear **intake** is in scope. `POST /webhooks/linear` accepts Issue **status-change** events for teams enabled in `config/linear-projects.yaml` (seeded with **ENG**), verifies `Linear-Signature`, and enqueues `bot.intake.created`. `repoId` is `OPTIO_NEW_LINEAR_DEFAULT_REPO_ID` when set, otherwise that team's `defaultRepoId`. On accept the orchestrator posts a Linear comment whose body is exactly `queued`. The API key may call `commentCreate`. `issueUpdate` may set status (`stateId`) only. `issueCreate`, `issueDelete`, and `issueArchive` are forbidden.  
 > **New Bot** (Grok Bot / Cursor agent) remains the **control and decision plane**: it decides what to build, receives human feedback, and drives pipeline gates.  
 > **BullMQ** remains the **pipeline orchestrator** (see §14.0). Do not build OAuth agent scopes or Agent Sessions into this product.
 
@@ -324,7 +324,7 @@ Rules:
 
 **Explicitly out (v1):**
 
-- Linear Agent Session webhooks, Agent Activities, backlog polling, and using Linear status names as the factory's own stage vocabulary. A FIN status change may enqueue `bot.intake.created`; that does not start an Agent Session. GitHub Issues and Slack enqueue the same event.
+- Linear Agent Session webhooks, Agent Activities, backlog polling, and using Linear status names as the factory's own stage vocabulary. A status change for an enabled team may enqueue `bot.intake.created`; that does not start an Agent Session. GitHub Issues and Slack enqueue the same event.
 - Any requirement that Linear must exist for the factory to run. Chat, `POST /intake`, GitHub, and Slack still enqueue without it.
 
 **Auth (optional webhook):** shared secret / HMAC for intake. GitHub Issues intake uses `X-Hub-Signature-256` and `OPTIO_NEW_GITHUB_WEBHOOK_SECRET`. Slack uses `OPTIO_NEW_SLACK_SIGNING_SECRET`. Linear status-change intake uses `Linear-Signature` and `OPTIO_NEW_LINEAR_WEBHOOK_SECRET`, then `OPTIO_NEW_LINEAR_API_KEY` for the `queued` comment. PR/CI still uses the GitHub token. `open_pr` addresses the GitHub repo from the task `repoId` catalog clone URL when `OPTIO_NEW_REPOS` is set. Do not log those values. See `docs/ops/intake-adapters.md`.

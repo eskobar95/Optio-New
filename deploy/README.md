@@ -143,7 +143,7 @@ Ciphertext, the age key, and plaintext `.env` stay on the host. See [docs/secret
 - [ ] `CURSOR_API_KEY` is set when the Cursor adapter runs on the box. Compose passes it into `orchestrator` and `eve-runner`.
 - [ ] `MODEL_API_KEY` and `MODEL_ENDPOINT` are present in the same env file. Planner still needs `CURSOR_API_KEY`; the env model adapter performs no HTTP.
 - [ ] `OPTIO_NEW_GITHUB_REPO` is `owner/repo` when `OPTIO_NEW_REPOS` is empty. With a catalog, `open_pr` uses the clone URL for the task `repoId`.
-- [ ] `OPTIO_NEW_LINEAR_API_KEY`, `OPTIO_NEW_LINEAR_WEBHOOK_SECRET`, and `OPTIO_NEW_LINEAR_DEFAULT_REPO_ID=findjobabroad` are in the sops env before `POST /webhooks/linear` should enqueue. Recreate `orchestrator` after they change. Linear webhooks need HTTPS; the IP edge is HTTP until a domain exists.
+- [ ] `OPTIO_NEW_LINEAR_API_KEY` and `OPTIO_NEW_LINEAR_WEBHOOK_SECRET` are in the sops env before `POST /webhooks/linear` should enqueue. Enabled teams and the ENG default repo (`findjobabroad`) are in `config/linear-projects.yaml` inside the orchestrator image. Set `OPTIO_NEW_LINEAR_DEFAULT_REPO_ID` only to override that default. Recreate `orchestrator` after they change. Linear webhooks need HTTPS; the IP edge is HTTP until a domain exists.
 - [ ] `OPTIO_NEW_BACKUP_REPO` and `OPTIO_NEW_BACKUP_PASSWORD` are set before the Storage Box timer.
 - [ ] `OPTIO_NEW_HARNESS_URL` stays `http://127.0.0.1:3200`. kit-harness has no public name.
 - [ ] DNS: no public record for port `3200`, `3210`, `4000`, `3100`, `5432`, or `6379`.

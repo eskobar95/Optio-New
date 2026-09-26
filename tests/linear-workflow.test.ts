@@ -501,10 +501,10 @@ describe("Linear webhook gate", () => {
       webhookTimestamp: Date.now(),
       data: {
         id: issueId,
-        identifier: "FIN-12",
+        identifier: "ENG-12",
         title: "Ship intake",
         state: { id: "state-review", name: "Review" },
-        team: { key: "FIN" },
+        team: { key: "ENG" },
       },
       updatedFrom: { stateId: "state-in-progress" },
     });

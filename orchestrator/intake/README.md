@@ -53,11 +53,11 @@ The stage job payload includes `taskId`, `sessionId`, `stage`, the brief `title`
 
 ## GitHub, Slack, and Linear
 
-`POST /webhooks/github`, `POST /webhooks/slack`, and `POST /webhooks/linear` verify HMAC and enqueue the same `bot.intake.created` flow. Linear accepts Issue status changes for team FIN and then comments `queued`. See [docs/ops/intake-adapters.md](../../docs/ops/intake-adapters.md). Repo routing: [docs/ops/multi-repo-cx33.md](../../docs/ops/multi-repo-cx33.md).
+`POST /webhooks/github`, `POST /webhooks/slack`, and `POST /webhooks/linear` verify HMAC and enqueue the same `bot.intake.created` flow. Linear accepts Issue status changes for teams enabled in `config/linear-projects.yaml` and then comments `queued`. See [docs/ops/intake-adapters.md](../../docs/ops/intake-adapters.md). Repo routing: [docs/ops/multi-repo-cx33.md](../../docs/ops/multi-repo-cx33.md).
 
 ## Explicitly out (v1)
 
-- Linear Agent Sessions, OAuth agent scopes, Agent Activities, and creating or deleting Linear issues. Status-change intake for team FIN is the SPEC §8 exception.
+- Linear Agent Sessions, OAuth agent scopes, Agent Activities, and creating or deleting Linear issues. Status-change intake for teams in `config/linear-projects.yaml` is the SPEC §8 exception.
 - Backlog polling of any issue tracker as the control plane.
 
 See `docs/SPEC.md` §8 (intake) and §14.0 (BullMQ).
