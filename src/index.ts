@@ -241,6 +241,22 @@ export {
   cursorAdapter,
 } from "./adapters/cursor/index.js";
 export {
+  CURSOR_IMPLEMENT_ACI_POLICY,
+  DEFAULT_SEARCH_SUMMARY_LIMIT,
+  EMPTY_COMMAND_OBSERVATION,
+  MAX_SEARCH_SUMMARY_LIMIT,
+  checkSyntax,
+  cursorImplementPrompt,
+  formatCommandObservation,
+  gateFileEdit,
+  isCursorImplementStep,
+  summarizeSearch,
+  type EditGateResult,
+  type FileEdit,
+  type LintDiagnostic,
+  type SyntaxChecker,
+} from "./adapters/cursor/implement-feedback.js";
+export {
   CodingBackendUndecidedError,
   createCodingAgent,
   resolveCodingBackend,

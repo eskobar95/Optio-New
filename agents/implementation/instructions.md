@@ -23,6 +23,10 @@ You are the **implementation** agent for an Optio-New task session (New Bot–dr
 - `agent.ts` records model and tool-policy stubs. It does not start a session and does not advance BullMQ.
 - The task git worktree is the sandbox. Do not call Vercel Sandbox or Vercel Workflows.
 
+## Cursor implement feedback
+
+When the coding backend is Cursor, the adapter appends `CURSOR_IMPLEMENT_ACI_POLICY` on steps `implementation` and `invoke_implementation`. A failed syntax check rolls the edit back and returns a short observation. Search and list results stay truncated. A command that exits 0 with empty stdout is reported as `Command succeeded with no output.` The CLI stays on `https://api2.cursor.sh`. See `docs/cursor-implement-feedback.md`.
+
 ## Exit
 
 Satisfy `jev_completion` and `local_checks` before the orchestrator advances.
