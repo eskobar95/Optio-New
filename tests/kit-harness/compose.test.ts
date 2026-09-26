@@ -39,4 +39,12 @@ describe("kit-harness compose profile", () => {
     expect(build).toMatch(/\nRUN npm ci\n/);
     expect(runtime).toContain("RUN npm ci --omit=dev --ignore-scripts");
   });
+
+  it("copies gateway into the eve-runner image before tsc", () => {
+    const dockerfile = readFileSync("Dockerfile.eve-runner", "utf8");
+    const copyGateway = dockerfile.indexOf("COPY gateway ./gateway");
+    const tsc = dockerfile.indexOf("RUN npx tsc -p tsconfig.eve.json");
+    expect(copyGateway).toBeGreaterThan(-1);
+    expect(tsc).toBeGreaterThan(copyGateway);
+  });
 });

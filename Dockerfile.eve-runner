@@ -8,6 +8,8 @@ COPY package.json package-lock.json tsconfig.json tsconfig.eve.json ./
 ENV HUSKY=0
 RUN npm ci
 COPY src ./src
+# src/gateway/jev-router re-exports ../../../gateway/jev-router; tsconfig.eve.json includes both.
+COPY gateway ./gateway
 COPY agents ./agents
 COPY skills ./skills
 COPY specialists ./specialists
