@@ -72,3 +72,21 @@ export {
   type CavemanMode,
   type CavemanProxyConfig,
 } from "./proxy/index.js";
+export {
+  checkCompletion,
+  createKitHarnessServer,
+  createModelRouter,
+  decideTool,
+  detectLoop,
+  resolveListen,
+  routeModel,
+  splitOrProceed,
+  type CompletionDecision,
+  type CompletionEvidence,
+  type DecisionAdvisor,
+  type Hop1Choice,
+  type LoopDetectResult,
+  type RouteModelDecision,
+  type SplitDecision,
+  type ToolGateDecision,
+} from "./kit-harness/index.js";

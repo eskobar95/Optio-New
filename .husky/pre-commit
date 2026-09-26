@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# Husky 9 runs this file with `sh -e`. Keep it POSIX (no pipefail).
 set -eu
 npx lint-staged
 npm run typecheck

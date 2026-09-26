@@ -122,6 +122,7 @@ trap cleanup EXIT
   echo "| Good first issue: \`src/agent/loop.ts\` | See open issues |"
   echo "| BullMQ stage graph (plan → merge) + Postgres step cursor | Skeleton (\`docs/pipeline.md\`) |"
   echo "| Real model providers / GPU / Vercel key | Pending (secrets local only) |"
+  echo "| kit-harness decision sidecar | Compose profile \`harness\` (rules engine; Jev not called) |"
   echo
   echo "## CI"
   echo
@@ -155,7 +156,7 @@ trap cleanup EXIT
   echo
   echo '```text'
   echo "Optio-New/"
-  echo "  src/           # TypeScript harness (intake, jobs, adapters, gateway)"
+  echo "  src/           # TypeScript harness (intake, jobs, adapters, gateway, kit-harness)"
   echo "  tests/         # Vitest"
   echo "  agents/        # Eve phase contracts"
   echo "  .cursor/       # Skills + specialist agents (SoT)"

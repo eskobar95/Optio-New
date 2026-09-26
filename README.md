@@ -19,6 +19,7 @@ Skeleton source copy: `specs/agent-harness-skeleton-spec.md`
 - **BullMQ + Redis** orchestrates the pipeline: plan → implement → review → ready → merge (SPEC §14.0).
 - **Linear product integration is out** (ADR in SPEC §8). Optional intake webhook later for New Bot / CI.
 - Eve agents, adapters (Cursor/Codex), Jev via Vercel AI Gateway, and optional Laya remain as designed.
+- **kit-harness** is the local decision sidecar (Hop-1 route, tool-gate, completion, loop, split). New Bot stays intake. Compose profile `harness`.
 
 ## Language & layout
 
@@ -50,16 +51,20 @@ Optional data plane:
 docker compose up -d redis postgres litellm
 docker compose --profile laya up -d laya
 docker compose --profile edge up -d caddy
+docker compose --profile harness up -d --build kit-harness
+curl -s http://127.0.0.1:3200/health
 ```
 
-Secrets on the Hetzner kit-harness (`/opt/optio-new`): **sops + age**. Runbook: [docs/secrets.md](docs/secrets.md).  
+Decision sidecar: **[docs/kit-harness.md](docs/kit-harness.md)**. A default `docker compose up` does not start `kit-harness`. Bound to `127.0.0.1:3200`.
+
+Secrets on the Hetzner kit-harness (`/opt/optio-new`): **sops + age**. Runbook: [docs/secrets.md](docs/secrets.md).
 Postgres backup example: `scripts/backup-postgres-to-storagebox.sh.example`.
 
 ## CI and pre-commit (always on)
 
 - **GitHub Actions:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on **every push** and **every pull_request** (any branch for push; PRs targeting `main`). Runs `format:check`, `lint`, `typecheck`, `test` (Vitest), and `smoke`. Failures fail the workflow.
 - **Pre-commit:** Husky + lint-staged (`.husky/pre-commit`) installs via `npm install` (`prepare` → `husky`). Formats/lints staged files and runs `typecheck` (no Docker required).
-- **Tooling:** ESLint + Prettier + Vitest + `tsc --noEmit`. Scripts: `lint`, `lint:fix`, `format`, `format:check`, `typecheck`, `test`, `test:watch`, `smoke`, `ci`, `status`.
+- **Tooling:** ESLint + Prettier + Vitest + `tsc --noEmit`. Scripts: `lint`, `lint:fix`, `format`, `format:check`, `typecheck`, `test`, `test:watch`, `smoke`, `ci`, `status`, `kit-harness`.
 
 ## Optional: Caveman cost-opt
 

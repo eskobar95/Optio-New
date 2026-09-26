@@ -68,6 +68,37 @@ services:
     ports:
       - "127.0.0.1:4000:4000"
 
+  # Decision sidecar (SPEC §9, §14.4 Hop 1). Off unless `--profile harness`.
+  kit-harness:
+    profiles: ["harness"]
+    build:
+      context: .
+      dockerfile: Dockerfile.kit-harness
+    restart: unless-stopped
+    init: true
+    environment:
+      KIT_HARNESS_PORT: ${KIT_HARNESS_PORT:-3200}
+      JEV_BASE_URL: ${JEV_BASE_URL:-}
+    ports:
+      - "127.0.0.1:${KIT_HARNESS_PORT:-3200}:${KIT_HARNESS_PORT:-3200}"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:'+(process.env.KIT_HARNESS_PORT||3200)+'/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
   # Optional local Laya decision service (SPEC §14.3 / call req #10)
   laya:
     profiles: ["laya"]
