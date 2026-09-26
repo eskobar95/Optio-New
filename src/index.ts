@@ -63,8 +63,32 @@ export {
   type StepCursor,
   type StepCursorStore,
 } from "./orchestrator/jobs/index.js";
-export type { CodingAgent, CodingAgentInput, CodingAgentOutput } from "./adapters/coding-agent.js";
-export { codexOpenAiBaseUrl } from "./adapters/codex/index.js";
+export type {
+  CodingAgent,
+  CodingAgentInput,
+  CodingAgentOutput,
+  CodingAgentStatus,
+  CodingAgentUsage,
+} from "./adapters/coding-agent.js";
+export {
+  buildCodexGatewayConfig,
+  codexAdapter,
+  codexOpenAiBaseUrl,
+  createCodexAdapter,
+} from "./adapters/codex/index.js";
+export {
+  CURSOR_NATIVE_API_ENDPOINT,
+  createCursorAdapter,
+  cursorAdapter,
+} from "./adapters/cursor/index.js";
+export {
+  CodingBackendUndecidedError,
+  createCodingAgent,
+  resolveCodingBackend,
+  type CodingAgentDeps,
+  type CodingBackendId,
+  type CodingBackendSelection,
+} from "./adapters/select.js";
 export {
   litellmOrigin,
   loadCavemanProxyConfig,
