@@ -44,6 +44,12 @@ if command -v docker >/dev/null 2>&1; then
     fi
     rm -f "$empty_env" "$config_log"
     pass "docker compose config"
+    if docker compose config | grep -Eq '^  kit-harness:'; then
+      fail "kit-harness is profile-gated and must not appear in default compose config"
+    fi
+    docker compose --profile harness config | grep -Eq '^  kit-harness:' \
+      || fail "docker compose --profile harness missing kit-harness"
+    pass "compose profile harness defines kit-harness"
     if [[ "${SMOKE_COMPOSE_UP:-0}" == "1" ]]; then
       docker compose up -d redis postgres
       pass "compose up redis postgres"

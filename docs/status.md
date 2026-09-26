@@ -4,15 +4,16 @@ Last refreshed: 2026-09-26 00:34 UTC
 
 ## Bootstrap progress
 
-| Area                                                                     | Status                        |
-| ------------------------------------------------------------------------ | ----------------------------- |
-| In-repo `.cursor/skills` + `.cursor/agents` SoT                          | Done                          |
-| Linear stripped → New Bot intake + BullMQ                                | Done                          |
-| TypeScript `src/` + `tests/` + tooling (ESLint, Prettier, Vitest, Husky) | Done                          |
-| Public GitHub + CI on push/PR                                            | Live                          |
-| Good first issue: `src/agent/loop.ts`                                    | See open issues               |
-| BullMQ stage graph (plan → merge) + Postgres step cursor                 | Skeleton (`docs/pipeline.md`) |
-| Real model providers / GPU / Vercel key                                  | Pending (secrets local only)  |
+| Area                                                                     | Status                                                   |
+| ------------------------------------------------------------------------ | -------------------------------------------------------- |
+| In-repo `.cursor/skills` + `.cursor/agents` SoT                          | Done                                                     |
+| Linear stripped → New Bot intake + BullMQ                                | Done                                                     |
+| TypeScript `src/` + `tests/` + tooling (ESLint, Prettier, Vitest, Husky) | Done                                                     |
+| Public GitHub + CI on push/PR                                            | Live                                                     |
+| Good first issue: `src/agent/loop.ts`                                    | See open issues                                          |
+| BullMQ stage graph (plan → merge) + Postgres step cursor                 | Skeleton (`docs/pipeline.md`)                            |
+| Real model providers / GPU / Vercel key                                  | Pending (secrets local only)                             |
+| kit-harness decision sidecar                                             | Compose profile `harness` (rules engine; Jev not called) |
 
 ## CI
 
@@ -62,7 +63,7 @@ Automation: `.github/workflows/status.yml` runs the same script on a daily sched
 
 ```text
 Optio-New/
-  src/           # TypeScript harness (intake, jobs, adapters, gateway)
+  src/           # TypeScript harness (intake, jobs, adapters, gateway, kit-harness)
   tests/         # Vitest
   agents/        # Eve phase contracts
   .cursor/       # Skills + specialist agents (SoT)

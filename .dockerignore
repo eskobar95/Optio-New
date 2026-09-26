@@ -1,0 +1,13 @@
+.git
+.github
+node_modules
+dist
+coverage
+.env
+.env.*
+secrets/.env
+*.log
+harness
+specs/harness-working-skills
+.cursor
+.agents
