@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS learnings (
   excerpt text NOT NULL,
   sample_task_ids jsonb NOT NULL,
   proposal_body text,
+  recommendation text,
   meta_issue_url text,
   updated_at timestamptz NOT NULL
 );

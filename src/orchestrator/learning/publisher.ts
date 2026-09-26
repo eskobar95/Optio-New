@@ -1,6 +1,6 @@
 /**
- * Files a meta-issue on GitHub when explicitly enabled.
- * A disabled publisher stores the draft only.
+ * Files a GitHub meta-issue (not Linear) when the fingerprint threshold is crossed.
+ * Set OPTIO_LEARN_FILE_GITHUB=0 to store the draft and skip the API call.
  */
 import type { MetaIssueDraft } from "./template.js";
 
@@ -49,18 +49,24 @@ export function createGithubMetaIssuePublisher(options: {
   };
 }
 
-export function createMetaIssuePublisherFromEnv(
-  env: NodeJS.ProcessEnv = process.env,
-): MetaIssuePublisher {
-  const enabled = env.OPTIO_LEARN_FILE_GITHUB === "1" || env.OPTIO_LEARN_FILE_GITHUB === "true";
+/** True when a threshold crossing should open a GitHub issue. */
+export function githubMetaIssuesEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const flag = env.OPTIO_LEARN_FILE_GITHUB?.trim().toLowerCase();
+  if (flag === "0" || flag === "false" || flag === "off") return false;
   const token = env.OPTIO_NEW_GITHUB_TOKEN?.trim() ?? "";
   const repoSpec = env.OPTIO_LEARN_GITHUB_REPO?.trim() ?? "";
   const slash = repoSpec.indexOf("/");
-  if (!enabled || !token || slash <= 0 || slash === repoSpec.length - 1) {
-    return createDisabledMetaIssuePublisher();
-  }
+  return token.length > 0 && slash > 0 && slash < repoSpec.length - 1;
+}
+
+export function createMetaIssuePublisherFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): MetaIssuePublisher {
+  if (!githubMetaIssuesEnabled(env)) return createDisabledMetaIssuePublisher();
+  const repoSpec = env.OPTIO_LEARN_GITHUB_REPO?.trim() ?? "";
+  const slash = repoSpec.indexOf("/");
   return createGithubMetaIssuePublisher({
-    token,
+    token: env.OPTIO_NEW_GITHUB_TOKEN?.trim() ?? "",
     owner: repoSpec.slice(0, slash),
     repo: repoSpec.slice(slash + 1),
   });

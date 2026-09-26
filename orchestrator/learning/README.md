@@ -4,4 +4,4 @@ Failure fingerprints → Postgres table `learnings`; thresholded GitHub meta-iss
 
 Runnable worker: `src/orchestrator/learning/`. Queue: `optio.learn`. Compose profile: `learn`.
 
-The worker never rewrites production gates, workflow YAML, or skill files. See `docs/learning-worker.md` and SPEC §10.
+The worker never rewrites production gates, workflow YAML, or skill files. The planner reads the stored recommendation. See `docs/learning-worker.md` and SPEC §10.

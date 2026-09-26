@@ -10,6 +10,23 @@ export interface MetaIssueDraft {
   fingerprint: string;
 }
 
+export function budgetProposal(input: {
+  skillIds: readonly string[];
+  stepId: string;
+  field: string;
+  errorClass: string;
+}): string {
+  if (input.skillIds.length === 0) {
+    return `Propose a human review of the \`${input.stepId}\` budget for field \`${input.field}\` after repeated \`${input.errorClass}\`.`;
+  }
+  return input.skillIds
+    .map(
+      (id) =>
+        `Propose removing \`${id}\` from the \`${input.stepId}\` budget for field \`${input.field}\`.`,
+    )
+    .join("\n");
+}
+
 export function renderMetaIssue(input: {
   fingerprint: string;
   workflowId: string;
@@ -26,15 +43,7 @@ export function renderMetaIssue(input: {
   const skills =
     input.skillIds.length > 0 ? input.skillIds.map((id) => `\`${id}\``).join(", ") : "(none)";
   const specialists = input.specialistIds.length > 0 ? input.specialistIds.join(", ") : "(none)";
-  const proposal =
-    input.skillIds.length > 0
-      ? input.skillIds
-          .map(
-            (id) =>
-              `Propose removing \`${id}\` from the \`${input.stepId}\` budget for field \`${input.field}\`.`,
-          )
-          .join("\n")
-      : `Propose a human review of the \`${input.stepId}\` budget for field \`${input.field}\` after repeated \`${input.errorClass}\`.`;
+  const proposal = budgetProposal(input);
   const samples =
     input.sampleTaskIds.length > 0
       ? input.sampleTaskIds.map((id) => `- ${id}`).join("\n")

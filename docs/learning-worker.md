@@ -10,7 +10,7 @@ Migration: `state/migrations/002_learnings.sql` (`learnings`).
 
 Fingerprint = SHA-256 of workflow, step, sorted skill ids, sorted specialist ids, error class, and field tag. The same failure in another session increments the row. Excerpts are redacted (database URLs, bearer tokens, `sk-` / `ghp_` keys) before they are stored.
 
-Default threshold is **3 hits inside 14 days**. `status` becomes `proposed` and `proposal_body` holds the meta-issue template (`meta/self-improve`), including the budget proposal and sample task ids.
+Default threshold is **3 hits inside 14 days** (`OPTIO_LEARN_THRESHOLD`, `OPTIO_LEARN_WINDOW_DAYS`). `status` becomes `proposed`. `proposal_body` is the GitHub meta-issue template (`meta/self-improve`). `recommendation` is the budget proposal stored for the planner. Neither field changes review-gate pass/fail or skill allow-lists.
 
 ## Queue
 
@@ -20,21 +20,21 @@ Default threshold is **3 hits inside 14 days**. `status` becomes `proposed` and 
 
 `processStageJob` records a failure when the review gate does not pass, and when the implement or review handler throws. A pass does not record. A learning-store error does not replace `ReviewGateClosedError`.
 
-The planner step `invoke_planner` can read `listByField` and append those rows to the prompt. Proposed skill ids are deprioritized when another skill still matches. The hard allow-list is unchanged.
+The planner step `invoke_planner` reads `listByField` and appends the stored recommendation to the prompt. That text is advice. The review gate and the skill allow-list stay as they were.
 
 ## Env
 
-| Variable                  | Default | Meaning                                               |
-| ------------------------- | ------- | ----------------------------------------------------- |
-| `OPTIO_NEW_REDIS_URL`     |         | BullMQ connection. Required by the worker process.    |
-| `OPTIO_NEW_DATABASE_URL`  |         | Postgres. The worker applies the learnings migration. |
-| `OPTIO_LEARN_THRESHOLD`   | `3`     | Hits inside the window before a meta-issue is opened. |
-| `OPTIO_LEARN_WINDOW_DAYS` | `14`    | Counting window.                                      |
-| `OPTIO_LEARN_FILE_GITHUB` | `0`     | `1` files the draft via the GitHub API.               |
-| `OPTIO_LEARN_GITHUB_REPO` |         | `owner/repo`, required when filing is on.             |
-| `OPTIO_NEW_GITHUB_TOKEN`  |         | Token used only when filing is on.                    |
+| Variable                  | Default | Meaning                                                      |
+| ------------------------- | ------- | ------------------------------------------------------------ |
+| `OPTIO_NEW_REDIS_URL`     |         | BullMQ connection. Required by the worker process.           |
+| `OPTIO_NEW_DATABASE_URL`  |         | Postgres. The worker applies the learnings migration.        |
+| `OPTIO_LEARN_THRESHOLD`   | `3`     | Hits inside the window before a GitHub meta-issue is opened. |
+| `OPTIO_LEARN_WINDOW_DAYS` | `14`    | Counting window.                                             |
+| `OPTIO_LEARN_GITHUB_REPO` |         | `owner/repo`. Required to open the issue.                    |
+| `OPTIO_NEW_GITHUB_TOKEN`  |         | GitHub token. Required to open the issue. Not Linear.        |
+| `OPTIO_LEARN_FILE_GITHUB` |         | `0` stores the draft and does not call GitHub.               |
 
-Filing is off unless `OPTIO_LEARN_FILE_GITHUB=1`, the token is set, and the repo is `owner/repo`. The draft is still stored when filing is off. Unit tests cover the GitHub request with a fake `fetch`. CI does not open a live issue.
+When the token and `OPTIO_LEARN_GITHUB_REPO` are set, crossing the threshold opens one GitHub issue. The label is `meta/self-improve`. Set `OPTIO_LEARN_FILE_GITHUB=0` to keep the draft in Postgres only. Unit tests cover the GitHub request with a fake `fetch`. CI does not open a live issue.
 
 If the `meta/self-improve` label is missing, the worker retries the create without labels. The body still says `meta/self-improve`.
 

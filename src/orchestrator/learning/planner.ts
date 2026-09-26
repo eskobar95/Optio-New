@@ -1,6 +1,6 @@
 /**
- * Read model for the planner. Proposed skills are deprioritized.
- * The hard allow-list is left untouched.
+ * Read model for the planner. Recommendations are text only.
+ * Review-gate verdicts and skill allow-lists are not changed here.
  */
 import type { LearningRecord } from "./store.js";
 
@@ -12,8 +12,10 @@ export function formatPlannerLearnings(records: readonly LearningRecord[]): stri
     lines.push(
       `- [${record.status}] field=${record.field} step=${record.stepId} error=${record.errorClass} hits=${record.hitCount} skills=${skills}`,
     );
-    const proposal = proposalLine(record.proposalBody);
-    if (proposal) lines.push(`  ${proposal}`);
+    const proposal = record.recommendation ?? proposalLine(record.proposalBody);
+    if (proposal) {
+      lines.push(`  Recommendation (planner only, not applied to gates): ${proposal}`);
+    }
   }
   return lines.join("\n");
 }

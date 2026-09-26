@@ -1,8 +1,9 @@
 /**
  * Compose entry for the learning worker. Requires Redis and Postgres.
- * GitHub filing stays off unless OPTIO_LEARN_FILE_GITHUB=1.
+ * A threshold crossing opens a GitHub meta-issue when token and repo are set.
+ * OPTIO_LEARN_FILE_GITHUB=0 stores the draft only.
  */
-import { createMetaIssuePublisherFromEnv } from "./publisher.js";
+import { createMetaIssuePublisherFromEnv, githubMetaIssuesEnabled } from "./publisher.js";
 import { readLearningConfig } from "./process.js";
 import { createPgLearningStore } from "./store.js";
 import { bullmqLearningWorkerFactory, startLearningWorker } from "./worker.js";
@@ -40,7 +41,7 @@ console.log(
     queue: "optio.learn",
     threshold: config.threshold,
     windowDays: config.windowDays,
-    fileGithub: process.env.OPTIO_LEARN_FILE_GITHUB === "1",
+    fileGithub: githubMetaIssuesEnabled(),
   }),
 );
 

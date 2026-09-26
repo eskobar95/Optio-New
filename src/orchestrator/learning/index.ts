@@ -13,6 +13,7 @@ export {
   createDisabledMetaIssuePublisher,
   createGithubMetaIssuePublisher,
   createMetaIssuePublisherFromEnv,
+  githubMetaIssuesEnabled,
   type MetaIssuePublisher,
   type MetaIssuePublishResult,
 } from "./publisher.js";
@@ -29,7 +30,7 @@ export {
   type LearningStore,
   type SqlExecutor,
 } from "./store.js";
-export { renderMetaIssue, type MetaIssueDraft } from "./template.js";
+export { budgetProposal, renderMetaIssue, type MetaIssueDraft } from "./template.js";
 export {
   processLearningObservation,
   readLearningConfig,

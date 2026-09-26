@@ -30,6 +30,8 @@ export interface LearningRecord {
   excerpt: string;
   sampleTaskIds: string[];
   proposalBody: string | null;
+  /** Budget proposal for the planner. Not applied to review-gate or skill allow-lists. */
+  recommendation: string | null;
   metaIssueUrl: string | null;
   updatedAt: string;
 }
@@ -84,8 +86,8 @@ export class InMemoryLearningStore implements LearningStore {
 
 export const UPSERT_LEARNING_SQL = `INSERT INTO learnings (
   fingerprint, workflow_id, step_id, skill_ids, specialist_ids, error_class, field_tag,
-  occurrences, hit_count, status, excerpt, sample_task_ids, proposal_body, meta_issue_url, updated_at
-) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13, $14, $15)
+  occurrences, hit_count, status, excerpt, sample_task_ids, proposal_body, recommendation, meta_issue_url, updated_at
+) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8::jsonb, $9, $10, $11, $12::jsonb, $13, $14, $15, $16)
 ON CONFLICT (fingerprint) DO UPDATE SET
   workflow_id = EXCLUDED.workflow_id,
   step_id = EXCLUDED.step_id,
@@ -99,13 +101,14 @@ ON CONFLICT (fingerprint) DO UPDATE SET
   excerpt = EXCLUDED.excerpt,
   sample_task_ids = EXCLUDED.sample_task_ids,
   proposal_body = EXCLUDED.proposal_body,
+  recommendation = EXCLUDED.recommendation,
   meta_issue_url = EXCLUDED.meta_issue_url,
   updated_at = EXCLUDED.updated_at`;
 
-export const SELECT_LEARNING_BY_FINGERPRINT_SQL = `SELECT fingerprint, workflow_id, step_id, skill_ids, specialist_ids, error_class, field_tag, occurrences, hit_count, status, excerpt, sample_task_ids, proposal_body, meta_issue_url, updated_at
+export const SELECT_LEARNING_BY_FINGERPRINT_SQL = `SELECT fingerprint, workflow_id, step_id, skill_ids, specialist_ids, error_class, field_tag, occurrences, hit_count, status, excerpt, sample_task_ids, proposal_body, recommendation, meta_issue_url, updated_at
 FROM learnings WHERE fingerprint = $1`;
 
-export const LIST_LEARNINGS_BY_FIELD_SQL = `SELECT fingerprint, workflow_id, step_id, skill_ids, specialist_ids, error_class, field_tag, occurrences, hit_count, status, excerpt, sample_task_ids, proposal_body, meta_issue_url, updated_at
+export const LIST_LEARNINGS_BY_FIELD_SQL = `SELECT fingerprint, workflow_id, step_id, skill_ids, specialist_ids, error_class, field_tag, occurrences, hit_count, status, excerpt, sample_task_ids, proposal_body, recommendation, meta_issue_url, updated_at
 FROM learnings WHERE field_tag = $1 ORDER BY updated_at DESC LIMIT $2`;
 
 export function createSqlLearningStore(db: SqlExecutor): LearningStore {
@@ -161,6 +164,7 @@ function toParams(record: LearningRecord): unknown[] {
     record.excerpt,
     JSON.stringify(record.sampleTaskIds),
     record.proposalBody,
+    record.recommendation,
     record.metaIssueUrl,
     record.updatedAt,
   ];
@@ -188,6 +192,7 @@ function rowToLearning(row: Record<string, unknown>): LearningRecord {
     excerpt: readString(row.excerpt, "excerpt"),
     sampleTaskIds: readJson<string[]>(row.sample_task_ids, []),
     proposalBody: readNullableString(row.proposal_body),
+    recommendation: readNullableString(row.recommendation),
     metaIssueUrl: readNullableString(row.meta_issue_url),
     updatedAt: readTimestamp(row.updated_at),
   };

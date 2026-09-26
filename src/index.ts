@@ -141,6 +141,7 @@ export {
   createDisabledMetaIssuePublisher,
   createGithubMetaIssuePublisher,
   createMetaIssuePublisherFromEnv,
+  githubMetaIssuesEnabled,
   createPgLearningStore,
   createQueueLearningSink,
   createSqlLearningStore,

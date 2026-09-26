@@ -1,9 +1,6 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SKILL_BUDGET, createInstalledSkillLoader } from "../src/agent/skills.js";
+import type { SkillBudget } from "../src/agent/skills.js";
 import type { MetaIssuePublisher } from "../src/orchestrator/learning/publisher.js";
 import {
   InMemoryLearningStore,
@@ -14,7 +11,9 @@ import {
   createGithubMetaIssuePublisher,
   createQueueLearningSink,
   createSqlLearningStore,
+  evaluateReviewGate,
   failureFingerprint,
+  githubMetaIssuesEnabled,
   loadLearningsDdl,
   processLearningObservation,
   processStageJob,
@@ -76,6 +75,20 @@ describe("learning worker", () => {
     expect(
       readLearningConfig({ OPTIO_LEARN_THRESHOLD: "0", OPTIO_LEARN_WINDOW_DAYS: "nope" }),
     ).toEqual({ threshold: 3, windowDays: 14 });
+    expect(
+      githubMetaIssuesEnabled({
+        OPTIO_NEW_GITHUB_TOKEN: "token",
+        OPTIO_LEARN_GITHUB_REPO: "eskobar95/Optio-New",
+      }),
+    ).toBe(true);
+    expect(
+      githubMetaIssuesEnabled({
+        OPTIO_LEARN_FILE_GITHUB: "0",
+        OPTIO_NEW_GITHUB_TOKEN: "token",
+        OPTIO_LEARN_GITHUB_REPO: "eskobar95/Optio-New",
+      }),
+    ).toBe(false);
+    expect(githubMetaIssuesEnabled({})).toBe(false);
 
     const swapped = failureFingerprint({
       workflowId: "default-task",
@@ -162,6 +175,9 @@ describe("learning worker", () => {
     expect(stored?.excerpt).not.toContain("secretpass");
     expect(stored?.excerpt).not.toContain("sk-abcdefghijklmnopqrstuvwxyz");
     expect(stored?.excerpt).toContain("redacted");
+    expect(stored?.recommendation).toContain(
+      "Propose removing `tdd` from the `implement` budget for field `billing`.",
+    );
     expect(await store.listByField("billing", 8)).toHaveLength(1);
     expect(await store.listByField("auth", 8)).toHaveLength(0);
   });
@@ -243,6 +259,7 @@ describe("learning worker", () => {
     expect(ddl).toContain("CREATE TABLE IF NOT EXISTS learnings");
     expect(ddl).toContain("field_tag");
     expect(ddl).toContain("proposal_body");
+    expect(ddl).toContain("recommendation");
     expect(ddl).toContain("meta_issue_url");
     expect(ddl).toContain("status IN ('observed', 'proposed')");
 
@@ -264,8 +281,9 @@ describe("learning worker", () => {
             excerpt: params[10],
             sample_task_ids: params[11],
             proposal_body: params[12],
-            meta_issue_url: params[13],
-            updated_at: params[14],
+            recommendation: params[13],
+            meta_issue_url: params[14],
+            updated_at: params[15],
           });
           return { rows: [] };
         }
@@ -287,6 +305,7 @@ describe("learning worker", () => {
     const listed = await store.listByField("billing", 5);
     expect(listed[0]?.hitCount).toBe(3);
     expect(listed[0]?.proposalBody).toContain("does not change production gates");
+    expect(listed[0]?.recommendation).toContain("Propose removing `tdd`");
   });
 
   it("enqueues optio.learn and lets the worker fingerprint the payload", async () => {
@@ -463,11 +482,11 @@ describe("learning worker", () => {
     expect(seen[1]?.excerpt).not.toContain("sk-abcdefghijklmnopqrstuvwxyz");
   });
 
-  it("injects learnings into the planner and deprioritizes repeated skills", async () => {
+  it("gives the planner the stored recommendation and leaves the review gate unchanged", async () => {
     const store = new InMemoryLearningStore();
     await recordTimes(store, 3);
     const prompts: string[] = [];
-    let deprioritize: readonly string[] | undefined;
+    const budgets: SkillBudget[] = [];
     const handler = createAgentStageHandler(
       {
         async complete(request) {
@@ -483,7 +502,7 @@ describe("learning worker", () => {
         },
         skillLoader: {
           async resolve(_input, budget) {
-            deprioritize = budget.deprioritizeIds;
+            budgets.push(budget);
             return [];
           },
         },
@@ -497,35 +516,18 @@ describe("learning worker", () => {
       stepIndex: 1,
     });
     expect(prompts[0]).toContain("do not change production gates");
+    expect(prompts[0]).toContain("not applied to gates");
     expect(prompts[0]).toContain("Propose removing `tdd`");
-    expect(deprioritize).toEqual(["tdd"]);
+    expect(budgets[0]).not.toHaveProperty("deprioritizeIds");
 
-    const root = await mkdtemp(join(tmpdir(), "optio-learn-"));
-    try {
-      await mkdir(join(root, ".cursor", "skills", "alpha"), { recursive: true });
-      await mkdir(join(root, ".cursor", "skills", "beta"), { recursive: true });
-      await mkdir(join(root, ".cursor", "agents"), { recursive: true });
-      const body = (name: string) =>
-        `---\nname: ${name}\ndescription: billing invoice payment reconciliation\n---\n${name}\n`;
-      await writeFile(join(root, ".cursor", "skills", "alpha", "SKILL.md"), body("alpha"));
-      await writeFile(join(root, ".cursor", "skills", "beta", "SKILL.md"), body("beta"));
-      const loader = createInstalledSkillLoader({ root });
-      const prompt = "billing invoice payment reconciliation";
-      const budget = { ...DEFAULT_SKILL_BUDGET, allowedIds: ["alpha", "beta"] };
-      const both = await loader.resolve(
-        { prompt },
-        {
-          ...budget,
-          deprioritizeIds: ["alpha", "beta"],
-        },
-      );
-      expect(both.map((skill) => skill.id)).toEqual(["alpha", "beta"]);
-      const preferred = await loader.resolve({ prompt }, { ...budget, deprioritizeIds: ["alpha"] });
-      expect(preferred.map((skill) => skill.id)).toEqual(["beta"]);
-      expect(budget.allowedIds).toEqual(["alpha", "beta"]);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+    const pass = await evaluateReviewGate({ tests_green: true, ci_status: "success" });
+    const retry = await evaluateReviewGate({
+      tests_green: false,
+      ci_status: "failure",
+      attempt: 1,
+    });
+    expect(pass).toMatchObject({ verdict: "pass", path: "ready", reason: "checks_passed" });
+    expect(retry).toMatchObject({ verdict: "retry", path: "rework", reason: "tests_failed" });
   });
 
   it("ships a learn-profile compose service that does not install lifecycle scripts", () => {

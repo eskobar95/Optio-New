@@ -6,7 +6,7 @@
 import { failureFingerprint, normalizeObservation } from "./observation.js";
 import { createDisabledMetaIssuePublisher, type MetaIssuePublisher } from "./publisher.js";
 import type { LearningOccurrence, LearningRecord, LearningStore } from "./store.js";
-import { renderMetaIssue } from "./template.js";
+import { budgetProposal, renderMetaIssue } from "./template.js";
 
 export interface LearningConfig {
   threshold: number;
@@ -64,8 +64,13 @@ export async function processLearningObservation(
   const sampleTaskIds = uniqueTaskIds(hits).slice(-8);
   const crossed = hits.length >= threshold || existing?.status === "proposed";
   let proposalBody = existing?.proposalBody ?? null;
+  let recommendation = existing?.recommendation ?? null;
   let metaIssueUrl = existing?.metaIssueUrl ?? null;
   const status = crossed ? "proposed" : "observed";
+
+  if (status === "proposed" && !recommendation) {
+    recommendation = budgetProposal(observation);
+  }
 
   if (status === "proposed" && !proposalBody) {
     proposalBody = renderMetaIssue({
@@ -115,6 +120,7 @@ export async function processLearningObservation(
     excerpt: observation.excerpt,
     sampleTaskIds,
     proposalBody,
+    recommendation: status === "proposed" ? recommendation : null,
     metaIssueUrl,
     updatedAt: now.toISOString(),
   };
