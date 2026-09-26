@@ -1,0 +1,14 @@
+{
+  "skills": [
+    {
+      "id": "skills/tdd",
+      "cursor_native_id": "tdd",
+      "cursor_native_path": ".cursor/skills/tdd"
+    },
+    {
+      "id": "skills/code-review",
+      "cursor_native_id": "code-review",
+      "cursor_native_path": ".cursor/skills/code-review"
+    }
+  ]
+}
