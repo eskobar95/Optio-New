@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 12:19 UTC
+Last refreshed: 2026-09-26 12:33 UTC
 
 ## Bootstrap progress
 
@@ -19,7 +19,7 @@ Last refreshed: 2026-09-26 12:19 UTC
 
 [![CI](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml/badge.svg)](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml)
 
-Latest conclusion: **success**
+Latest conclusion: **cancelled**
 
 Actions: https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml
 
@@ -50,7 +50,7 @@ Host health after [#76](https://github.com/eskobar95/Optio-New/pull/76): Compose
 
 ## Open issues
 
-Open: 14.
+Open: 11.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
@@ -60,14 +60,11 @@ Tracker: https://github.com/eskobar95/Optio-New/issues
 - #92 Session artifact trail for plans, reviews, and PR links (P1, backlog, enhancement, orchestration)
 - #91 Crash recovery and resume mid-pipeline (P1, backlog, enhancement, infra, orchestration)
 - #90 Permission tiers for agent shell, git, and host actions (P1, backlog, enhancement, orchestration, security)
-- #89 Eval and regression suite for the harness itself (P1, backlog, enhancement, orchestration)
 - #88 Secrets redaction in logs, traces, and agent dumps (P1, backlog, enhancement, security)
 - #87 Cost and token budget caps per task (P1, backlog, enhancement, orchestration)
 - #86 Human-in-the-loop approval stage for plan and merge (P1, backlog, enhancement, orchestration)
-- #85 ACI-style feedback into the Cursor implement loop (P1, backlog, enhancement, orchestration)
-- #84 Per-task worktree or container isolation for concurrent agents (P1, backlog, enhancement, infra, orchestration)
 - #82 Observability: per-stage timing, tokens, and agent action inspection (P1, backlog, enhancement, orchestration)
-- #81 Review-gate: tests, lint, and security/diff review before PR merge (P1, backlog, enhancement, orchestration, security)
+- #81 Review-gate: tests, lint, and security/diff review before PR merge (P1, enhancement, orchestration, security)
 
 ## Refresh
 
