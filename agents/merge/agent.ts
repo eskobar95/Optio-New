@@ -23,7 +23,7 @@ export const mergeAgent = definePhaseAgent({
   },
   specialistsAllowed: [],
   gates: {
-    entry: ["ci_green", "merge_policy_allow"],
+    entry: ["ci_green", "merge_policy_allow", "pr_safety"],
     exit: ["merged_into_development"],
     onSuccess: "delete_worktree",
   },

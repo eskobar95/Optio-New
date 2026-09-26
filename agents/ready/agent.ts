@@ -23,7 +23,7 @@ export const readyAgent = definePhaseAgent({
   },
   specialistsAllowed: [],
   gates: {
-    entry: ["review_pass"],
+    entry: ["review_pass", "pr_safety"],
     exit: ["pr_open", "ci_pending_or_green"],
     onFail: "escalate_bot",
   },

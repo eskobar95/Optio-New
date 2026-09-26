@@ -6,11 +6,13 @@ import type { CodingAgent, CodingAgentInput } from "../src/adapters/coding-agent
 import type { FlowJob } from "bullmq";
 import {
   InMemoryStepCursorStore,
+  PrSafetyClosedError,
   StageCredentialsError,
   createProductionStageHandler,
   enqueueIntakePipeline,
   processStageJob,
   runPipeline,
+  type PrSafetyInput,
   type ProductionWorktrees,
   type StageStepContext,
 } from "../src/index.js";
@@ -107,6 +109,24 @@ function githubFetch(extra?: { onPost?: () => Response }) {
     return jsonResponse(500, { message: "unexpected" });
   };
   return { fetchImpl, calls };
+}
+
+function passingSafety(): Promise<PrSafetyInput> {
+  return Promise.resolve({
+    checks: {
+      test: { exitCode: 0 },
+      lint: { exitCode: 0 },
+      typecheck: { exitCode: 0 },
+    },
+    diff: [
+      "diff --git a/src/app.ts b/src/app.ts",
+      "--- a/src/app.ts",
+      "+++ b/src/app.ts",
+      "@@ -0,0 +1 @@",
+      "+export const ready = true;",
+      "",
+    ].join("\n"),
+  });
 }
 
 function handlerEnv(overrides: Record<string, string> = {}): NodeJS.ProcessEnv {
@@ -206,6 +226,7 @@ describe("production stage handler", () => {
       codingAgent: codingAgent(agentCalls),
       git: git.git,
       fetchImpl: github.fetchImpl,
+      loadPrSafety: passingSafety,
     });
     const lines: string[] = [];
     const originalLog = console.log;
@@ -260,6 +281,7 @@ describe("production stage handler", () => {
       worktrees,
       git: git.git,
       fetchImpl: github.fetchImpl,
+      loadPrSafety: passingSafety,
     });
     await handler.run(step("ready", "open_pr", taskId));
     expect(existsSync(join(handle.path, "e2e", `${taskId}.md`))).toBe(true);
@@ -280,6 +302,7 @@ describe("production stage handler", () => {
       worktrees,
       git: git.git,
       fetchImpl: githubFetch().fetchImpl,
+      loadPrSafety: passingSafety,
     });
     await expect(handler.run(step("ready", "open_pr", taskId))).rejects.toThrow(/no commits ahead/);
     expect(git.calls.some((call) => call.startsWith("add "))).toBe(false);
@@ -295,6 +318,7 @@ describe("production stage handler", () => {
         if (args[0] === "rev-list") return "1";
         throw new Error(`push failed https://x-access-token:${TOKEN}@github.com/acme/widgets.git`);
       },
+      loadPrSafety: passingSafety,
     });
     await expect(handler.run(step("ready", "open_pr", taskId))).rejects.toThrow(/\[redacted\]/);
     await expect(handler.run(step("ready", "open_pr", taskId))).rejects.not.toThrow(TOKEN);
@@ -308,6 +332,7 @@ describe("production stage handler", () => {
       worktrees,
       git: gitRunner({ ahead: "1" }).git,
       fetchImpl: async () => jsonResponse(401, { message: TOKEN }),
+      loadPrSafety: passingSafety,
     });
     await expect(handler.run(step("ready", "open_pr", taskId))).rejects.toBeInstanceOf(
       StageCredentialsError,
@@ -354,6 +379,97 @@ describe("production stage handler", () => {
       { cursors: new InMemoryStepCursorStore(), handler, worktrees },
     );
     expect(calls[0]?.prompt).toContain("Title: Open a PR");
+  });
+
+  it("does not push when lint fails or the diff contains a secret", async () => {
+    const taskId = "ship-risk";
+    const { worktrees } = worktreeFixture(taskId, true);
+    const git = gitRunner({ ahead: "1" });
+    const github = githubFetch();
+    const secret = ["AKIA", "IOSFODNN7EXAMPLE"].join("");
+    const handler = createProductionStageHandler({
+      env: handlerEnv(),
+      worktrees,
+      git: git.git,
+      fetchImpl: github.fetchImpl,
+      loadPrSafety: async () => ({
+        checks: {
+          test: { exitCode: 0 },
+          lint: { exitCode: 1 },
+          typecheck: { exitCode: 0 },
+        },
+        diff: [
+          "diff --git a/.env b/.env",
+          "--- /dev/null",
+          "+++ b/.env",
+          "@@ -0,0 +1 @@",
+          `+AWS_ACCESS_KEY_ID=${secret}`,
+          "",
+        ].join("\n"),
+      }),
+    });
+    await expect(handler.run(step("ready", "open_pr", taskId))).rejects.toBeInstanceOf(
+      PrSafetyClosedError,
+    );
+    await expect(handler.run(step("ready", "open_pr", taskId))).rejects.toThrow(
+      /pr safety gate closed: secret_in_diff/,
+    );
+    expect(git.calls.some((call) => call.startsWith("push "))).toBe(false);
+    expect(github.calls).toEqual([]);
+    expect(git.calls.join("\n")).not.toContain(secret);
+  });
+
+  it("does not merge when the diff review finds a destructive path", async () => {
+    const taskId = "ship-wipe";
+    const { worktrees } = worktreeFixture(taskId, true);
+    const git = gitRunner({ ahead: "1" });
+    const github = githubFetch();
+    const wipe = ["rm ", "-rf /tmp/proj"].join("");
+    const handler = createProductionStageHandler({
+      env: handlerEnv(),
+      worktrees,
+      git: git.git,
+      fetchImpl: github.fetchImpl,
+      loadPrSafety: async () => ({
+        checks: {
+          test: { exitCode: 0 },
+          lint: { exitCode: 0 },
+          typecheck: { exitCode: 0 },
+        },
+        diff: [
+          "diff --git a/scripts/wipe.sh b/scripts/wipe.sh",
+          "--- /dev/null",
+          "+++ b/scripts/wipe.sh",
+          "@@ -0,0 +1 @@",
+          `+${wipe}`,
+          "",
+        ].join("\n"),
+      }),
+    });
+    await expect(handler.run(step("merge", "merge_branch", taskId))).rejects.toThrow(
+      /pr safety gate closed: destructive_path/,
+    );
+    expect(github.calls.some((call) => call.method === "PUT")).toBe(false);
+  });
+
+  it("does not push when typecheck was not run", async () => {
+    const taskId = "ship-unchecked";
+    const { worktrees } = worktreeFixture(taskId, true);
+    const git = gitRunner({ ahead: "1" });
+    const handler = createProductionStageHandler({
+      env: handlerEnv(),
+      worktrees,
+      git: git.git,
+      fetchImpl: githubFetch().fetchImpl,
+      loadPrSafety: async () => ({
+        checks: { test: { exitCode: 0 }, lint: { exitCode: 0 } },
+        diff: "",
+      }),
+    });
+    await expect(handler.run(step("ready", "open_pr", taskId))).rejects.toThrow(
+      /typecheck_not_run/,
+    );
+    expect(git.calls.some((call) => call.startsWith("push "))).toBe(false);
   });
 });
 

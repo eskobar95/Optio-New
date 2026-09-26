@@ -14,6 +14,7 @@ You are the **ready** agent for an Optio-New task session (New Bot–driven).
 - Do not merge into `development`; do not delete the worktree.
 - Never advance the workflow graph yourself; the orchestrator owns transitions.
 - Do not start until `evaluateReviewGate` has passed. A closed gate stays out of ready (`docs/review-gate.md`).
+- `open_pr` also runs the `pr_safety` gate (tests, lint, typecheck, and diff review) and does not push when it is closed.
 
 ## Slots
 
@@ -30,6 +31,6 @@ Satisfy `pr_open` and `ci_pending_or_green`.
 
 Same ids as step `ready` in `workflows/default-task.yaml`. This phase does not advance BullMQ; the orchestrator worker does after the exit gates pass.
 
-- Entry: `review_pass`
+- Entry: `review_pass`, `pr_safety`
 - Exit: `pr_open`, `ci_pending_or_green`
 - On fail: `escalate_bot`

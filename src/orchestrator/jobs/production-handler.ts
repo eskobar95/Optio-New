@@ -23,6 +23,12 @@ import {
 } from "../github/pull-request.js";
 import { worktreeKey, type WorktreeHandle, type WorktreeLifecycle } from "../worktrees/manager.js";
 import {
+  PrSafetyClosedError,
+  collectPrSafetyInput,
+  evaluatePrSafetyGate,
+  type PrSafetyInput,
+} from "./pr-safety-gate.js";
+import {
   createAgentStageHandler,
   type StageStepContext,
   type StageStepHandler,
@@ -59,6 +65,11 @@ export interface ProductionStageOptions {
    * returns `budget_exhausted` / `token_budget` and fails the step.
    */
   maxTokens?: number;
+  /**
+   * Evidence for the safety gate. The default runs tests, lint, typecheck,
+   * and reads the worktree diff. A closed gate throws before push or merge.
+   */
+  loadPrSafety?: (cwd: string) => Promise<PrSafetyInput | null | undefined>;
 }
 
 const E2E_TASK = /^e2e-[A-Za-z0-9._-]+$/;
@@ -78,6 +89,8 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
   const model = options.modelAdapter ?? createEnvModelAdapter(env);
   const plannerLoop = createAgentStageHandler(model);
   const baseBranch = env.OPTIO_NEW_BASE_BRANCH?.trim() || "development";
+  const loadPrSafety =
+    options.loadPrSafety ?? ((cwd: string) => collectPrSafetyInput(cwd, { base: baseBranch }));
 
   return {
     async run(ctx) {
@@ -188,8 +201,8 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
   }
 
   async function openPullRequest(ctx: StageStepContext): Promise<void> {
-    const github = requireGithub();
     const handle = await requireWorktree(ctx);
+    const github = requireGithub();
     const token = github.token;
     const ahead = await commitCount(handle.path, token);
     if (ahead === 0) {
@@ -198,6 +211,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       }
       await writeE2eMarker(handle, ctx.taskId, token);
     }
+    await assertPrSafety(handle.path);
     const remote = `https://x-access-token:${encodeURIComponent(token)}@github.com/${github.owner}/${github.repo}.git`;
     await git(handle.path, ["push", remote, `${handle.branch}:${handle.branch}`], [token]);
     const title = E2E_TASK.test(ctx.taskId)
@@ -243,12 +257,13 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
   }
 
   async function mergePullRequest(ctx: StageStepContext): Promise<void> {
+    const handle = await requireWorktree(ctx);
+    await assertPrSafety(handle.path);
     if (E2E_TASK.test(ctx.taskId)) {
       logStageEvent({ msg: "e2e pull request left unmerged", taskId: ctx.taskId });
       return;
     }
     const github = requireGithub();
-    const handle = await requireWorktree(ctx);
     const stored = await readPullRecord(handle);
     await mapGithub(() =>
       mergeGithubPullRequest({
@@ -315,6 +330,11 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     }
     const parsed = parseGithubRepo(repoSpec);
     return { token, owner: parsed.owner, repo: parsed.repo };
+  }
+
+  async function assertPrSafety(cwd: string): Promise<void> {
+    const decision = evaluatePrSafetyGate(await loadPrSafety(cwd));
+    if (decision.verdict !== "pass") throw new PrSafetyClosedError(decision);
   }
 
   async function requireWorktree(ctx: StageStepContext): Promise<WorktreeHandle> {

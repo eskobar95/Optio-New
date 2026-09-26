@@ -13,6 +13,10 @@
 # The Cursor CLI (agent, or CURSOR_AGENT_BIN) must be on PATH inside the
 # orchestrator container. A missing binary fails the coding step (cli_not_found).
 # createEnvModelAdapter performs no HTTP. Planner steps use CURSOR_API_KEY.
+# open_pr runs the PR safety gate before push. Tests, lint, and typecheck must
+# exit 0 in the worktree, and the diff review must not find secrets or
+# destructive changes. A closed gate does not open the pull request.
+# See docs/review-gate.md. Host proof without GitHub: bash scripts/pr-safety-gate-proof.sh
 #
 # Close the pull request and delete the remote branch when you are done:
 #   gh pr close <url> --delete-branch

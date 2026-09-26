@@ -36,6 +36,21 @@ export {
   type ReviewGateVerdict,
 } from "./review-gate.js";
 export {
+  PR_SAFETY_CHECKS,
+  PrSafetyClosedError,
+  collectPrSafetyInput,
+  createExecFileShell,
+  evaluatePrSafetyGate,
+  type CollectPrSafetyOptions,
+  type PrSafetyCheck,
+  type PrSafetyCheckName,
+  type PrSafetyDecision,
+  type PrSafetyFinding,
+  type PrSafetyInput,
+  type ShellResult,
+  type ShellRunner,
+} from "./pr-safety-gate.js";
+export {
   StageNotReadyError,
   createAgentStageHandler,
   processStageJob,
