@@ -57,7 +57,7 @@ curl -s http://127.0.0.1:3200/health
 
 Decision sidecar: **[docs/kit-harness.md](docs/kit-harness.md)**. A default `docker compose up` does not start `kit-harness`. Bound to `127.0.0.1:3200`.
 
-Docker Desktop on a Mac (config check, then isolated up/down of redis, postgres, and litellm):
+Docker Desktop or Linux Docker (config check, then isolated up/down of redis, postgres, and litellm):
 
 ```bash
 bash scripts/smoke-compose-mac.sh

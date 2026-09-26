@@ -32,16 +32,16 @@ bash scripts/secrets.sh audit
 
 ## Scripts
 
-| Script                            | Purpose                                                |
-| --------------------------------- | ------------------------------------------------------ |
-| `npm run lint` / `lint:fix`       | ESLint                                                 |
-| `npm run format` / `format:check` | Prettier                                               |
-| `npm run typecheck`               | `tsc --noEmit`                                         |
-| `npm test` / `test:watch`         | Vitest                                                 |
-| `npm run smoke`                   | Local/CI smoke (Docker optional; compose up stays off) |
-| `npm run smoke:compose`           | Mac Docker Desktop up/down of redis, postgres, litellm |
-| `npm run ci`                      | Full local gate                                        |
-| `npm run status`                  | Refresh `docs/status.md`                               |
+| Script                            | Purpose                                                    |
+| --------------------------------- | ---------------------------------------------------------- |
+| `npm run lint` / `lint:fix`       | ESLint                                                     |
+| `npm run format` / `format:check` | Prettier                                                   |
+| `npm run typecheck`               | `tsc --noEmit`                                             |
+| `npm test` / `test:watch`         | Vitest                                                     |
+| `npm run smoke`                   | Local/CI smoke (Docker optional; compose up stays off)     |
+| `npm run smoke:compose`           | Compose up/down of redis, postgres, litellm (Mac or Linux) |
+| `npm run ci`                      | Full local gate                                            |
+| `npm run status`                  | Refresh `docs/status.md`                                   |
 
 ## Good first issue
 

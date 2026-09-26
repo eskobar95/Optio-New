@@ -96,6 +96,7 @@ describe("smoke-compose-mac", () => {
     expect(result.stdout).toContain("PASS: postgres pg_isready");
     expect(result.stdout).toContain("PASS: litellm /health/liveliness");
     expect(result.stdout).toContain("PASS: compose down");
+    expect(result.stdout).toContain("PASS: compose smoke finished");
     const lines = readFileSync(result.logFile, "utf8").split("\n");
     const up = lines.find((line) => line.includes(" up "));
     expect(up).toContain("-p optio-new-mac-smoke");

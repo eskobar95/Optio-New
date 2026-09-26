@@ -42,7 +42,7 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `secrets/`                                            | §12.5, §14.5      | sops+age examples; runbook is `docs/secrets.md`                           |
 | `scripts/secrets.sh`                                  | §12.5             | init, encrypt, check, compose, audit                                      |
 | `scripts/smoke-local.sh`                              | —                 | Local/CI smoke (compose up stays off)                                     |
-| `scripts/smoke-compose-mac.sh`                        | §12.6             | Docker Desktop up/down of redis, postgres, litellm                        |
+| `scripts/smoke-compose-mac.sh`                        | §12.6             | Compose up/down of redis, postgres, litellm (Mac or Linux)                |
 | `docs/mac-compose-smoke.md`                           | §12.6             | Mac runbook for issue #23                                                 |
 | `.github/workflows/ci.yml`                            | —                 | Push + PR CI                                                              |
 | `README.md`                                           | —                 | Points at `docs/SPEC.md`                                                  |

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Mac Docker Desktop smoke for the default Compose data plane (issue #23).
+# Compose smoke for the default data plane (issue #23).
+# Host-agnostic: Mac Docker Desktop or Linux Docker (Compose v2).
 #
 # Checks `docker compose config`, then up/down of redis, postgres, and litellm.
 # orchestrator and eve-runner stay on profile "full" and are not started.
@@ -12,7 +13,7 @@
 # The script does not write `.env` and does not print rendered config (secrets).
 #
 # Requires the Docker Compose v2 CLI (`docker compose`). Up/down also needs
-# Docker Desktop running and `curl`. `--config-only` does not start the daemon.
+# a running Docker daemon and `curl`. `--config-only` does not start the daemon.
 # CI syntax-checks this file and runs `--config-only` when the CLI is present.
 set -euo pipefail
 
@@ -125,8 +126,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-command -v docker >/dev/null 2>&1 || fail "docker not found. Install Docker Desktop for Mac and start it."
-docker compose version >/dev/null 2>&1 || fail "docker compose plugin not available. Docker Desktop includes Compose v2."
+command -v docker >/dev/null 2>&1 || fail "docker not found. Install Docker Engine or Docker Desktop and start the daemon."
+docker compose version >/dev/null 2>&1 || fail "docker compose plugin not available. Install Compose v2 (the docker compose command)."
 
 CONFIG_OUT="$(mktemp "${TMPDIR:-/tmp}/optio-new-compose-smoke.XXXXXX")"
 chmod 600 "$CONFIG_OUT"
@@ -177,7 +178,7 @@ if [[ "$CONFIG_ONLY" == "1" ]]; then
   exit 0
 fi
 
-docker info >/dev/null 2>&1 || fail "Docker daemon is not reachable. Start Docker Desktop and wait until it is running."
+docker info >/dev/null 2>&1 || fail "Docker daemon is not reachable. Start Docker Engine or Docker Desktop and wait until the daemon is running."
 command -v curl >/dev/null 2>&1 || fail "curl not found (needed for the LiteLLM liveliness check)"
 
 info "compose up redis postgres litellm (project ${PROJECT})"
@@ -233,4 +234,4 @@ else
   pass "compose down"
 fi
 
-pass "mac compose smoke finished"
+pass "compose smoke finished"

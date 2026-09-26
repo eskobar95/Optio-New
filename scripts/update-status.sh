@@ -132,15 +132,17 @@ trap cleanup EXIT
   echo
   echo "Actions: ${CI_URL}"
   echo
-  echo "## Mac local verify (Docker Desktop)"
+  echo "## Compose smoke (Docker Desktop or Linux)"
   echo
-  echo "Issue [#23](https://github.com/${REPO}/issues/23). Runbook: [mac-compose-smoke.md](mac-compose-smoke.md). Command: \`bash scripts/smoke-compose-mac.sh\` (repo-root \`.env\`, or \`.env.example\` when \`.env\` is absent)."
+  echo "Issue [#23](https://github.com/${REPO}/issues/23). Runbook: [mac-compose-smoke.md](mac-compose-smoke.md). Command: \`bash scripts/smoke-compose-mac.sh\` (repo-root \`.env\`, or \`.env.example\` when \`.env\` is absent). Same path on Mac Docker Desktop and on Linux Docker, including kit-harness."
   echo
   echo "| Check | State |"
   echo "| --- | --- |"
   echo "| Compose config for redis, postgres, litellm | Scripted. CI runs \`--config-only\` when the Docker CLI is present, and always syntax-checks the script |"
-  echo "| Isolated up/down (\`optio-new-mac-smoke\`, ports 16379/15432/14000) | Local Docker Desktop. Linux CI has no macOS runner and does not start the stack |"
-  echo "| Failure issues | None filed. No up/down run has failed in this change |"
+  echo "| Isolated up/down (\`optio-new-mac-smoke\`, ports 16379/15432/14000) | Host-agnostic. kit-harness (Linux) full up/down PASSED 2026-09-26. GitHub Actions does not start the stack |"
+  echo "| Failure issues | None filed. Mac Docker Desktop remains optional |"
+  echo
+  echo "Verified: kit-harness (Linux, Docker Compose) full \`bash scripts/smoke-compose-mac.sh\` PASSED on 2026-09-26 against \`7aa4b2e\` (redis PING, postgres pg_isready, litellm \`/health/liveliness\`, \`down -v\`). Project \`optio-new\` on 6379/5432/4000 stayed up. Config-only PASSED."
   echo
   echo "Gaps: LiteLLM tag \`ghcr.io/berriai/litellm:main-latest\` floats; profile \`full\` (orchestrator, eve-runner) stays out of this smoke; provider keys stay empty; the check is \`/health/liveliness\`, which does not call a model."
   echo

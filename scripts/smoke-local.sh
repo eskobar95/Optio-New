@@ -179,7 +179,7 @@ if command -v docker >/dev/null 2>&1; then
     fi
     rm -f "$empty_env" "$config_log"
     pass "docker compose config"
-    bash "$ROOT/scripts/smoke-compose-mac.sh" --config-only || fail "mac compose config"
+    bash "$ROOT/scripts/smoke-compose-mac.sh" --config-only || fail "compose smoke config"
     if [[ "${SMOKE_COMPOSE_UP:-0}" == "1" ]]; then
       docker compose up -d redis postgres
       pass "compose up redis postgres"
