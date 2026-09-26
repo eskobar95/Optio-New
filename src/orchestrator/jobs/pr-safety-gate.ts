@@ -4,10 +4,14 @@
  * Tests, lint, and typecheck fail closed: a missing exit code is not a pass.
  * The diff review blocks secrets and destructive changes. Findings name the
  * path and the rule. They do not include secret bytes or command output.
- * Before npm checks, sparse-excluded `.cursor/{skills,agents,commands,rules}`
- * are symlinked from OPTIO_NEW_REPO_PATH, missing worktree deps are installed
- * (`npm ci --include=dev`), and live Redis/Postgres URLs are stripped so optional
- * integration tests stay skipped.
+ * Before package-manager checks, sparse-excluded `.cursor/{skills,agents,commands,rules}`
+ * are symlinked from OPTIO_NEW_REPO_PATH. The lockfile selects the installer:
+ * `pnpm-lock.yaml` uses `pnpm install --frozen-lockfile --ignore-scripts`;
+ * `package-lock.json` or `npm-shrinkwrap.json` keeps `npm ci --ignore-scripts
+ * --include=dev`. No recognized lockfile fails as `lockfile_missing`. A failed
+ * install fails as `deps_install_failed` and does not run test, lint, or
+ * typecheck. Live Redis/Postgres URLs are stripped so optional integration
+ * tests stay skipped.
  */
 import { execFile } from "node:child_process";
 import { access, mkdir, symlink } from "node:fs/promises";
@@ -33,6 +37,12 @@ export interface PrSafetyInput {
    * worktree had no changes. Omitted means the diff was not reviewed.
    */
   diff?: string;
+  /**
+   * Set when dependency install did not succeed. Quality checks are skipped.
+   * `lockfile_missing` means no pnpm, npm, or npm-shrinkwrap lockfile.
+   * `deps_install_failed` means the install command failed or did not run.
+   */
+  installFailure?: "deps_install_failed" | "lockfile_missing";
 }
 
 export interface PrSafetyFinding {
@@ -63,11 +73,12 @@ export interface CollectPrSafetyOptions {
   shell?: ShellRunner;
 }
 
-const CHECK_COMMANDS: ReadonlyArray<{ name: PrSafetyCheckName; args: readonly string[] }> = [
-  { name: "test", args: ["test"] },
-  { name: "lint", args: ["run", "lint"] },
-  { name: "typecheck", args: ["run", "typecheck"] },
-];
+type WorktreePackageManager = "npm" | "pnpm";
+
+const INSTALL_ARGS: Record<WorktreePackageManager, readonly string[]> = {
+  npm: ["ci", "--ignore-scripts", "--include=dev"],
+  pnpm: ["install", "--frozen-lockfile", "--ignore-scripts"],
+};
 
 const NOT_RUN: Record<PrSafetyCheckName, string> = {
   test: "tests_not_run",
@@ -266,7 +277,8 @@ function reviewDiff(diff: string): PrSafetyFinding[] {
 
 /**
  * Secrets and destructive paths outrank a red check so the fail reason names
- * the leak. A missing check still fails when the diff is clean.
+ * the leak. An install failure outranks a missing or failed quality check.
+ * A missing check still fails when the diff is clean.
  */
 export function evaluatePrSafetyGate(input: PrSafetyInput | null | undefined): PrSafetyDecision {
   const source = input ?? {};
@@ -275,6 +287,12 @@ export function evaluatePrSafetyGate(input: PrSafetyInput | null | undefined): P
   if (secret) return decision("fail", "secret_in_diff", findings);
   const destructive = findings.find((item) => item.kind === "destructive");
   if (destructive) return decision("fail", "destructive_path", findings);
+  if (
+    source.installFailure === "deps_install_failed" ||
+    source.installFailure === "lockfile_missing"
+  ) {
+    return decision("fail", source.installFailure, findings);
+  }
   const blocked = checkReason(source.checks);
   if (blocked) return decision("fail", blocked, findings);
   if (typeof source.diff !== "string") return decision("fail", "diff_not_reviewed", []);
@@ -316,7 +334,7 @@ function shellEnv(command: string): NodeJS.ProcessEnv {
     HUSKY: "0",
     GIT_TERMINAL_PROMPT: "0",
   };
-  if (command !== "npm") return env;
+  if (command !== "npm" && command !== "pnpm") return env;
   env.NODE_ENV = "test";
   for (const key of STRIP_FROM_NPM_CHECKS) {
     delete env[key];
@@ -418,21 +436,54 @@ async function ensureCursorSoTLinks(cwd: string): Promise<void> {
   }
 }
 
+async function fileExists(cwd: string, shell: ShellRunner, relPath: string): Promise<boolean> {
+  const probe = await shell.run(cwd, "node", [
+    "--eval",
+    `require("fs").accessSync(${JSON.stringify(relPath)})`,
+  ]);
+  return probe.exitCode === 0;
+}
+
+/**
+ * `pnpm-lock.yaml` wins when an npm lockfile is also present. Anything else
+ * is unrecognized so the gate does not fall through to `npm ci`.
+ */
+async function detectPackageManager(
+  cwd: string,
+  shell: ShellRunner,
+): Promise<WorktreePackageManager | undefined> {
+  if (await fileExists(cwd, shell, "pnpm-lock.yaml")) return "pnpm";
+  if (await fileExists(cwd, shell, "package-lock.json")) return "npm";
+  if (await fileExists(cwd, shell, "npm-shrinkwrap.json")) return "npm";
+  return undefined;
+}
+
+/** npm keeps `npm test`. pnpm runs `pnpm run <script>` so its bins resolve. */
+function qualityCheckArgs(
+  manager: WorktreePackageManager,
+  name: PrSafetyCheckName,
+): readonly string[] {
+  if (manager === "npm" && name === "test") return ["test"];
+  return ["run", name];
+}
+
 /**
  * Worktrees from a bind-mounted host checkout have no node_modules. The
  * orchestrator image keeps prod deps under /app, so the gate installs into the
- * worktree when vitest is missing. Failures still surface as tests_failed.
+ * worktree when vitest is missing. Returns false when the install command
+ * fails or does not run. The caller maps that to `deps_install_failed`.
  */
-async function ensureDevDependencies(cwd: string, shell: ShellRunner): Promise<void> {
-  const probe = await shell.run(cwd, "node", [
-    "--eval",
-    'require("fs").accessSync("node_modules/vitest/package.json")',
-  ]);
-  if (probe.exitCode === 0) return;
-  await shell.run(cwd, "npm", ["ci", "--ignore-scripts", "--include=dev"]);
+async function ensureDevDependencies(
+  cwd: string,
+  shell: ShellRunner,
+  manager: WorktreePackageManager,
+): Promise<boolean> {
+  if (await fileExists(cwd, shell, "node_modules/vitest/package.json")) return true;
+  const installed = await shell.run(cwd, manager, INSTALL_ARGS[manager]);
+  return installed.exitCode === 0;
 }
 
-/** Read the diff before npm so a secret or destructive change is not executed. */
+/** Read the diff before install so a secret or destructive change is not executed. */
 export async function collectPrSafetyInput(
   cwd: string,
   options: CollectPrSafetyOptions = {},
@@ -443,11 +494,14 @@ export async function collectPrSafetyInput(
   if (diff === undefined) return {};
   if (reviewDiff(diff).length > 0) return { diff };
   await ensureCursorSoTLinks(cwd);
-  await ensureDevDependencies(cwd, shell);
+  const manager = await detectPackageManager(cwd, shell);
+  if (!manager) return { diff, installFailure: "lockfile_missing" };
+  const installed = await ensureDevDependencies(cwd, shell, manager);
+  if (!installed) return { diff, installFailure: "deps_install_failed" };
   const checks: NonNullable<PrSafetyInput["checks"]> = {};
-  for (const check of CHECK_COMMANDS) {
-    const result = await shell.run(cwd, "npm", check.args);
-    checks[check.name] = { exitCode: result.exitCode };
+  for (const name of PR_SAFETY_CHECKS) {
+    const result = await shell.run(cwd, manager, qualityCheckArgs(manager, name));
+    checks[name] = { exitCode: result.exitCode };
   }
   return { checks, diff };
 }

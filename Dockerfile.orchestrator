@@ -24,6 +24,9 @@ ENV ORCHESTRATOR_PORT=3100
 # Docker AppArmor blocks Cursor's user-namespace sandbox. Host/dev runs leave this
 # unset and keep --sandbox enabled on read-only steps.
 ENV OPTIO_CURSOR_SANDBOX=disabled
+# Worktree PR safety installs with npm or pnpm. Corepack's pnpm shim honors
+# packageManager when the target repo sets it. Prompt stays off for non-TTY runs.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl bash git python3 \
   && rm -rf /var/lib/apt/lists/* \
@@ -36,7 +39,10 @@ RUN apt-get update \
   && ln -sfn /opt/cursor-cli/.local/bin/agent /usr/local/bin/agent \
   && ln -sfn /opt/cursor-cli/.local/bin/cursor-agent /usr/local/bin/cursor-agent \
   && chmod -R a+rX /opt/cursor-cli \
-  && agent --version
+  && agent --version \
+  && corepack enable \
+  && corepack prepare pnpm@12.6.0 --activate \
+  && pnpm --version
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=build /app/dist ./dist
