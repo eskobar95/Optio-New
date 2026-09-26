@@ -157,12 +157,12 @@ The live edge is `https://optio.eskobar.dev`. Linear calls `POST /webhooks/linea
 
 Phase 1 (`src/orchestrator/intake/adapters/linear.ts`, [ops/intake-adapters.md](ops/intake-adapters.md), SPEC §8):
 
-- The handler accepts `type: Issue`, `action: update`, when `updatedFrom` contains `stateId`, and the team key is `FIN` (`data.team.key`, or an identifier prefix `FIN-` when the team object is absent). Other events return `200` with `{ "accepted": false, "reason": "ignored" }` and do not enqueue.
-- On accept it enqueues `bot.intake.created`. `repoId` is `OPTIO_NEW_LINEAR_DEFAULT_REPO_ID`. On kit-harness that value is `findjobabroad`. A blank value is `503` `linear_repo_unconfigured`. An id missing from the catalog is `400` `unknown_repo`. The workflow `repo_id` is not used for this route.
-- Task id is `lin-<identifier>` (for example `lin-FIN-12`). One task id is one pipeline while that BullMQ job id remains. A retry whose job id already exists still comments and returns `200`. It does not start a second pipeline.
+- The handler accepts `type: Issue`, `action: update`, when `updatedFrom` contains `stateId`, and the team key is enabled in `config/linear-projects.yaml` (`data.team.key`, or an identifier prefix such as `ENG-` when the team object is absent). Disabled and unknown teams return `200` with `{ "accepted": false, "reason": "ignored" }` and do not enqueue. A missing or invalid file returns `503` `linear_projects_unconfigured`.
+- On accept it enqueues `bot.intake.created`. `repoId` is `OPTIO_NEW_LINEAR_DEFAULT_REPO_ID` when that env is set; otherwise the team's `defaultRepoId`. ENG defaults to `findjobabroad`. Both blank is `503` `linear_repo_unconfigured`. An id missing from the catalog is `400` `unknown_repo`. The workflow `repo_id` is not used for this route.
+- Task id is `lin-<identifier>` (for example `lin-ENG-12`). One task id is one pipeline while that BullMQ job id remains. A retry whose job id already exists still comments and returns `200`. It does not start a second pipeline.
 - After enqueue, the orchestrator calls Linear GraphQL `commentCreate` with body exactly `queued`.
 
-Team **FIN** (“Find Job Abroad”) and team **Engineering** (**ENG**) may both exist. Phase 1 ignores any team other than `FIN`. **Engineering** is the intended Kanban for the statuses in this document once those columns exist on that board. Until the webhook accepts `ENG`, an Engineering status change does not enqueue.
+The seeded allowlist enables **ENG** (Engineering). **FIN** stays in the file with `enabled: false`. Add another team by copying an entry. `webhookPath` does not change the mount, which stays `POST /webhooks/linear`. **Engineering** is the Kanban for the statuses in this document.
 
 ### Write policy
 

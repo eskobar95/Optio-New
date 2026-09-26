@@ -1,0 +1,30 @@
+# Linear teams that POST /webhooks/linear may enqueue.
+# Add a team by copying an entry under `teams`. Set `enabled: true` and a catalog
+# `defaultRepoId`. No code change is required. Unknown keys and `enabled: false`
+# are ignored. A missing or invalid file fails closed and accepts no team.
+#
+# OPTIO_NEW_LINEAR_DEFAULT_REPO_ID overrides `defaultRepoId` when it is set.
+# OPTIO_NEW_LINEAR_PROJECTS_CONFIG overrides this file's path.
+#
+# `webhookPath` is recorded for a later per-team route. The process still mounts
+# only POST /webhooks/linear. Do not put secrets in this file.
+# Extra keys on a team, and the `settings` object, are kept for future use.
+
+teams:
+  - key: ENG
+    name: Engineering
+    enabled: true
+    defaultRepoId: findjobabroad
+    webhookPath: /webhooks/linear
+    notes: Engineering issues enqueue intake against the Find Job Abroad catalog repo.
+    settings: {}
+
+  # Find Job Abroad was removed from the Linear workspace. Kept so the old key
+  # stays explicit and is not accepted.
+  - key: FIN
+    name: Find Job Abroad
+    enabled: false
+    defaultRepoId: findjobabroad
+    webhookPath: /webhooks/linear
+    notes: Disabled. The FIN team no longer exists in Linear.
+    settings: {}

@@ -12,7 +12,7 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `docs/eve-patterns.md`                                | §2, §4, §14.0     | Eve-compatible filesystem vs Optio-owned BullMQ graph and worktrees       |
 | `skills/index.json`                                   | §2, §6, §6.5      | Index → `.cursor/skills`                                                  |
 | `workflows/default-task.yaml`                         | §3.1, §3.2        | Default New Bot–driven task step graph                                    |
-| `orchestrator/intake/`                                | §8, §11           | New Bot chat/API intake, plus FIN Linear status-change intake             |
+| `orchestrator/intake/`                                | §8, §11           | New Bot chat/API intake, plus Linear status-change intake                 |
 | `orchestrator/jobs/`                                  | §11, §12, §14.0   | BullMQ stage graph; runnable TS in `src/orchestrator/jobs/`               |
 | `state/migrations/001_pipeline_step_cursor.sql`       | §11, §14.0        | Postgres step cursor for crash resume                                     |
 | `state/migrations/004_session_artifacts.sql`          | §11, §14.0        | Per-task plan, PR link, stage outcome, last error                         |
@@ -82,7 +82,7 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 
 ## Explicitly out of this skeleton
 
-- Linear Agent Sessions, issue create/delete/archive, and Kanban autonomy — SPEC §8 ADR. FIN status-change intake is the exception.
+- Linear Agent Sessions, issue create/delete/archive, and Kanban autonomy — SPEC §8 ADR. Status-change intake for `config/linear-projects.yaml` is the exception.
 - Second agent frameworks (CrewAI, Temporal, AutoGen, LangGraph-as-orchestrator) — §12.7
 - Cursor RPC MITM — §14.1
 - Caveman Cloud/Platform as a V1 dependency — `docs/caveman-platform-eval.md`

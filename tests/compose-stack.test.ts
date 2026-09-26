@@ -79,6 +79,9 @@ describe("compose full stack profiles", () => {
     expect(orchestrator).toContain("https://cursor.com/install");
     expect(orchestrator).toContain("/usr/local/bin/agent");
     expect(orchestrator).toContain("OPTIO_CURSOR_SANDBOX=disabled");
+    expect(orchestrator).toContain(
+      "COPY config/linear-projects.yaml ./config/linear-projects.yaml",
+    );
     expect(orchestrator).not.toMatch(/^(ENV|ARG)\s+CURSOR_API_KEY/m);
     expect(orchestrator).not.toContain("COPY .env");
     expect(readFileSync("Dockerfile.eve-runner", "utf8")).toContain("apk add --no-cache git");

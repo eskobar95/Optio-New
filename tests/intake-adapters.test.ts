@@ -87,7 +87,7 @@ describe("GitHub and Slack intake", () => {
       linearComment: extra?.linearComment,
       enqueuer: {
         async add(flow) {
-          if (extra?.failEnqueue) throw new Error("Job lin-FIN-12__plan already exists");
+          if (extra?.failEnqueue) throw new Error("Job lin-ENG-12__plan already exists");
           added.push(flow);
         },
       },
@@ -323,7 +323,7 @@ describe("GitHub and Slack intake", () => {
     expect(added).toHaveLength(1);
   });
 
-  it("enqueues a FIN status change and comments queued", async () => {
+  it("enqueues an ENG status change and comments queued", async () => {
     const comments: string[] = [];
     const { added, server } = start({
       linearWebhookSecret: LINEAR_SECRET,
@@ -337,11 +337,11 @@ describe("GitHub and Slack intake", () => {
     const payload = JSON.stringify({
       action: "update",
       type: "Issue",
-      url: "https://linear.app/findjobabroad/issue/FIN-12/ship-intake",
+      url: "https://linear.app/findjobabroad/issue/ENG-12/ship-intake",
       webhookTimestamp: now,
       data: {
         id: LINEAR_ISSUE_ID,
-        identifier: "FIN-12",
+        identifier: "ENG-12",
         title: "Ship intake",
         description: "Status moved",
       },
@@ -360,17 +360,17 @@ describe("GitHub and Slack intake", () => {
     const body = (await response.json()) as { taskId: string; repoId: string; source: string };
     expect(body).toMatchObject({
       event: "bot.intake.created",
-      taskId: "lin-FIN-12",
+      taskId: "lin-ENG-12",
       repoId: "findjobabroad",
       source: "linear",
     });
     expect(JSON.stringify(body)).not.toContain(LINEAR_SECRET);
     expect(comments).toEqual([LINEAR_ISSUE_ID]);
     expect(planJob(added[0] as FlowJob).data).toMatchObject({
-      taskId: "lin-FIN-12",
+      taskId: "lin-ENG-12",
       repoId: "findjobabroad",
       title: "Ship intake",
-      description: "Status moved\n\nhttps://linear.app/findjobabroad/issue/FIN-12/ship-intake",
+      description: "Status moved\n\nhttps://linear.app/findjobabroad/issue/ENG-12/ship-intake",
       stage: "plan",
     });
 
@@ -380,9 +380,9 @@ describe("GitHub and Slack intake", () => {
       webhookTimestamp: now,
       data: {
         id: LINEAR_ISSUE_ID,
-        identifier: "FIN-12",
+        identifier: "ENG-12",
         title: "Renamed",
-        team: { key: "FIN" },
+        team: { key: "ENG" },
       },
       updatedFrom: { title: "Ship intake" },
     });
@@ -422,9 +422,9 @@ describe("GitHub and Slack intake", () => {
       webhookTimestamp: now,
       data: {
         id: LINEAR_ISSUE_ID,
-        identifier: "ENG-3",
+        identifier: "KIT-3",
         title: "Other team",
-        team: { key: "ENG" },
+        team: { key: "KIT" },
       },
       updatedFrom: { stateId: "previous-state" },
     });
@@ -502,10 +502,11 @@ describe("GitHub and Slack intake", () => {
     expect(comments).toEqual([]);
   });
 
-  it("does not enqueue a FIN status change when the Linear repo or API key is missing", async () => {
+  it("uses the ENG config repo when the env override is blank, and still fails closed for a bad repo or missing API key", async () => {
     const { added, server } = start({
       linearWebhookSecret: LINEAR_SECRET,
       linearApiKey: "lin_api_testkey12345678",
+      linearComment: async () => {},
     });
     const base = await listen(server);
     const payload = JSON.stringify({
@@ -514,14 +515,14 @@ describe("GitHub and Slack intake", () => {
       webhookTimestamp: Date.now(),
       data: {
         id: LINEAR_ISSUE_ID,
-        identifier: "FIN-12",
+        identifier: "ENG-12",
         title: "Ship intake",
-        team: { key: "FIN" },
+        team: { key: "ENG" },
       },
       updatedFrom: { stateId: "previous-state" },
     });
     const raw = Buffer.from(payload);
-    const missingRepo = await fetch(`${base}/webhooks/linear`, {
+    const fromConfig = await fetch(`${base}/webhooks/linear`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -529,8 +530,11 @@ describe("GitHub and Slack intake", () => {
       },
       body: raw,
     });
-    expect(missingRepo.status).toBe(503);
-    expect(await missingRepo.json()).toMatchObject({ error: "linear_repo_unconfigured" });
+    expect(fromConfig.status).toBe(200);
+    expect(await fromConfig.json()).toMatchObject({
+      taskId: "lin-ENG-12",
+      repoId: "findjobabroad",
+    });
 
     const { server: keyed } = start({
       linearWebhookSecret: LINEAR_SECRET,
@@ -564,7 +568,7 @@ describe("GitHub and Slack intake", () => {
     });
     expect(unconfigured.status).toBe(503);
     expect(await unconfigured.json()).toMatchObject({ error: "linear_api_unconfigured" });
-    expect(added).toHaveLength(0);
+    expect(added).toHaveLength(1);
   });
 
   it("comments queued again when the Linear pipeline job already exists", async () => {
@@ -584,9 +588,9 @@ describe("GitHub and Slack intake", () => {
       webhookTimestamp: Date.now(),
       data: {
         id: LINEAR_ISSUE_ID,
-        identifier: "FIN-12",
+        identifier: "ENG-12",
         title: "Ship intake",
-        team: { key: "FIN" },
+        team: { key: "ENG" },
       },
       updatedFrom: { stateId: "previous-state" },
     });
@@ -600,7 +604,7 @@ describe("GitHub and Slack intake", () => {
       body: raw,
     });
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ taskId: "lin-FIN-12", repoId: "findjobabroad" });
+    expect(await response.json()).toMatchObject({ taskId: "lin-ENG-12", repoId: "findjobabroad" });
     expect(comments).toEqual([LINEAR_ISSUE_ID]);
     expect(added).toHaveLength(0);
   });

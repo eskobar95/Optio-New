@@ -103,14 +103,15 @@ Compose interpolates these names from the env file into `orchestrator` and `eve-
 | `CURSOR_API_KEY`                         | Cursor coding agent (`resolveCodingBackend` defaults to `cursor`, then `createCursorAdapter`)   |
 | `OPTIO_NEW_GITHUB_TOKEN`                 | Push the task branch and call the GitHub pull request API                                       |
 | `OPTIO_NEW_GITHUB_REPO`                  | `owner/repo` when `OPTIO_NEW_REPOS` is empty. A catalog task uses that `repoId`'s clone URL     |
-| `OPTIO_NEW_LINEAR_API_KEY`               | Linear `commentCreate` (`queued`) after FIN status-change intake                                |
+| `OPTIO_NEW_LINEAR_API_KEY`               | Linear `commentCreate` (`queued`) after an enabled team's status-change intake                  |
 | `OPTIO_NEW_LINEAR_WEBHOOK_SECRET`        | HMAC for `POST /webhooks/linear`                                                                |
-| `OPTIO_NEW_LINEAR_DEFAULT_REPO_ID`       | Catalog `repoId` for that intake (`findjobabroad` on kit-harness)                               |
+| `OPTIO_NEW_LINEAR_DEFAULT_REPO_ID`       | Overrides the team's `defaultRepoId` from `config/linear-projects.yaml` (ENG: `findjobabroad`)  |
+| `OPTIO_NEW_LINEAR_PROJECTS_CONFIG`       | Optional path to that file. Unset uses `config/linear-projects.yaml`                            |
 | `LINEAR_WORKFLOW_CI_FAIL_ESCALATE_AFTER` | Failed CI/Review attempts before a Linear escape hatch. Default `3`                             |
 | `MODEL_API_KEY`, `MODEL_ENDPOINT`        | Planner fallback only. The env adapter performs no HTTP                                         |
 | `OPTIO_NEW_BASE_BRANCH`                  | Base branch for the synthetic catalog. A `OPTIO_NEW_REPOS` binding uses its own `defaultBranch` |
 
-`OPTIO_NEW_LINEAR_API_KEY`, `OPTIO_NEW_LINEAR_WEBHOOK_SECRET`, `OPTIO_NEW_LINEAR_DEFAULT_REPO_ID`, and `LINEAR_WORKFLOW_CI_FAIL_ESCALATE_AFTER` are passed only to the `orchestrator` service.
+`OPTIO_NEW_LINEAR_API_KEY`, `OPTIO_NEW_LINEAR_WEBHOOK_SECRET`, `OPTIO_NEW_LINEAR_DEFAULT_REPO_ID`, `OPTIO_NEW_LINEAR_PROJECTS_CONFIG`, and `LINEAR_WORKFLOW_CI_FAIL_ESCALATE_AFTER` are passed only to the `orchestrator` service. The image copies `config/linear-projects.yaml` to `/app/config/linear-projects.yaml`. An empty projects-config env keeps that path.
 
 Inside the container, `OPTIO_NEW_REPO_PATH` is `/opt/optio-new` and `OPTIO_NEW_WORKTREE_ROOT` is `/var/lib/optio-new/worktrees` (volume `optio_new_worktrees`). The host side of the checkout mount is `${OPTIO_NEW_REPO_PATH:-/opt/optio-new}`. `OPTIO_NEW_WORKTREE_RETAIN_ON_FAILURE` defaults to `true`; `false` removes the named `wt-<task>` directory when merge fails.
 

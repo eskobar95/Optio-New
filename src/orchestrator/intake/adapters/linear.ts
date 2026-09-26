@@ -1,13 +1,19 @@
 /**
  * Linear Issue status-change webhook → bot.intake.created.
  * HMAC is Linear-Signature: hex HMAC-SHA256 of the raw body
- * (OPTIO_NEW_LINEAR_WEBHOOK_SECRET). Team scope is FIN.
- * repoId comes from OPTIO_NEW_LINEAR_DEFAULT_REPO_ID.
+ * (OPTIO_NEW_LINEAR_WEBHOOK_SECRET). Team scope is the enabled keys in
+ * config/linear-projects.yaml. repoId is OPTIO_NEW_LINEAR_DEFAULT_REPO_ID
+ * when set, otherwise that team's defaultRepoId.
  * Other events return 200 so Linear does not retry them.
  */
 import { createHmac } from "node:crypto";
 import { UnknownRepoError, selectRepoId, type RepoCatalog } from "../../repos/catalog.js";
-import { LINEAR_TEAM_KEY } from "../../linear/policy.js";
+import {
+  LinearProjectsConfigError,
+  enabledLinearTeam,
+  linearIntakeRepoId,
+  loadLinearProjectsConfig,
+} from "../../linear/policy.js";
 import { BOT_INTAKE_CREATED, type BotIntakeCreated } from "../event.js";
 import { asRecord, headerValue, signaturesMatch, type IntakeAdapterResult } from "./shared.js";
 
@@ -65,6 +71,8 @@ export function handleLinearWebhook(input: {
   defaultRepoId: string | undefined;
   apiKeyConfigured: boolean;
   nowMs?: number;
+  env?: NodeJS.ProcessEnv;
+  cwd?: string;
 }): IntakeAdapterResult {
   const trimmed = input.secret?.trim() ?? "";
   if (!trimmed) {
@@ -130,7 +138,27 @@ export function handleLinearWebhook(input: {
   if (!isStatusChange(body)) return ignored();
 
   const data = asRecord(body.data);
-  if (!data || teamKey(data) !== LINEAR_TEAM_KEY) return ignored();
+  if (!data) return ignored();
+
+  let projects;
+  try {
+    projects = loadLinearProjectsConfig({ env: input.env, cwd: input.cwd });
+  } catch (error) {
+    if (error instanceof LinearProjectsConfigError) {
+      return {
+        action: "respond",
+        status: 503,
+        body: {
+          error: "linear_projects_unconfigured",
+          message: "Linear projects config is missing or invalid",
+        },
+      };
+    }
+    throw error;
+  }
+
+  const team = enabledLinearTeam(projects, teamKey(data));
+  if (!team) return ignored();
 
   const title = stringField(data, "title").trim();
   const issueId = stringField(data, "id").trim();
@@ -152,7 +180,7 @@ export function handleLinearWebhook(input: {
     };
   }
 
-  const requested = input.defaultRepoId?.trim() ?? "";
+  const requested = linearIntakeRepoId(team, input.defaultRepoId);
   if (!requested) {
     return {
       action: "respond",

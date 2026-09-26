@@ -1,7 +1,7 @@
 # AGENTS.md — how agents work in Optio-New
 
 **Language:** TypeScript (Node 20+, ESM, strict `tsc`).  
-**Decision layer:** **New Bot** (Grok Bot / Cursor agent). Linear is intake-only (FIN status change); Agent Sessions stay out.  
+**Decision layer:** **New Bot** (Grok Bot / Cursor agent). Linear is intake-only (teams in `config/linear-projects.yaml`, seeded with ENG); Agent Sessions stay out.  
 **Pipeline orchestrator:** **BullMQ** on Redis (SPEC §14.0).
 
 ## Roles
@@ -42,7 +42,7 @@ Unit tests mock Redis. Set `OPTIO_NEW_REDIS_URL` and/or `OPTIO_NEW_DATABASE_URL`
 
 ## Do not
 
-- Integrate Linear Agent Sessions, OAuth agent scopes, or Linear status names as factory stages. FIN status-change intake (`POST /webhooks/linear`) is the SPEC §8 exception.
+- Integrate Linear Agent Sessions, OAuth agent scopes, or Linear status names as factory stages. Status-change intake for teams enabled in `config/linear-projects.yaml` (`POST /webhooks/linear`) is the SPEC §8 exception.
 - Commit secrets (`.env`, real API keys).
 - Modify `~/Projects/optio` or `kit-collective` from this repo.
 - Let adapters own workflow advancement or worktree lifecycle.

@@ -52,7 +52,7 @@ Start with the labeled **good first issue** on GitHub (agent request-response lo
 ## Do not
 
 - Commit `.env`, age private keys, production ciphertext, or real API keys.
-- Add Linear Agent Sessions or issue create/delete. FIN status-change intake is already the SPEC §8 exception.
+- Add Linear Agent Sessions or issue create/delete. Status-change intake for teams in `config/linear-projects.yaml` is already the SPEC §8 exception.
 - Modify sibling repos (`optio`, `kit-collective`) from this project.
 
 ## Status page
