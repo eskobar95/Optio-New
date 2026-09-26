@@ -36,7 +36,8 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `Caddyfile`                                           | §12.5             | Optional intake + GitHub webhook TLS                                      |
 | `deploy/systemd/*.service`                            | §12.5             | Compose on boot                                                           |
 | `deploy/otel-collector-config.yaml`                   | §12.1             | Collector stub                                                            |
-| `secrets/`                                            | §12.5, §14.5      | sops example, `.env.example`, Infisical README                            |
+| `secrets/`                                            | §12.5, §14.5      | sops+age examples; runbook is `docs/secrets.md`                           |
+| `scripts/secrets.sh`                                  | §12.5             | init, encrypt, check, compose, audit                                      |
 | `scripts/smoke-local.sh`                              | —                 | Local/CI smoke                                                            |
 | `.github/workflows/ci.yml`                            | —                 | Push + PR CI                                                              |
 | `README.md`                                           | —                 | Points at `docs/SPEC.md`                                                  |

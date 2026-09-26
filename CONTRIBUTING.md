@@ -12,6 +12,12 @@ npm install            # installs Husky pre-commit via prepare
 npm run ci             # format:check + lint + typecheck + test + smoke
 ```
 
+Hetzner kit-harness (`/opt/optio-new`) encrypts that `.env` with **sops + age**. Runbook: [docs/secrets.md](docs/secrets.md).
+
+```bash
+bash scripts/secrets.sh audit
+```
+
 ## Branching & PRs
 
 1. Create a branch from `main`: `git checkout -b feat/short-name`
@@ -42,7 +48,7 @@ Start with the labeled **good first issue** on GitHub (agent request-response lo
 
 ## Do not
 
-- Commit `.env` or real API keys.
+- Commit `.env`, age private keys, production ciphertext, or real API keys.
 - Add Linear product integration.
 - Modify sibling repos (`optio`, `kit-collective`) from this project.
 

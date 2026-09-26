@@ -1,18 +1,14 @@
 # secrets
 
-## sops + age (default)
+Kit-harness (`/opt/optio-new`) uses **sops + age**. The runbook is [docs/secrets.md](../docs/secrets.md).
 
-1. Copy `.sops.yaml.example` → `.sops.yaml` and set age recipients.
-2. Copy `.env.example` → `.env`, fill values, encrypt with `sops -e -i .env`.
-3. Never commit plaintext `.env`.
+Plaintext `.env`, the age private key, `secrets/.sops.yaml`, and `secrets/optio-new.env` stay on the host. Git keeps this example and `.sops.yaml.example` only.
 
-## Infisical alternative
+```bash
+bash scripts/secrets.sh init
+bash scripts/secrets.sh encrypt    # reads the existing .env
+bash scripts/secrets.sh check
+bash scripts/secrets.sh compose up -d
+```
 
-If the team prefers Infisical over sops:
-
-1. Create an Infisical project for **Optio-New**.
-2. Mirror keys from `.env.example` (prefix `OPTIO_NEW_`).
-3. Inject at runtime via Infisical CLI / agent / Compose `env_file` from a decrypted local export that stays gitignored.
-4. Keep the same key names so Compose and orchestrator code stay unchanged.
-
-Do not put provider keys in worktrees or issue branches (SPEC §14.5).
+Infisical is an optional later swap with the same key names. It is not installed on this VPS.

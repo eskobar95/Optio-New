@@ -13,6 +13,10 @@ NODE_MAJOR="$(node -p "process.versions.node.split('.')[0]")"
 [[ "$NODE_MAJOR" -ge 20 ]] || fail "need Node >= 20 (got $(node -v))"
 pass "node $(node -v)"
 
+# Paths and private-key markers only. Do not print env values.
+bash scripts/secrets.sh audit || fail "secrets audit"
+pass "secrets audit"
+
 if [[ ! -d node_modules ]]; then
   npm install
 else
@@ -27,7 +31,15 @@ pass "vitest"
 
 if command -v docker >/dev/null 2>&1; then
   if docker compose version >/dev/null 2>&1; then
-    docker compose config >/dev/null || fail "docker compose config"
+    # An empty env file skips the project .env so local secrets are not interpolated into logs.
+    empty_env="$(mktemp)"
+    config_log="$(mktemp)"
+    if ! docker compose --env-file "$empty_env" config >"$config_log" 2>&1; then
+      grep -v -E '^[A-Za-z_][A-Za-z0-9_]*=' "$config_log" | head -n 40 >&2 || true
+      rm -f "$empty_env" "$config_log"
+      fail "docker compose config"
+    fi
+    rm -f "$empty_env" "$config_log"
     pass "docker compose config"
     if [[ "${SMOKE_COMPOSE_UP:-0}" == "1" ]]; then
       docker compose up -d redis postgres

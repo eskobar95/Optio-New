@@ -1,5 +1,5 @@
 # LiteLLM Proxy — Optio-New model_list placeholder (SPEC §14.2)
-# Copy to config.yaml and fill via sops/Infisical; never commit real keys.
+# Copy to config.yaml (gitignored). Keys come from the sops+age env. See docs/secrets.md.
 
 model_list:
   - model_name: gpt-4o

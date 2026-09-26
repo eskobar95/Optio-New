@@ -1,6 +1,10 @@
-# Secrets
+# Secrets — plaintext, age private keys, and production ciphertext stay off git.
+# See docs/secrets.md.
 secrets/.env
 secrets/.sops.yaml
+secrets/optio-new.env
+secrets/age/
+*.agekey
 .env
 .env.*
 !.env.example

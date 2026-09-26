@@ -40,7 +40,7 @@ Project root **is** the harness tree (`agents/`, `specialists/`, `skills/`, `wor
 
 ```bash
 npm install          # also installs Husky pre-commit hooks via prepare
-cp secrets/.env.example secrets/.env   # edit locally; never commit real secrets
+cp .env.example .env   # edit locally; never commit real secrets
 bash scripts/smoke-local.sh
 ```
 
@@ -52,7 +52,7 @@ docker compose --profile laya up -d laya
 docker compose --profile edge up -d caddy
 ```
 
-Secrets: see `secrets/README.md` (sops+age or Infisical).  
+Secrets on the Hetzner kit-harness (`/opt/optio-new`): **sops + age**. Runbook: [docs/secrets.md](docs/secrets.md).  
 Postgres backup example: `scripts/backup-postgres-to-storagebox.sh.example`.
 
 ## CI and pre-commit (always on)
@@ -78,7 +78,7 @@ Postgres backup example: `scripts/backup-postgres-to-storagebox.sh.example`.
 
 ## First issue / Getting started
 
-1. Copy `.env.example` → `.env` (no real secrets in git).
+1. Copy `.env.example` → `.env` (no real secrets in git). On the VPS, encrypt it with `scripts/secrets.sh` ([docs/secrets.md](docs/secrets.md)).
 2. `npm install` then `npm run ci`.
 3. Grab the **good first issue**: implement `src/agent/loop.ts` (prompt → model adapter → response) with a Vitest mock — see [issues labeled good first issue](https://github.com/eskobar95/Optio-New/issues/1).
 4. Read [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), and [docs/SPEC.md](docs/SPEC.md) §8 / §14.0.
