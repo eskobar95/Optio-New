@@ -1,9 +1,48 @@
 # gateway/jev-router
 
-Swappable `JevRouter` plugins for Hop 2 (Codex path: subscription_pool | alt_api | cache | deny) and shared decision surface.
+Swappable Hop 2 `JevRouter` plugins (SPEC §14.3–§14.6). CodingAgent adapters do not import a concrete plugin. Call `loadHop2Router` / `loadConfiguredHop2Router`, then `applyHop2Decision`, before forwarding to LiteLLM.
 
 Hop 1 (which CodingAgent backend) is served by the kit-harness sidecar, not this folder. See `docs/kit-harness.md`.
 
-Implementations: `jev` | `poorjev` | `laya` | `rules`.
+```ts
+interface JevRouter {
+  decide(state: RoutingState): Promise<RoutingDecision>;
+}
+// choice ∈ subscription_pool | alt_api | cache | deny
+// plugin id ∈ jev | poorjev | laya | rules
+```
 
-The `jev` plugin points at **Vercel AI Gateway** in v1 (`JEV_BASE_URL` / `VERCEL_AI_GATEWAY_URL`), not TypeSafe direct.
+`OPTIO_NEW_JEV_ROUTER` (alias `JEV_ROUTER`) selects the plugin. If it is unset, `loadConfiguredHop2Router` throws. There is no implicit plugin.
+
+## Plugins
+
+| Id        | Behavior                                                                                                                                                                                                              |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rules`   | No network. Hard deny when `quota_snapshot.budget_exhausted` is true. Exact `prompt_hash` in `cached_prompt_hashes` → `cache`. Otherwise subscription quota, then alt quota. Missing snapshot → `deny` (`ambiguous`). |
+| `poorjev` | Same budget and exact-cache rules. A missing snapshot defaults to `subscription_pool` / `gpt-4o` (`poorjev_default`).                                                                                                 |
+| `jev`     | `POST {JEV_BASE_URL}/v1/systemone`. Fail closed (`deny`) on network errors, non-OK HTTP, or an unknown choice.                                                                                                        |
+| `laya`    | Same `/v1/systemone` body against `OPTIO_NEW_LAYA_URL` (default `http://127.0.0.1:8000`). Model is omitted unless `LAYA_MODEL` is set.                                                                                |
+
+Example model ids match `gateway/litellm/config.yaml.example`: `gpt-4o`, `claude-sonnet`, `cache-exact`.
+
+## `JEV_BASE_URL` → Vercel AI Gateway
+
+v1 hosted Jev is **not** TypeSafe direct. The `jev` plugin base URL is:
+
+1. `OPTIO_NEW_JEV_BASE_URL`
+2. `JEV_BASE_URL`
+3. `OPTIO_NEW_VERCEL_AI_GATEWAY_URL`
+4. `VERCEL_AI_GATEWAY_URL`
+5. default `https://ai-gateway.vercel.sh`
+
+The client appends `/v1/systemone` (a base that already ends in `/v1` is not doubled). Swap the base URL when TypeSafe access returns; adapters stay unchanged. Bearer token: `OPTIO_NEW_JEV_API_KEY` or `JEV_API_KEY`. Hosted model field defaults to `jev-latest` (`JEV_MODEL`).
+
+## Cache and deny
+
+`applyHop2Decision` (SPEC §14.6):
+
+- **cache** — returns the stored chat completion, `route=cache`, `upstreamTokens: 0`. A miss becomes deny.
+- **deny** — HTTP **429**. `reason: budget_exhausted` maps to CodingAgent `budget_exhausted`. Any other deny maps to `rate_limited`.
+- **subscription_pool / alt_api** — forward to the example LiteLLM `model_name`.
+
+LiteLLM's own local cache is only for forwarded calls. The proxy does not host these TypeScript plugins (LiteLLM callbacks are Python).

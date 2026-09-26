@@ -7,4 +7,4 @@ OpenAI Codex CLI CodingAgent adapter. `run()` writes a user-level `$CODEX_HOME/c
 
 Secrets never committed. `env_key` is `LITELLM_MASTER_KEY` (the name only; the value stays in the process env).
 
-Implements the shared `CodingAgent` interface in `../../src/adapters/coding-agent.ts`. Pick it with `resolveCodingBackend({ stepCodingBackend: "codex" })`.
+Implements the shared `CodingAgent` interface in `../../src/adapters/coding-agent.ts`. Pick it with `resolveCodingBackend({ stepCodingBackend: "codex" })`. Hop 2 upstream/cache/deny is `loadHop2Router` in `gateway/jev-router/`, not an import from this adapter.

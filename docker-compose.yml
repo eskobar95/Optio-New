@@ -72,6 +72,16 @@ services:
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     ports:
       - "127.0.0.1:${OPTIO_NEW_LITELLM_HOST_PORT:-4000}:4000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python3 -c "import urllib.request; urllib.request.urlopen(''http://127.0.0.1:4000/health/liveliness'')"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
 
   # Decision sidecar (SPEC §9, §14.4 Hop 1). Off unless `--profile harness`.
   kit-harness:
