@@ -5,7 +5,13 @@ import { timingSafeEqual } from "node:crypto";
 import type { BotIntakeCreated } from "../event.js";
 
 export type IntakeAdapterResult =
-  | { action: "enqueue"; status: 200 | 202; intake: BotIntakeCreated }
+  | {
+      action: "enqueue";
+      status: 200 | 202;
+      intake: BotIntakeCreated;
+      /** Set by the Linear adapter so the HTTP layer can comment after enqueue. */
+      linearIssueId?: string;
+    }
   | { action: "respond"; status: number; body: Record<string, unknown> };
 
 export function headerValue(signatureHeader: string | string[] | undefined): string {

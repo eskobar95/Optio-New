@@ -45,6 +45,33 @@ export function parseGithubRepo(spec: string): GithubRepoRef {
   return { owner: trimmed.slice(0, slash), repo: trimmed.slice(slash + 1) };
 }
 
+/** owner/repo from a catalog clone URL. Non-GitHub remotes return undefined. */
+export function githubRepoFromCloneUrl(cloneUrl: string): GithubRepoRef | undefined {
+  const trimmed = cloneUrl
+    .trim()
+    .replace(/\.git\/?$/, "")
+    .replace(/\/$/, "");
+  let path = "";
+  if (trimmed.startsWith("git@github.com:")) {
+    path = trimmed.slice("git@github.com:".length);
+  } else {
+    let url: URL;
+    try {
+      url = new URL(trimmed);
+    } catch {
+      return undefined;
+    }
+    if (url.hostname !== "github.com") return undefined;
+    path = url.pathname.replace(/^\//, "");
+  }
+  const slash = path.indexOf("/");
+  if (slash <= 0 || slash !== path.lastIndexOf("/")) return undefined;
+  const owner = path.slice(0, slash);
+  const repo = path.slice(slash + 1);
+  if (!REPO_SPEC.test(`${owner}/${repo}`)) return undefined;
+  return { owner, repo };
+}
+
 export async function openGithubPullRequest(input: OpenPullRequestInput): Promise<PullRequestRef> {
   const fetchImpl = input.fetchImpl ?? fetch;
   const endpoint = pullsUrl(input.owner, input.repo);

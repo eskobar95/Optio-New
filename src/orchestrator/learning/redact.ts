@@ -18,6 +18,8 @@ export const SECRET_ENV_NAMES = [
   "OPTIO_NEW_INTAKE_WEBHOOK_SECRET",
   "OPTIO_NEW_GITHUB_WEBHOOK_SECRET",
   "OPTIO_NEW_SLACK_SIGNING_SECRET",
+  "OPTIO_NEW_LINEAR_API_KEY",
+  "OPTIO_NEW_LINEAR_WEBHOOK_SECRET",
   "OPTIO_NEW_POSTGRES_PASSWORD",
   "OPTIO_NEW_DATABASE_URL",
   "OPTIO_NEW_REDIS_URL",
@@ -55,6 +57,7 @@ const KEY_SHAPES: readonly RegExp[] = [
   /\bAKIA[0-9A-Z]{16}\b/g,
   /\bAIza[0-9A-Za-z_-]{20,}\b/g,
   /\bcrsr_[A-Za-z0-9]{8,}\b/g,
+  /\blin_api_[A-Za-z0-9]{8,}\b/g,
 ];
 
 const HIGH_ENTROPY_RE =

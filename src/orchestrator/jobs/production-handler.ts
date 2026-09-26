@@ -20,12 +20,13 @@ import {
   GithubRequestError,
   findOpenGithubPullRequest,
   mergeGithubPullRequest,
+  githubRepoFromCloneUrl,
   openGithubPullRequest,
-  parseGithubRepo,
   readCommitStatus,
   redact,
   type PullRequestRef,
 } from "../github/pull-request.js";
+import { loadRepoCatalog, resolveRepo, type RepoCatalog } from "../repos/catalog.js";
 import { worktreeKey, type WorktreeHandle, type WorktreeLifecycle } from "../worktrees/manager.js";
 import {
   PrSafetyClosedError,
@@ -76,6 +77,11 @@ export interface ProductionStageOptions {
    * and reads the worktree diff. A closed gate throws before push or merge.
    */
   loadPrSafety?: (cwd: string) => Promise<PrSafetyInput | null | undefined>;
+  /**
+   * Catalog used to turn `repoId` into a GitHub owner/repo.
+   * Omitted loads `OPTIO_NEW_REPOS` from `env`.
+   */
+  catalog?: RepoCatalog;
 }
 
 const E2E_TASK = /^e2e-[A-Za-z0-9._-]+$/;
@@ -95,9 +101,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
   const timeoutMs = options.agentTimeoutMs ?? AGENT_TIMEOUT_MS;
   const model = options.modelAdapter ?? createEnvModelAdapter(env);
   const plannerLoop = createAgentStageHandler(model);
-  const baseBranch = env.OPTIO_NEW_BASE_BRANCH?.trim() || "development";
-  const loadPrSafety =
-    options.loadPrSafety ?? ((cwd: string) => collectPrSafetyInput(cwd, { base: baseBranch }));
+  const catalog = options.catalog ?? loadRepoCatalog(env);
 
   return {
     async run(ctx): Promise<void | StageStepResult> {
@@ -207,9 +211,11 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     const dirty = await git(handle.path, ["status", "--short"], []);
     // Agents often commit before record_diff; status --short is then empty even
     // when the branch is ahead of base. Prefer the three-dot committed summary.
-    const committed = await git(handle.path, ["diff", "--stat", `${baseBranch}...HEAD`], []).catch(
-      () => "",
-    );
+    const committed = await git(
+      handle.path,
+      ["diff", "--stat", `${taskBase(ctx)}...HEAD`],
+      [],
+    ).catch(() => "");
     const summary = [committed.trim(), dirty.trim()].filter(Boolean).join("\n") || dirty;
     logStageEvent({
       msg: "git summary",
@@ -222,7 +228,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
 
   async function openPullRequest(ctx: StageStepContext): Promise<StageStepResult> {
     const handle = await requireWorktree(ctx);
-    const github = requireGithub();
+    const github = requireGithub(ctx);
     const stored = await readPullRecordOptional(handle);
     if (stored) {
       logStageEvent({
@@ -234,14 +240,15 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       return { prUrl: stored.url };
     }
     const token = github.token;
-    const ahead = await commitCount(handle.path, token);
+    const baseBranch = github.baseBranch;
+    const ahead = await commitCount(handle.path, token, baseBranch);
     if (ahead === 0) {
       if (!E2E_TASK.test(ctx.taskId)) {
         throw new Error(`open_pr: ${ctx.taskId} has no commits ahead of ${baseBranch}`);
       }
       await writeE2eMarker(handle, ctx.taskId, token);
     }
-    await assertPrSafety(handle.path);
+    await assertPrSafety(handle.path, baseBranch);
     const remote = `https://x-access-token:${encodeURIComponent(token)}@github.com/${github.owner}/${github.repo}.git`;
     await git(handle.path, ["push", remote, `${handle.branch}:${handle.branch}`], [token]);
     const remoteExisting = await mapGithub(() =>
@@ -296,7 +303,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
   }
 
   async function waitForCi(ctx: StageStepContext): Promise<void> {
-    const github = requireGithub();
+    const github = requireGithub(ctx);
     const handle = await requireWorktree(ctx);
     const sha = await git(handle.path, ["rev-parse", "HEAD"], [github.token]);
     const state = await mapGithub(() =>
@@ -315,12 +322,12 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
 
   async function mergePullRequest(ctx: StageStepContext): Promise<void> {
     const handle = await requireWorktree(ctx);
-    await assertPrSafety(handle.path);
+    await assertPrSafety(handle.path, taskBase(ctx));
     if (E2E_TASK.test(ctx.taskId)) {
       logStageEvent({ msg: "e2e pull request left unmerged", taskId: ctx.taskId });
       return;
     }
-    const github = requireGithub();
+    const github = requireGithub(ctx);
     const stored = await readPullRecord(handle);
     await mapGithub(() =>
       mergeGithubPullRequest({
@@ -368,7 +375,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     );
   }
 
-  async function commitCount(cwd: string, token: string): Promise<number> {
+  async function commitCount(cwd: string, token: string, baseBranch: string): Promise<number> {
     const raw = await git(cwd, ["rev-list", "--count", `${baseBranch}..HEAD`], [token]);
     const count = Number(raw);
     if (!Number.isInteger(count) || count < 0) {
@@ -377,20 +384,40 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     return count;
   }
 
-  function requireGithub(): { token: string; owner: string; repo: string } {
+  function taskBase(ctx: StageStepContext): string {
+    return resolveRepo(catalog, ctx.repoId).defaultBranch;
+  }
+
+  function requireGithub(ctx: StageStepContext): {
+    token: string;
+    owner: string;
+    repo: string;
+    baseBranch: string;
+  } {
     const token = env.OPTIO_NEW_GITHUB_TOKEN?.trim() ?? "";
+    const explicitCatalog = Boolean(env.OPTIO_NEW_REPOS?.trim());
     const repoSpec = env.OPTIO_NEW_GITHUB_REPO?.trim() ?? "";
-    if (!token || !repoSpec) {
+    if (!token || (!explicitCatalog && !repoSpec)) {
       throw new StageCredentialsError(
         "open_pr requires OPTIO_NEW_GITHUB_TOKEN and OPTIO_NEW_GITHUB_REPO (owner/repo)",
       );
     }
-    const parsed = parseGithubRepo(repoSpec);
-    return { token, owner: parsed.owner, repo: parsed.repo };
+    const binding = resolveRepo(catalog, ctx.repoId);
+    const parsed = githubRepoFromCloneUrl(binding.cloneUrl);
+    if (!parsed) {
+      throw new StageCredentialsError(
+        `open_pr: catalog repo ${binding.repoId} clone URL is not a GitHub owner/repo`,
+      );
+    }
+    return { token, owner: parsed.owner, repo: parsed.repo, baseBranch: binding.defaultBranch };
   }
 
-  async function assertPrSafety(cwd: string): Promise<void> {
-    const decision = evaluatePrSafetyGate(await loadPrSafety(cwd));
+  async function assertPrSafety(cwd: string, base: string): Promise<void> {
+    const decision = evaluatePrSafetyGate(
+      options.loadPrSafety
+        ? await options.loadPrSafety(cwd)
+        : await collectPrSafetyInput(cwd, { base }),
+    );
     if (decision.verdict !== "pass") throw new PrSafetyClosedError(decision);
   }
 

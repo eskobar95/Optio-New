@@ -1,12 +1,13 @@
 /**
- * Normalized intake event. GitHub and Slack adapters produce this shape.
- * The workflow trigger name is `bot.intake.created`. There is no Linear variant.
+ * Normalized intake event. GitHub, Slack, and Linear status-change adapters
+ * produce this shape. The workflow trigger name is `bot.intake.created`.
+ * Linear Agent Sessions are not a source.
  */
 import { z } from "zod";
 
 export const BOT_INTAKE_CREATED = "bot.intake.created" as const;
 
-export const IntakeSourceSchema = z.enum(["http", "github", "slack"]);
+export const IntakeSourceSchema = z.enum(["http", "github", "slack", "linear"]);
 
 export type IntakeSource = z.infer<typeof IntakeSourceSchema>;
 

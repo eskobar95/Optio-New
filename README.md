@@ -17,7 +17,7 @@ Skeleton source copy: `specs/agent-harness-skeleton-spec.md`
 
 - **New Bot** (Grok Bot) decides what to build, receives feedback, and drives stage gates.
 - **BullMQ + Redis** orchestrates the pipeline: plan → implement → review → ready → merge (SPEC §14.0).
-- **Linear product integration is out** (ADR in SPEC §8). Optional intake webhook later for New Bot / CI.
+- **Linear Agent Sessions are out** (ADR in SPEC §8). FIN issue status changes may enqueue intake via `POST /webhooks/linear`.
 - Eve agents, adapters (Cursor/Codex), Jev via Vercel AI Gateway, and optional Laya remain as designed. Slot contract: **[docs/eve-patterns.md](docs/eve-patterns.md)** (BullMQ owns the graph; worktrees are the sandbox).
 - **kit-harness** is the local decision sidecar (Hop-1 route, tool-gate, completion, loop, split). New Bot stays intake. Compose profile `harness`.
 

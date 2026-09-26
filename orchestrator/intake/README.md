@@ -51,13 +51,13 @@ The stage job payload includes `taskId`, `sessionId`, `stage`, the brief `title`
 
 `POST /intake` does not check that header. Keep it on `127.0.0.1:3100`. Caddy profile `edge` proxies `/webhooks/*` on `:80` and does not proxy `/intake`. Enable steps: [docs/ops/caddy-tls-edge.md](../../docs/ops/caddy-tls-edge.md).
 
-## GitHub and Slack
+## GitHub, Slack, and Linear
 
-`POST /webhooks/github` and `POST /webhooks/slack` verify HMAC and enqueue the same `bot.intake.created` flow. See [docs/ops/intake-adapters.md](../../docs/ops/intake-adapters.md). Repo routing: [docs/ops/multi-repo-cx33.md](../../docs/ops/multi-repo-cx33.md).
+`POST /webhooks/github`, `POST /webhooks/slack`, and `POST /webhooks/linear` verify HMAC and enqueue the same `bot.intake.created` flow. Linear accepts Issue status changes for team FIN and then comments `queued`. See [docs/ops/intake-adapters.md](../../docs/ops/intake-adapters.md). Repo routing: [docs/ops/multi-repo-cx33.md](../../docs/ops/multi-repo-cx33.md).
 
 ## Explicitly out (v1)
 
-- Linear webhooks, GraphQL, OAuth agent scopes, Agent Activities. `POST /webhooks/linear` is `404` `linear_deferred` (SPEC ADR). No Linear adapter.
+- Linear Agent Sessions, OAuth agent scopes, Agent Activities, and creating or deleting Linear issues. Status-change intake for team FIN is the SPEC §8 exception.
 - Backlog polling of any issue tracker as the control plane.
 
 See `docs/SPEC.md` §8 (intake) and §14.0 (BullMQ).

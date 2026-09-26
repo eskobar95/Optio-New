@@ -1,0 +1,31 @@
+/**
+ * Write policy for OPTIO_NEW_LINEAR_API_KEY.
+ * Team scope is FIN. The live client calls commentCreate only.
+ * issueUpdate is reserved for a later status write and may set stateId only.
+ * issueCreate, issueDelete, and issueArchive stay forbidden.
+ * Agent Sessions stay out of scope.
+ */
+export const LINEAR_TEAM_KEY = "FIN";
+
+export const LINEAR_ALLOWED_WRITES = ["commentCreate", "issueUpdate"] as const;
+
+export type LinearAllowedWrite = (typeof LINEAR_ALLOWED_WRITES)[number];
+
+export const LINEAR_FORBIDDEN_WRITES = ["issueCreate", "issueDelete", "issueArchive"] as const;
+
+const ISSUE_UPDATE_FIELDS = new Set(["stateId"]);
+
+export function assertLinearWrite(operation: string, fields?: readonly string[]): void {
+  if ((LINEAR_FORBIDDEN_WRITES as readonly string[]).includes(operation)) {
+    throw new Error(`Linear API write ${operation} is not allowed`);
+  }
+  if (operation === "commentCreate") return;
+  if (operation === "issueUpdate") {
+    const used = fields ?? [];
+    if (used.length !== 1 || !ISSUE_UPDATE_FIELDS.has(used[0] ?? "")) {
+      throw new Error("Linear issueUpdate may set stateId only");
+    }
+    return;
+  }
+  throw new Error(`Linear API write ${operation} is not allowed`);
+}
