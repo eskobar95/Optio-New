@@ -30,7 +30,7 @@ The script:
 1. Reads repo-root `.env` when that file exists, otherwise `.env.example`. It does not write `.env` and does not print the rendered config.
 2. Renders `docker compose config` and checks host ports.
 3. Asserts default services include `redis`, `postgres`, and `litellm`.
-4. Asserts `orchestrator` and `eve-runner` appear only with `--profile full` (those services are not started).
+4. Asserts `orchestrator` and `eve-runner` appear only with `--profile full`, `kit-harness` only with `--profile harness`, and `laya` only with `--profile laya` (those services are not started).
 5. `up -d` / health-check / `down -v` on Compose project `optio-new-mac-smoke`.
 
 | Service  | Host port | Check                                     |

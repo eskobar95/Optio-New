@@ -180,21 +180,41 @@ services:
           cpus: "0.50"
           memory: 256M
 
-  # Optional local Laya decision service (SPEC §14.3 / call req #10)
+  # Optional local Laya decision service (SPEC §14.3). Off unless `--profile laya`.
+  # Placeholder stdlib server (deploy/laya/stub_server.py). Upstream Laya has no
+  # published registry image; build laya-serve from NandhaKishorM/laya to replace
+  # it (docs/laya.md). CPU only: LAYA_DEVICE is pinned to cpu. Do not add a GPU
+  # reservation. The NVIDIA Container Toolkit is not required and is not used.
   laya:
     profiles: ["laya"]
     image: python:3.12-slim
     restart: unless-stopped
-    working_dir: /app
+    init: true
     environment:
+      PYTHONDONTWRITEBYTECODE: "1"
       LAYA_DEVICE: cpu
-      LAYA_PRELOAD: "1"
-    command:
-      - bash
-      - -lc
-      - "pip install --no-cache-dir 'laya[serve]' && python -m laya.serve --host 0.0.0.0 --port 8000"
+      LAYA_HOST: 0.0.0.0
+      LAYA_PORT: "8000"
+      LAYA_PRELOAD: ${LAYA_PRELOAD:-0}
+      LAYA_THREADS: ${LAYA_THREADS:-4}
+      LAYA_API_KEY: ${LAYA_API_KEY:-}
+    command: ["python", "-B", "-u", "/app/stub_server.py"]
+    volumes:
+      - ./deploy/laya/stub_server.py:/app/stub_server.py:ro
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${OPTIO_NEW_LAYA_HOST_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest

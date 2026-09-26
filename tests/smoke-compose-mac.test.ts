@@ -117,6 +117,10 @@ describe("smoke-compose-mac", () => {
     expect(result.stdout).toContain("PASS: compose config");
     expect(result.stdout).toContain("PASS: default services include redis postgres litellm");
     expect(result.stdout).toContain("PASS: profile full includes orchestrator and eve-runner");
+    expect(result.stdout).toContain("PASS: profile harness includes kit-harness");
+    expect(result.stdout).toContain(
+      "PASS: profile laya includes laya and leaves harness and full stopped",
+    );
     expect(result.stdout).toContain("config-only; skipped up/down");
     const log = readFileSync(result.logFile, "utf8");
     expect(log).not.toContain(" up ");

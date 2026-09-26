@@ -36,8 +36,8 @@ usage() {
   cat <<'EOF'
 Usage: scripts/smoke-compose-mac.sh [--config-only] [--keep]
 
-  --config-only   Validate compose config and the default vs profile-full
-                  service sets. Do not pull images or start containers.
+  --config-only   Validate compose config and the default, full, harness, and
+                  laya service sets. Do not pull images or start containers.
   --keep          Leave the smoke stack up after health checks.
 
 Env (optional):
@@ -176,11 +176,37 @@ for name in orchestrator eve-runner; do
 done
 pass "orchestrator and eve-runner are not in the default service set"
 
+for name in kit-harness laya; do
+  if has_service "$name" "$services"; then
+    fail "${name} is in the default service set; it is off unless its profile is selected"
+  fi
+done
+pass "kit-harness and laya are not in the default service set"
+
 full_services="$(compose --profile full config --services)"
 for name in orchestrator eve-runner redis postgres litellm; do
   has_service "$name" "$full_services" || fail "profile full missing ${name}"
 done
+if has_service laya "$full_services"; then
+  fail "profile full must not start laya"
+fi
 pass "profile full includes orchestrator and eve-runner"
+
+harness_services="$(compose --profile harness config --services)"
+has_service kit-harness "$harness_services" || fail "profile harness missing kit-harness"
+if has_service laya "$harness_services"; then
+  fail "profile harness must not start laya"
+fi
+pass "profile harness includes kit-harness"
+
+laya_services="$(compose --profile laya config --services)"
+has_service laya "$laya_services" || fail "profile laya missing laya"
+for name in orchestrator eve-runner kit-harness; do
+  if has_service "$name" "$laya_services"; then
+    fail "profile laya must not start ${name}"
+  fi
+done
+pass "profile laya includes laya and leaves harness and full stopped"
 
 rm -f "$CONFIG_OUT"
 CONFIG_OUT=""

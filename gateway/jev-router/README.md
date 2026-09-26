@@ -16,12 +16,12 @@ interface JevRouter {
 
 ## Plugins
 
-| Id        | Behavior                                                                                                                                                                                                              |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `rules`   | No network. Hard deny when `quota_snapshot.budget_exhausted` is true. Exact `prompt_hash` in `cached_prompt_hashes` → `cache`. Otherwise subscription quota, then alt quota. Missing snapshot → `deny` (`ambiguous`). |
-| `poorjev` | Same budget and exact-cache rules. A missing snapshot defaults to `subscription_pool` / `gpt-4o` (`poorjev_default`).                                                                                                 |
-| `jev`     | `POST {JEV_BASE_URL}/v1/systemone`. Fail closed (`deny`) on network errors, non-OK HTTP, or an unknown choice.                                                                                                        |
-| `laya`    | Same `/v1/systemone` body against `OPTIO_NEW_LAYA_URL` (default `http://127.0.0.1:8000`). Model is omitted unless `LAYA_MODEL` is set.                                                                                |
+| Id        | Behavior                                                                                                                                                                                                                                                                                               |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `rules`   | No network. Hard deny when `quota_snapshot.budget_exhausted` is true. Exact `prompt_hash` in `cached_prompt_hashes` → `cache`. Otherwise subscription quota, then alt quota. Missing snapshot → `deny` (`ambiguous`).                                                                                  |
+| `poorjev` | Same budget and exact-cache rules. A missing snapshot defaults to `subscription_pool` / `gpt-4o` (`poorjev_default`).                                                                                                                                                                                  |
+| `jev`     | `POST {JEV_BASE_URL}/v1/systemone`. Fail closed (`deny`) on network errors, non-OK HTTP, or an unknown choice.                                                                                                                                                                                         |
+| `laya`    | Same `/v1/systemone` body against `OPTIO_NEW_LAYA_URL` (default `http://127.0.0.1:8000`). Model is omitted unless `LAYA_MODEL` is set. Compose profile `laya` is off by default and serves a CPU placeholder that returns `deny` ([docs/laya.md](../../docs/laya.md)). NVIDIA toolkit is not required. |
 
 Example model ids match `gateway/litellm/config.yaml.example`: `gpt-4o`, `claude-sonnet`, `cache-exact`.
 
