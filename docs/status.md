@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 12:50 UTC
+Last refreshed: 2026-09-26 12:53 UTC
 
 ## Bootstrap progress
 
@@ -50,14 +50,13 @@ Host health after [#76](https://github.com/eskobar95/Optio-New/pull/76): Compose
 
 ## Open issues
 
-Open: 4.
+Open: 3.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
+- #107 Review-gate: review-loop iteration metrics + audit PR comments (no HITL) (P1, backlog, enhancement, orchestration)
 - #92 Session artifact trail for plans, reviews, and PR links (P1, backlog, enhancement, orchestration)
 - #91 Crash recovery and resume mid-pipeline (P1, backlog, enhancement, infra, orchestration)
-- #87 Cost and token budget caps per task (P1, backlog, enhancement, orchestration)
-- #86 Human-in-the-loop approval stage for plan and merge (P1, backlog, enhancement, orchestration)
 
 ## Refresh
 
