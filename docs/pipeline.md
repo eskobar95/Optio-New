@@ -72,6 +72,8 @@ const workers = startStageGraph(
 
 `adapter` is any `ModelAdapter`. `createEnvModelAdapter()` reads `MODEL_API_KEY` and `MODEL_ENDPOINT` and still does not perform HTTP.
 
+The Compose `orchestrator` service (profiles `full` and `orchestrator`) runs `src/orchestrator/main.ts`. It listens on `ORCHESTRATOR_PORT` (3100), requires `OPTIO_NEW_REDIS_URL` and `OPTIO_NEW_DATABASE_URL`, and starts one BullMQ worker per stage queue. `GET /health` reports the Redis ping. `POST /intake` enqueues the plan stage.
+
 Apply `state/migrations/001_pipeline_step_cursor.sql` before using Postgres. `createPgStepCursorStore` also runs that DDL on connect.
 
 ## Spans
