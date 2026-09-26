@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 01:15 UTC
+Last refreshed: 2026-09-26 01:17 UTC
 
 ## Bootstrap progress
 
@@ -19,7 +19,7 @@ Last refreshed: 2026-09-26 01:15 UTC
 
 [![CI](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml/badge.svg)](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml)
 
-Latest conclusion: **cancelled**
+Latest conclusion: **success**
 
 Actions: https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml
 
@@ -51,17 +51,15 @@ curl -fsS -X POST http://127.0.0.1:3100/intake \\
 
 ## Open issues
 
-Open: 10.
+Open: 8.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
 - #62 [EVE-5] Vitest for Eve skill budget, materialize, specialist share (P1, enhancement, orchestration)
 - #60 [EVE-3] Local eve-runner invoked by BullMQ stage (P0, enhancement, orchestration)
-- #59 [EVE-2] SkillLoader + worktree skill seed/reap (P1, enhancement, orchestration)
 - #45 [e2e] Add a hello-world endpoint to the agent loop (P2, enhancement, good first issue, orchestration)
 - #22 [P2] Caddy TLS edge for optional intake webhook (P2, deploy, infra, security)
 - #21 [P2] Eve phase agents: planner / implementation / review / ready / merge contracts (P2, enhancement, orchestration)
-- #19 [P2] Learning worker: failure fingerprints → meta GitHub issues (P2, enhancement, orchestration)
 - #16 [P2] Caveman Cloud/Platform evaluation (post-V1 only) (P2, cost-opt, documentation)
 - #14 [P2] Optional Laya CPU decision service Compose profile (P2, harness, infra)
 - #4 [P1] Docker Compose full stack: redis, postgres, orchestrator, litellm, kit-harness (P1, enhancement, infra)
