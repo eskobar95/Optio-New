@@ -8,7 +8,7 @@
 # COMPOSE_PROFILES is not a secret. Boot adds harness and orchestrator.
 # LiteLLM stays unprofiled (default set, with redis and postgres) so
 # scripts/smoke-compose-mac.sh still sees it. kit-harness is 127.0.0.1:3200.
-# Profile edge stays off until DNS exists.
+# Profile edge stays off. Optional drop-in: docs/ops/caddy-tls-edge.md.
 # After merge: bash scripts/vps-pull-rebuild.sh — see deploy/README.md.
 # ExecStop is `down` without -v so named volumes stay.
 

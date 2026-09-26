@@ -8,6 +8,11 @@ import { ZodError, z } from "zod";
 import { enqueueIntakePipeline, type FlowEnqueuer } from "../jobs/enqueue-pipeline.js";
 import { HELLO_WORLD_RESPONSE, type PlanStageView } from "../jobs/hello-world.js";
 import { PipelineIdentitySchema, STAGE_QUEUES } from "../jobs/stages.js";
+import {
+  authorizeIntakeWebhook,
+  INTAKE_WEBHOOK_PATH,
+  INTAKE_WEBHOOK_SIGNATURE_HEADER,
+} from "./webhook-auth.js";
 
 const MAX_BODY_BYTES = 65_536;
 
@@ -47,6 +52,11 @@ export interface IntakeServerOptions {
    * Omitted means that route stays 404. GET /hello does not need it.
    */
   readPlanStage?: (taskId: string, sessionId: string) => Promise<PlanStageView>;
+  /**
+   * HMAC secret for POST /webhooks/intake. Blank or omitted fails that route closed (503).
+   * POST /intake does not read this value.
+   */
+  webhookSecret?: string;
 }
 
 export interface IntakeAccepted {
@@ -74,7 +84,7 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(payload);
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+async function readRawBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -88,7 +98,11 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
     }
     chunks.push(buf);
   }
-  const text = Buffer.concat(chunks).toString("utf8");
+  return Buffer.concat(chunks);
+}
+
+function parseJsonBody(raw: Buffer): unknown {
+  const text = raw.toString("utf8");
   if (text.trim() === "") {
     throw new IntakeHttpError(400, {
       error: "invalid_json",
@@ -103,6 +117,34 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
       message: "Request body must be JSON",
     });
   }
+}
+
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  return parseJsonBody(await readRawBody(req));
+}
+
+async function acceptIntake(
+  json: unknown,
+  res: ServerResponse,
+  options: IntakeServerOptions,
+): Promise<void> {
+  const parsed = IntakeHttpSchema.parse(json);
+  const enqueued = await enqueueIntakePipeline(
+    {
+      taskId: parsed.metadata.taskId,
+      title: parsed.brief.title,
+      description: parsed.brief.description ?? "",
+    },
+    options.enqueuer,
+    parsed.metadata.sessionId,
+  );
+  const accepted: IntakeAccepted = {
+    taskId: enqueued.taskId,
+    sessionId: enqueued.sessionId,
+    jobId: `${enqueued.sessionId}__plan`,
+    queue: STAGE_QUEUES.plan,
+  };
+  sendJson(res, 202, accepted);
 }
 
 function invalidIntake(error: ZodError): IntakeHttpError {
@@ -175,10 +217,33 @@ export async function handleIntakeRequest(
       sendJson(res, 200, view);
       return;
     }
+    if (url.pathname === INTAKE_WEBHOOK_PATH) {
+      if (req.method !== "POST") {
+        res.setHeader("allow", "POST");
+        sendJson(res, 405, {
+          error: "method_not_allowed",
+          message: "Use POST /webhooks/intake",
+        });
+        return;
+      }
+      const raw = await readRawBody(req);
+      const auth = authorizeIntakeWebhook(
+        options.webhookSecret,
+        raw,
+        req.headers[INTAKE_WEBHOOK_SIGNATURE_HEADER],
+      );
+      if (!auth.ok) {
+        sendJson(res, auth.status, { error: auth.error, message: auth.message });
+        return;
+      }
+      await acceptIntake(parseJsonBody(raw), res, options);
+      return;
+    }
     if (url.pathname !== "/intake") {
       sendJson(res, 404, {
         error: "not_found",
-        message: "Known routes: GET /health, GET /hello, GET /hello/plan, POST /intake",
+        message:
+          "Known routes: GET /health, GET /hello, GET /hello/plan, POST /intake, POST /webhooks/intake",
       });
       return;
     }
@@ -191,24 +256,7 @@ export async function handleIntakeRequest(
       return;
     }
 
-    const json = await readJsonBody(req);
-    const parsed = IntakeHttpSchema.parse(json);
-    const enqueued = await enqueueIntakePipeline(
-      {
-        taskId: parsed.metadata.taskId,
-        title: parsed.brief.title,
-        description: parsed.brief.description ?? "",
-      },
-      options.enqueuer,
-      parsed.metadata.sessionId,
-    );
-    const accepted: IntakeAccepted = {
-      taskId: enqueued.taskId,
-      sessionId: enqueued.sessionId,
-      jobId: `${enqueued.sessionId}__plan`,
-      queue: STAGE_QUEUES.plan,
-    };
-    sendJson(res, 202, accepted);
+    await acceptIntake(await readJsonBody(req), res, options);
   } catch (error) {
     if (error instanceof IntakeHttpError) {
       sendJson(res, error.status, error.body);

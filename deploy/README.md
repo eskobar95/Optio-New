@@ -47,7 +47,7 @@ Compose binds the data plane to loopback. Docker does not publish these on the p
 | laya          | `127.0.0.1:8000` |
 | caveman-proxy | `127.0.0.1:8787` |
 
-Profile `edge` publishes Caddy on `80` and `443` on all host interfaces. Leave that profile out of `COMPOSE_PROFILES` until the DNS checklist below is done.
+Profile `edge` publishes Caddy on `80` and `443` on all host interfaces. The boot unit leaves that profile out, so a default start does not open those ports. Enable it only with the steps in [docs/ops/caddy-tls-edge.md](../docs/ops/caddy-tls-edge.md) (public name, ACME email, intake HMAC). kit-harness stays on loopback and is not a Caddy upstream.
 
 Hetzner Cloud Firewall, inbound:
 
@@ -120,11 +120,11 @@ Ciphertext, the age key, and plaintext `.env` stay on the host. See [docs/secret
 - [ ] `LITELLM_MASTER_KEY` is not `sk-change-me`.
 - [ ] `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` are set if LiteLLM should call those providers.
 - [ ] `OPTIO_NEW_GITHUB_TOKEN` and `OPTIO_NEW_GITHUB_WEBHOOK_SECRET` are set when PR and CI signals are required.
-- [ ] `OPTIO_NEW_INTAKE_WEBHOOK_SECRET` is set if HTTP intake is exposed later.
+- [ ] `OPTIO_NEW_INTAKE_WEBHOOK_SECRET` and `OPTIO_NEW_ACME_EMAIL` are set before profile `edge` is enabled.
 - [ ] `CURSOR_API_KEY` is set when the Cursor adapter runs on the box.
 - [ ] `OPTIO_NEW_BACKUP_REPO` and `OPTIO_NEW_BACKUP_PASSWORD` are set before the Storage Box timer.
 - [ ] `OPTIO_NEW_HARNESS_URL` stays `http://127.0.0.1:3200`. kit-harness has no public name.
 - [ ] DNS: no public record for port `3200`, `4000`, `3100`, `5432`, or `6379`.
-- [ ] DNS: `OPTIO_NEW_WEBHOOK_HOST` has an A/AAAA to this VPS only when you later enable profile `edge`.
+- [ ] DNS: `OPTIO_NEW_WEBHOOK_HOST` has an A/AAAA to this VPS only when profile `edge` is enabled.
 - [ ] Hetzner Cloud Firewall matches the inbound list above.
 - [ ] Plaintext `.env` is removed only after `check` and a healthy `compose up` (see the secrets runbook).

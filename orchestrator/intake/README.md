@@ -36,15 +36,16 @@ A valid body returns `202`:
 
 The stage job payload from the pipeline graph is still `{ taskId, sessionId, stage }`. Repo and branch hints are validated here and are not copied onto that payload.
 
-Public Caddy still proxies only `/webhooks/*`. This route stays on the orchestrator listener until signature verification exists. Do not expose it without that check.
+## Public webhook
+
+`POST /webhooks/intake` accepts the same JSON body. It enqueues only when `X-Optio-Signature` is `sha256=` plus the hex HMAC-SHA256 of the raw body, keyed by `OPTIO_NEW_INTAKE_WEBHOOK_SECRET`. A blank secret returns `503` (`webhook_auth_unconfigured`) and does not enqueue. A bad or missing signature returns `401` (`invalid_signature`).
+
+`POST /intake` does not check that header. Keep it on `127.0.0.1:3100`. Caddy profile `edge` proxies `/webhooks/*` and does not proxy `/intake`. Enable steps: [docs/ops/caddy-tls-edge.md](../../docs/ops/caddy-tls-edge.md).
 
 ## Explicitly out (v1)
 
 - Linear webhooks, GraphQL, OAuth agent scopes, Agent Activities.
 - Backlog polling of any issue tracker as the control plane.
-
-## Still later
-
-Signature verification before a public Caddy `/webhooks/*` route can enqueue work.
+- A GitHub webhook receiver on this edge. PR/CI signals stay on `OPTIO_NEW_GITHUB_WEBHOOK_SECRET`.
 
 See `docs/SPEC.md` §8 (intake) and §14.0 (BullMQ).

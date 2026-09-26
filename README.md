@@ -52,8 +52,13 @@ docker compose up -d redis postgres litellm
 docker compose --profile full --profile harness up -d
 docker compose --profile harness --profile orchestrator up -d
 docker compose --profile laya up -d laya   # off by default; CPU placeholder, no NVIDIA toolkit
-docker compose --profile edge up -d caddy
 curl -s http://127.0.0.1:3200/health
+```
+
+Local intake is loopback HTTP on `127.0.0.1:3100`. Profile `edge` is optional TLS for the public intake webhook and is not part of this local set. See [docs/ops/caddy-tls-edge.md](docs/ops/caddy-tls-edge.md).
+
+```bash
+docker compose --profile edge up -d caddy
 ```
 
 Orchestrator image (profiles `full` and `orchestrator`) serves intake and the BullMQ stage workers. Eve-runner in profile `full` is still an intentional stub: `agents/*` have no process entrypoint.
