@@ -32,6 +32,14 @@
 3. Workers run Eve stages; New Bot gates ambiguous steps.
 4. GitHub PR/CI signals feed ready/merge; worktree cleaned after merge.
 
+## Pipeline graph (BullMQ)
+
+Workers under `src/orchestrator/jobs/` own five queues: `optio.plan`, `optio.implement`, `optio.review`, `optio.ready`, `optio.merge`. `buildPipelineFlow` nests them so BullMQ runs **plan** first and each later stage waits until the previous job completes. `enqueueIntakePipeline` validates intake and adds that flow.
+
+`processStageJob` persists a step cursor (`state/migrations/001_pipeline_step_cursor.sql`, or `InMemoryStepCursorStore` in unit tests). Each stage has two idempotent steps. A crash leaves `next_step_index` on the unfinished step; requeue continues there and does not repeat completed steps or earlier stages. Completed stages are a no-op.
+
+Unit tests mock Redis. Set `OPTIO_NEW_REDIS_URL` and/or `OPTIO_NEW_DATABASE_URL` to run the optional integration tests. No model API key is required: stage handlers receive an injected `ModelAdapter` (`runAgentLoop`). See `docs/pipeline.md`.
+
 ## Do not
 
 - Integrate Linear webhooks, GraphQL, Agent Sessions, or Linear status vocabulary.

@@ -33,6 +33,36 @@ export {
 export { createEnvModelAdapter, readModelEnv, type ModelEnvConfig } from "./agent/env-adapter.js";
 export { buildIntakeJob, IntakeTaskSchema, type IntakeTask } from "./orchestrator/intake/index.js";
 export { processHelloWorld } from "./orchestrator/jobs/hello-world.js";
+export {
+  PIPELINE_JOB_ATTEMPTS,
+  PIPELINE_STAGES,
+  STAGE_QUEUES,
+  STAGE_STEPS,
+  StageNotReadyError,
+  InMemoryStepCursorStore,
+  buildPipelineFlow,
+  bullmqStageWorkerFactory,
+  createAgentStageHandler,
+  createPgStepCursorStore,
+  createSqlStepCursorStore,
+  enqueueIntakePipeline,
+  loadPipelineStepCursorDdl,
+  processStageJob,
+  runPipeline,
+  startStageGraph,
+  type FlowEnqueuer,
+  type PipelineRunResult,
+  type PipelineStage,
+  type SqlExecutor,
+  type StageJobResult,
+  type StageRuntime,
+  type StageStepContext,
+  type StageStepHandler,
+  type StageWorkerFactory,
+  type StageWorkerHandle,
+  type StepCursor,
+  type StepCursorStore,
+} from "./orchestrator/jobs/index.js";
 export type { CodingAgent, CodingAgentInput, CodingAgentOutput } from "./adapters/coding-agent.js";
 export { codexOpenAiBaseUrl } from "./adapters/codex/index.js";
 export {

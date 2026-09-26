@@ -5,7 +5,7 @@
 ## Role
 
 - Accept tasks from chat/API (New Bot), not from Linear Agent Sessions.
-- Enqueue BullMQ jobs for the default pipeline: plan → implement → review → ready → merge.
+- Enqueue BullMQ jobs for the default pipeline: plan → implement → review → ready → merge (`enqueueIntakePipeline` in `src/orchestrator/jobs/`).
 - Surface elicitations and status back to New Bot / the human in chat.
 
 ## Explicitly out (v1)
