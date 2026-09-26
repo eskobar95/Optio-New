@@ -230,12 +230,41 @@ describe("collectPrSafetyInput", () => {
       "git diff HEAD",
       "git ls-files -z --others --exclude-standard",
       "git diff --no-index -- /dev/null notes.env",
+      'node --eval require("fs").accessSync("node_modules/vitest/package.json")',
       "npm test",
       "npm run lint",
       "npm run typecheck",
     ]);
     expect(input.checks?.test?.exitCode).toBeUndefined();
     expect(evaluatePrSafetyGate(input).reason).toBe("tests_not_run");
+  });
+
+  it("runs npm ci when vitest is missing before the quality checks", async () => {
+    const calls: string[] = [];
+    const shell: ShellRunner = {
+      async run(_cwd, command, args) {
+        calls.push(`${command} ${args.join(" ")}`);
+        if (command === "node") return { exitCode: 1, stdout: "" };
+        if (command === "npm") return { exitCode: 0, stdout: "" };
+        return { exitCode: 0, stdout: "" };
+      },
+    };
+    const input = await collectPrSafetyInput("/work/task", { base: "development", shell });
+    expect(calls).toEqual([
+      "git diff development...HEAD",
+      "git diff HEAD",
+      "git ls-files -z --others --exclude-standard",
+      'node --eval require("fs").accessSync("node_modules/vitest/package.json")',
+      "npm ci --ignore-scripts --include=dev",
+      "npm test",
+      "npm run lint",
+      "npm run typecheck",
+    ]);
+    expect(input.checks).toEqual({
+      test: { exitCode: 0 },
+      lint: { exitCode: 0 },
+      typecheck: { exitCode: 0 },
+    });
   });
 
   it("does not run npm when the diff has a secret", async () => {

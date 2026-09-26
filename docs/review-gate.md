@@ -50,7 +50,7 @@ The gate fails closed:
 
 A closed gate throws `PrSafetyClosedError` (BullMQ `UnrecoverableError`). The message is `pr safety gate closed: <reason> <path> (<rule>)`. The path and rule are included. Secret bytes and command output are not. Nothing is pushed and the pull request is not merged.
 
-The default collector reads the worktree diff first (`git diff <base>...HEAD`, unstaged changes, and untracked files). A secret, a destructive change, or an unreadable diff skips `npm test`, `npm run lint`, and `npm run typecheck`, so those commands are not executed against an unreviewed tree. When the diff is clean, those three commands must exit 0. `<base>` is `OPTIO_NEW_BASE_BRANCH` or `development`. The worktree needs installed dependencies; the gate does not install them. An unsafe base ref is not passed to git.
+The default collector reads the worktree diff first (`git diff <base>...HEAD`, unstaged changes, and untracked files). A secret, a destructive change, or an unreadable diff skips `npm test`, `npm run lint`, and `npm run typecheck`, so those commands are not executed against an unreviewed tree. When the diff is clean, those three commands must exit 0. `<base>` is `OPTIO_NEW_BASE_BRANCH` or `development`. When `node_modules/vitest` is missing (typical for a bind-mounted host checkout worktree), the gate runs `npm ci --ignore-scripts --include=dev` before the checks. npm check runs strip live `OPTIO_NEW_REDIS_URL` / `OPTIO_NEW_DATABASE_URL` and tokens so optional integration tests stay skipped inside the orchestrator container. An unsafe base ref is not passed to git.
 
 Host proof, without opening a pull request:
 

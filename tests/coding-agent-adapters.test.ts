@@ -231,7 +231,8 @@ describe("Cursor CodingAgent", () => {
       env: { CURSOR_API_KEY: CURSOR_KEY, OPTIO_CURSOR_SANDBOX: "disabled" },
     });
     await review.run(sampleInput({ allowed_tools: ["read"] }));
-    expect(readOnly.calls[0]?.args).not.toContain("--force");
+    // --force is required: allowlist without a TTY blocks git on read-only review.
+    expect(readOnly.calls[0]?.args).toContain("--force");
     expect(readOnly.calls[0]?.args).toContain("--sandbox");
     expect(readOnly.calls[0]?.args).toContain("disabled");
     expect(readOnly.calls[0]?.args).not.toContain("enabled");

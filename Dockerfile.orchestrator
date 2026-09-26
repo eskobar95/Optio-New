@@ -25,7 +25,7 @@ ENV ORCHESTRATOR_PORT=3100
 # unset and keep --sandbox enabled on read-only steps.
 ENV OPTIO_CURSOR_SANDBOX=disabled
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl bash git \
+  && apt-get install -y --no-install-recommends ca-certificates curl bash git python3 \
   && rm -rf /var/lib/apt/lists/* \
   && git config --system --add safe.directory /opt/optio-new \
   && git config --system --add safe.directory '*' \
