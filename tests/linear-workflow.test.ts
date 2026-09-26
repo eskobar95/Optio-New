@@ -2,10 +2,14 @@ import { describe, expect, it, afterEach } from "vitest";
 import { createIntakeServer, signLinearBody } from "../src/index.js";
 import { applyWorkflowEffects } from "../src/orchestrator/linear/apply.js";
 import { LinearStatusMissingError } from "../src/orchestrator/linear/status.js";
-import { openGithubPullRequest } from "../src/orchestrator/github/pull-request.js";
+import {
+  openGithubPullRequest,
+  reRequestGithubPullRequestReview,
+} from "../src/orchestrator/github/pull-request.js";
 import {
   CI_FAIL_ESCALATE_ENV,
   DEFAULT_CI_FAIL_ESCALATE_AFTER,
+  blockingReviewFeedback,
   boardSetupPlan,
   consumeAgentStatusWrite,
   decideAgentAdvance,
@@ -15,6 +19,7 @@ import {
   readBlindAlley,
   readCiFailEscalateAfter,
   resetAgentStatusWrites,
+  reviewFailureKey,
 } from "../src/orchestrator/linear/workflow.js";
 import type { WorkflowPorts } from "../src/orchestrator/linear/apply.js";
 import type { AddressInfo } from "node:net";
@@ -51,6 +56,9 @@ function ports(overrides: Partial<WorkflowPorts> = {}): {
       },
       merge: async () => {
         calls.push("merge");
+      },
+      rereview: async (comment) => {
+        calls.push(`rereview:${comment}`);
       },
       setStatus: async (status) => {
         calls.push(`status:${status}`);
@@ -93,12 +101,73 @@ describe("Linear workflow decisions", () => {
     expect(merge.effects[2]).toMatchObject({ status: "Done" });
   });
 
-  it("refuses Review when CI is red and does not undraft", () => {
-    const denied = advance({ action: "review", ci: "red", ciFailureCount: 0 });
-    expect(denied.ok).toBe(false);
-    expect(denied.reason).toBe("ci_red");
-    expect(denied.ciFailureCount).toBe(1);
-    expect(denied.effects).toEqual([]);
+  it("returns to In Progress with feedback when CI is red and keeps the pull request ready", () => {
+    const decision = advance({ action: "review", ci: "red", ciFailureCount: 0 });
+    expect(decision.ok).toBe(true);
+    expect(decision.halt).toBe(false);
+    expect(decision.reason).toBe("return_to_progress");
+    expect(decision.ciFailureCount).toBe(1);
+    expect(decision.effects.map((effect) => effect.kind)).toEqual([
+      "linear.status",
+      "linear.comment",
+      "github.rereview",
+    ]);
+    expect(decision.effects[0]).toMatchObject({ status: "In Progress" });
+    const comment = decision.effects[1];
+    expect(comment?.kind).toBe("linear.comment");
+    if (comment?.kind !== "linear.comment") return;
+    expect(comment.body).toContain("Failed: GitHub checks red (tests, lint, or Actions)");
+    expect(comment.body).toContain("Must fix: Make CI green (tests, lint, and Actions)");
+    expect(comment.body).toContain("Attempt: 1/3");
+    expect(decision.effects.some((effect) => effect.kind === "github.draft")).toBe(false);
+    expect(decision.effects.some((effect) => effect.kind === "github.ready")).toBe(false);
+  });
+
+  it("returns to In Progress when review feedback is still open on green CI", () => {
+    const decision = advance({
+      action: "review",
+      ci: "green",
+      ciFailureCount: 1,
+      reviewFeedback: "Rename the helper",
+    });
+    expect(decision.reason).toBe("return_to_progress");
+    expect(decision.ciFailureCount).toBe(2);
+    const comment = decision.effects.find((effect) => effect.kind === "linear.comment");
+    expect(comment).toMatchObject({
+      kind: "linear.comment",
+      body: expect.stringContaining("Must fix: Rename the helper"),
+    });
+  });
+
+  it("does not count the same commit and the same feedback twice", () => {
+    const key = reviewFailureKey("abc123", "Rename the helper");
+    const again = advance({
+      action: "review",
+      ci: "red",
+      ciFailureCount: 1,
+      reviewFeedback: "Rename the helper",
+      failureKey: key,
+      lastFailureKey: key,
+    });
+    expect(again.ok).toBe(false);
+    expect(again.reason).toBe("ci_unchanged");
+    expect(again.ciFailureCount).toBe(1);
+    expect(again.effects).toEqual([]);
+  });
+
+  it("treats a later approval as clearing that reviewer's feedback", () => {
+    expect(
+      blockingReviewFeedback([
+        { login: "ada", state: "CHANGES_REQUESTED", body: "Fix the gate" },
+        { login: "ada", state: "APPROVED", body: "" },
+      ]),
+    ).toBeUndefined();
+    expect(
+      blockingReviewFeedback([
+        { login: "ada", state: "CHANGES_REQUESTED", body: "Fix the gate" },
+        { login: "bea", state: "COMMENTED", body: "Also rename the helper" },
+      ]),
+    ).toBe("ada: Fix the gate\nbea: Also rename the helper");
   });
 
   it("does not count a pending check as a failure", () => {
@@ -216,14 +285,17 @@ describe("Linear workflow decisions", () => {
 });
 
 describe("Linear workflow effects", () => {
-  it("applies draft then status, and does not undraft a red gate", async () => {
+  it("applies draft then status, and a red gate returns to In Progress without drafting", async () => {
     const happy = ports();
     await applyWorkflowEffects(advance({ action: "start" }), happy.ports);
     expect(happy.calls).toEqual(["draft", "status:In Progress"]);
 
     const blocked = ports();
     await applyWorkflowEffects(advance({ action: "review", ci: "red" }), blocked.ports);
-    expect(blocked.calls).toEqual([]);
+    expect(blocked.calls[0]).toBe("status:In Progress");
+    expect(blocked.calls[1]).toContain("Review feedback");
+    expect(blocked.calls[2]).toContain("rereview:");
+    expect(blocked.calls.some((call) => call === "draft" || call === "ready")).toBe(false);
   });
 
   it("moves to Needs Human and comments, or falls back to In Progress", async () => {
@@ -266,6 +338,34 @@ describe("Linear workflow effects", () => {
       },
     });
     expect(JSON.parse(body)).toMatchObject({ draft: true, base: "main" });
+  });
+
+  it("re-requests review and comments without converting the pull request to a draft", async () => {
+    const bodies: { url: string; body: string }[] = [];
+    await reRequestGithubPullRequestReview({
+      token: "test-github-token",
+      owner: "acme",
+      repo: "widgets",
+      number: 9,
+      reviewers: ["ada"],
+      comment: "Review feedback\nFailed: checks red\nMust fix: tests",
+      fetchImpl: async (url, init) => {
+        bodies.push({
+          url: String(url),
+          body: typeof init?.body === "string" ? init.body : "",
+        });
+        return new Response(JSON.stringify({ ok: true }), { status: 201 });
+      },
+    });
+    expect(bodies.map((call) => call.url)).toEqual([
+      "https://api.github.com/repos/acme/widgets/pulls/9/requested_reviewers",
+      "https://api.github.com/repos/acme/widgets/issues/9/comments",
+    ]);
+    for (const call of bodies) {
+      expect(call.body).not.toContain("draft");
+    }
+    expect(JSON.parse(bodies[0]?.body ?? "{}")).toEqual({ reviewers: ["ada"] });
+    expect(JSON.parse(bodies[1]?.body ?? "{}").body).toContain("Must fix: tests");
   });
 });
 

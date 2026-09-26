@@ -10,6 +10,8 @@ export interface WorkflowPorts {
   openDraft(): Promise<void>;
   markReady(): Promise<void>;
   merge(): Promise<void>;
+  /** Re-request review and comment. Must not convert the pull request to a draft. */
+  rereview(comment: string): Promise<void>;
   setStatus(status: string): Promise<void>;
   comment(body: string): Promise<void>;
   revert(stateId: string): Promise<void>;
@@ -25,6 +27,7 @@ export async function applyWorkflowEffects(
     if (effect.kind === "github.draft") await ports.openDraft();
     else if (effect.kind === "github.ready") await ports.markReady();
     else if (effect.kind === "github.merge") await ports.merge();
+    else if (effect.kind === "github.rereview") await ports.rereview(effect.comment);
     else if (effect.kind === "linear.status") await ports.setStatus(effect.status);
     else if (effect.kind === "linear.comment") await ports.comment(effect.body);
     else if (effect.kind === "linear.revert") await ports.revert(effect.stateId);

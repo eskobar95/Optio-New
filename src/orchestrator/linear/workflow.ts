@@ -59,10 +59,21 @@ export type WorkflowEffect =
   | { kind: "github.draft" }
   | { kind: "github.ready" }
   | { kind: "github.merge" }
+  /** Re-request review and comment. Never converts the pull request back to a draft. */
+  | { kind: "github.rereview"; comment: string }
   | { kind: "linear.status"; status: string }
   | { kind: "linear.comment"; body: string }
   | { kind: "linear.revert"; stateId: string }
   | { kind: "linear.escalate"; comment: string };
+
+/** Worktree file the implementation agent reads after Review sends the issue back. */
+export const REVIEW_FEEDBACK_FILE = "linear-review-feedback.md";
+
+export interface ReviewNote {
+  login: string;
+  state: string;
+  body: string;
+}
 
 export interface WorkflowDecision {
   ok: boolean;
@@ -124,6 +135,45 @@ export function mapCommitStatus(state: string): CiState {
   return "red";
 }
 
+/** Latest review per login. Changes requested, or a comment with a body, blocks Review. */
+export function blockingReviewFeedback(notes: readonly ReviewNote[]): string | undefined {
+  const latest = new Map<string, ReviewNote>();
+  for (const note of notes) {
+    const login = note.login.trim();
+    if (!login) continue;
+    latest.set(login, note);
+  }
+  const lines: string[] = [];
+  for (const note of latest.values()) {
+    const state = note.state.trim();
+    const body = note.body.trim();
+    if (state === "CHANGES_REQUESTED" || (state === "COMMENTED" && body)) {
+      lines.push(body ? `${note.login.trim()}: ${body}` : `${note.login.trim()} requested changes`);
+    }
+  }
+  if (lines.length === 0) return undefined;
+  return lines.join("\n");
+}
+
+/** Same commit and the same feedback are one failed return, not a new attempt. */
+export function reviewFailureKey(sha: string, feedback?: string): string {
+  return `${sha.trim()}\n${feedback?.trim() ?? ""}`;
+}
+
+export function reviewLoopComment(input: {
+  failed: string;
+  mustFix: string;
+  attempt: number;
+  escalateAfter: number;
+}): string {
+  return [
+    "Review feedback",
+    `Failed: ${input.failed}`,
+    `Must fix: ${input.mustFix}`,
+    `Attempt: ${input.attempt}/${input.escalateAfter}`,
+  ].join("\n");
+}
+
 const agentWrites = new Map<string, { status: string; expiresAt: number }>();
 const AGENT_WRITE_MS = 60_000;
 
@@ -151,6 +201,11 @@ export function decideAgentAdvance(input: {
   humanApproved?: boolean;
   whenIso: string;
   blindAlley?: { why: string; tried: string; failed: string };
+  /** Concrete review comments. Empty means no open feedback. */
+  reviewFeedback?: string;
+  /** `reviewFailureKey` for this evaluation. Matches `lastFailureKey` to avoid a double count. */
+  failureKey?: string;
+  lastFailureKey?: string;
 }): WorkflowDecision {
   const count = input.ciFailureCount;
   if (input.action === "start") {
@@ -171,7 +226,23 @@ export function decideAgentAdvance(input: {
     return escalate(count, input.whenIso, detail.why, detail.tried, detail.failed, "blind_alley");
   }
   if (input.action === "merge") {
+    if (input.ci !== undefined || Boolean(input.reviewFeedback?.trim())) {
+      const problem = reviewProblem(input);
+      if (problem) return problem;
+    }
     if (!input.humanApproved) {
+      if (input.ci === "green") {
+        return {
+          ok: false,
+          halt: false,
+          reason: "awaiting_approval",
+          ciFailureCount: 0,
+          effects: [
+            { kind: "github.ready" },
+            { kind: "linear.status", status: LINEAR_STATUS.review },
+          ],
+        };
+      }
       return deny("awaiting_approval", count);
     }
     return ok("merge", count, [
@@ -180,24 +251,54 @@ export function decideAgentAdvance(input: {
       { kind: "linear.status", status: LINEAR_STATUS.done },
     ]);
   }
-  if (input.ci === "pending") return deny("ci_pending", count);
-  if (input.ci !== "green") {
-    const next = count + 1;
-    if (next >= input.escalateAfter) {
-      return escalate(
-        next,
-        input.whenIso,
-        `Repeated CI failure (${next}/${input.escalateAfter})`,
-        "In Progress → Review",
-        "GitHub checks red (tests, lint, or Actions)",
-        "ci_failures",
-      );
-    }
-    return deny("ci_red", next);
-  }
+  const problem = reviewProblem(input);
+  if (problem) return problem;
   return ok("review", 0, [
     { kind: "github.ready" },
     { kind: "linear.status", status: LINEAR_STATUS.review },
+  ]);
+}
+
+function reviewProblem(input: {
+  ci?: CiState;
+  ciFailureCount: number;
+  escalateAfter: number;
+  whenIso: string;
+  reviewFeedback?: string;
+  failureKey?: string;
+  lastFailureKey?: string;
+}): WorkflowDecision | undefined {
+  const feedback = input.reviewFeedback?.trim() ?? "";
+  if (input.ci === "pending") return deny("ci_pending", input.ciFailureCount);
+  if (input.ci === "green" && !feedback) return undefined;
+  const count = input.ciFailureCount;
+  if (input.failureKey && input.lastFailureKey && input.failureKey === input.lastFailureKey) {
+    return deny("ci_unchanged", count);
+  }
+  const next = count + 1;
+  const failed = feedback
+    ? input.ci === "green"
+      ? feedback
+      : `GitHub checks red (tests, lint, or Actions). ${feedback}`
+    : "GitHub checks red (tests, lint, or Actions)";
+  const mustFix = feedback || "Make CI green (tests, lint, and Actions)";
+  if (next >= input.escalateAfter) {
+    const why =
+      input.ci === "green"
+        ? `Repeated review feedback (${next}/${input.escalateAfter})`
+        : `Repeated CI failure (${next}/${input.escalateAfter})`;
+    return escalate(next, input.whenIso, why, "In Progress → Review", failed, "ci_failures");
+  }
+  const body = reviewLoopComment({
+    failed,
+    mustFix,
+    attempt: next,
+    escalateAfter: input.escalateAfter,
+  });
+  return ok("return_to_progress", next, [
+    { kind: "linear.status", status: LINEAR_STATUS.inProgress },
+    { kind: "linear.comment", body },
+    { kind: "github.rereview", comment: body },
   ]);
 }
 

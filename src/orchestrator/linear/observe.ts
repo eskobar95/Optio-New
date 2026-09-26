@@ -1,6 +1,6 @@
 /**
  * Webhook-side gate. A human move into Review, Merge, or Done is reverted.
- * This path does not open, undraft, or merge a pull request.
+ * This path does not open, undraft, re-request, or merge a pull request.
  * Phase 1 still comments `queued` and enqueues before this runs.
  */
 import { applyWorkflowEffects, type WorkflowPorts } from "./apply.js";
@@ -31,6 +31,7 @@ export async function enforceObservedLinearStatus(input: {
     openDraft: unused,
     markReady: unused,
     merge: unused,
+    rereview: unused,
     setStatus: unused,
     comment: async () => undefined,
     escalationStatus: async () => {

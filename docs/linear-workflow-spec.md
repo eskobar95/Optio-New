@@ -15,7 +15,7 @@ Six statuses carry in-flight work. **Done** is the finished state. **Canceled** 
 | Triage      | Active                                           | The agent places an unclear or problematic issue here instead of guessing. This is not the waiting queue.                                                                            |
 | Backlog     | Active                                           | Queue of tasks that are waiting.                                                                                                                                                     |
 | Todo        | Active. Linear system status; cannot be deleted. | Start point. The agent picks the issue up from here.                                                                                                                                 |
-| In Progress | Active                                           | Work is underway. Entering this status opens a **draft** pull request on GitHub.                                                                                                     |
+| In Progress | Active                                           | Work is underway. The first entry from **Todo** opens a **draft** pull request. A return from **Review** keeps that pull request ready for review.                                   |
 | Review      | Active                                           | Hard gate. Only the agent may move an issue here, and only when every CI check on the pull request is green. Entering this status marks the pull request ready for review (undraft). |
 | Merge       | Active                                           | The agent merges that pull request into `main`.                                                                                                                                      |
 | Done        | Finished                                         | The task is finished. The Linear name is **Done**. **Completed** is an alias only when a board already uses that label.                                                              |
@@ -28,18 +28,19 @@ Six statuses carry in-flight work. **Done** is the finished state. **Canceled** 
 
 Humans may order **Triage**, **Backlog**, and **Todo**. From **In Progress** through **Merge**, the agent is the only actor that advances the issue. A human may read and approve the GitHub pull request while the issue sits in **Review**. A human may not drag the issue to **Review** to bypass CI.
 
-| From                          | To                    | Actor      | When                                                                                                                                                                             | GitHub                                                                              |
-| ----------------------------- | --------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Backlog, Todo, or In Progress | Triage                | Agent      | The task is unclear or problematic. The agent does not guess a fix and does not force **Review**.                                                                                | No new pull request. A draft that already exists stays a draft. No merge.           |
-| Triage                        | Backlog               | Human      | The task is clear enough to wait.                                                                                                                                                | None.                                                                               |
-| Backlog                       | Todo                  | Human      | The task is selected as the start point.                                                                                                                                         | None.                                                                               |
-| Todo                          | In Progress           | Agent      | The agent starts the task. This is the start of agent ownership.                                                                                                                 | Open a draft pull request on the catalog repo for this issue.                       |
-| In Progress                   | Review                | Agent only | Every CI check on that pull request is green: tests, lint, and GitHub Actions. A red or pending check blocks the move. There is no manual override.                              | Mark the pull request ready for review (undraft).                                   |
-| Review                        | Merge                 | Agent      | A human has read and approved the pull request. The agent performs the status move.                                                                                              | Merge the pull request into `main`.                                                 |
-| Merge                         | Done                  | Agent      | The merge has landed on `main`.                                                                                                                                                  | None. The pull request is already merged.                                           |
-| In Progress or Review         | Needs Human           | Agent      | Escape hatch. CI on this gate has failed `LINEAR_WORKFLOW_CI_FAIL_ESCALATE_AFTER` times (default 3), or the agent is in a blind alley. Preferred target when that column exists. | Do not merge. This move does not undraft and does not count as entering **Review**. |
-| In Progress or Review         | In Progress           | Agent      | Same escape hatch, while the board has no **Needs Human** column. If the issue is already **In Progress**, the status stays put.                                                 | Same. The Linear comment is the signal.                                             |
-| any                           | Canceled or Duplicate | —          | Not a transition in this flow.                                                                                                                                                   | None.                                                                               |
+| From                          | To                    | Actor      | When                                                                                                                                                                                                                   | GitHub                                                                                                                                      |
+| ----------------------------- | --------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backlog, Todo, or In Progress | Triage                | Agent      | The task is unclear or problematic. The agent does not guess a fix and does not force **Review**.                                                                                                                      | No new pull request. A draft that already exists stays a draft. No merge.                                                                   |
+| Triage                        | Backlog               | Human      | The task is clear enough to wait.                                                                                                                                                                                      | None.                                                                                                                                       |
+| Backlog                       | Todo                  | Human      | The task is selected as the start point.                                                                                                                                                                               | None.                                                                                                                                       |
+| Todo                          | In Progress           | Agent      | The agent starts the task. This is the start of agent ownership.                                                                                                                                                       | Open a draft pull request on the catalog repo for this issue.                                                                               |
+| In Progress                   | Review                | Agent only | Every CI check on that pull request is green (tests, lint, and GitHub Actions) and no review feedback is still open. A red or pending check blocks the move. There is no manual override.                              | Mark the pull request ready for review (undraft). The call is idempotent when the pull request is already ready.                            |
+| Review                        | In Progress           | Agent      | CI is red, or a review requests changes or leaves feedback, and the attempt count is still under the threshold. A pending check waits and does not count. The same commit with the same feedback does not count twice. | Keep the pull request ready for review. Re-request review and comment with the feedback. Do not convert it back to a draft.                 |
+| Review                        | Merge                 | Agent      | CI is green, review feedback is clear, and a human has approved the pull request. The agent performs the status move.                                                                                                  | Merge the pull request into `main`.                                                                                                         |
+| Merge                         | Done                  | Agent      | The merge has landed on `main`.                                                                                                                                                                                        | None. The pull request is already merged.                                                                                                   |
+| In Progress or Review         | Needs Human           | Agent      | Escape hatch. Failed return trips have reached `LINEAR_WORKFLOW_CI_FAIL_ESCALATE_AFTER` (default 3), or the agent is in a blind alley. Preferred target when that column exists.                                       | Do not merge. This move does not undraft, does not convert a ready pull request back to a draft, and does not count as entering **Review**. |
+| In Progress or Review         | In Progress           | Agent      | Same escape hatch, while the board has no **Needs Human** column. If the issue is already **In Progress**, the status stays put.                                                                                       | Same. The Linear comment is the signal.                                                                                                     |
+| any                           | Canceled or Duplicate | —          | Not a transition in this flow.                                                                                                                                                                                         | None.                                                                                                                                       |
 
 A human move into **Review** is not a pass. The integration must not treat it as the gate opening, and it must not undraft the pull request because of that move.
 
@@ -47,19 +48,22 @@ A human move into **Review** is not a pass. The integration must not treat it as
 
 Two gates are fail-closed.
 
-**In Progress → Review.** Only the agent may take this transition. It requires a green CI result on the pull request (tests, lint, Actions). No person, label, or comment overrides a red or pending check. The factory checks stay in force beside this board rule: `evaluateReviewGate` must pass before ready, and `evaluatePrSafetyGate` runs again inside `open_pr` and `merge_branch` ([review-gate.md](review-gate.md)). A Linear status does not soften those checks.
+**In Progress → Review.** Only the agent may take this transition. It requires a green CI result on the pull request (tests, lint, Actions) and no open review feedback. No person, label, or comment overrides a red or pending check. The factory checks stay in force beside this board rule: `evaluateReviewGate` must pass before ready, and `evaluatePrSafetyGate` runs again inside `open_pr` and `merge_branch` ([review-gate.md](review-gate.md)). A Linear status does not soften those checks.
 
-**Draft pull request → ready for review.** Undraft is a side effect of the agent moving the issue to **Review** after CI is green. It does not happen because a human edited the issue, and it does not happen while checks are red.
+**Draft pull request → ready for review.** Undraft is a side effect of the agent moving the issue to **Review** after CI is green and review feedback is clear. It does not happen because a human edited the issue, and it does not happen while checks are red.
 
-A red check does not let a human force **Review**. Repeated failure of this gate, and a blind alley, leave the autonomous path on the exception in [Human-assistance escape hatches](#5-human-assistance-escape-hatches).
+A red check or open review feedback does not open the gate. The agent moves the issue back to **In Progress** with concrete feedback and increments the attempt counter. The pull request stays ready for review for the rest of that loop: the return does not set `draft: true`. See [Review ↔ In Progress](#review--in-progress).
+
+A red check does not let a human force **Review**. When the failed returns reach the threshold, or the agent is in a blind alley, the autonomous path stops on the exception in [Human-assistance escape hatches](#5-human-assistance-escape-hatches).
 
 ## 4. Agent ownership
 
 The agent owns the chain from **In Progress** through **Merge**:
 
 - **Todo → In Progress** starts the work and opens the draft pull request.
-- **In Progress → Review** is the agent's move, and only after CI is green.
-- **Review → Merge** is the agent's move after the human has approved the pull request.
+- **In Progress → Review** is the agent's move, and only after CI is green and review feedback is clear.
+- **Review → In Progress** is the agent's move when CI is red or review feedback is still open, while attempts remain under the threshold.
+- **Review → Merge** is the agent's move after CI is green, review feedback is clear, and the human has approved the pull request.
 - **Merge** is the agent merging that pull request into `main`, then moving the issue to **Done**.
 
 Humans intervene at the review step itself: they read and approve the undrafted pull request. They do not force **Review** while CI is red, and they do not merge the pull request in place of the agent.
@@ -70,15 +74,34 @@ The orchestrator still has its own approval pause ([hitl.md](hitl.md)). This doc
 
 ## 5. Human-assistance escape hatches
 
-Default: the agent runs from **In Progress** through **Merge** without asking for help. A human still reads and approves the pull request at **Review**. The hatches below are the exception. They are rare. The agent must take one when it applies, and must not keep looping.
+Default: the agent runs from **In Progress** through **Merge** without asking for help. A human still reads and approves the pull request at **Review**. Under the threshold below, a problem found at **Review** loops the issue back to **In Progress** with feedback. The hatches are the stop. They are rare. The agent must take one when the threshold is reached or the work is a blind alley, and must not keep looping after that.
+
+### Review ↔ In Progress
+
+While the attempt count is under the threshold, a problem found at **Review** sends the issue back to **In Progress**. A problem is CI red (tests, lint, or Actions), or review feedback: the latest review from a person requests changes, or leaves a comment with a body. A later approval from that person clears their feedback. A pending check is not a failure and does not move the issue. The same commit with the same feedback is one failure; a retry of that evaluation does not increment the count and does not post the comment again. The agent may still attempt the fix on that retry.
+
+The return posts a Linear comment the agent consumes:
+
+```text
+Review feedback
+Failed: <what failed>
+Must fix: <what must be fixed>
+Attempt: <n>/<threshold>
+```
+
+The same text is written to `linear-review-feedback.md` in the worktree. The implementation agent attempts one fix from that file and commits it. The orchestrator pushes the branch when the commit changed. It does not open a new pull request and it does not set `draft: true`.
+
+The pull request stays ready for review. The orchestrator re-requests the reviewers already on the pull request (`POST /pulls/{n}/requested_reviewers`) and posts the same feedback as a pull request comment. That resets review state so reviewers see the new changes. A 422 from the re-request (for example the author cannot be requested) still leaves the comment in place.
+
+The next evaluation runs on the new CI result. Green CI and no open review feedback moves the issue back to **Review**. Undraft runs again and is a no-op when the pull request is already ready. That pass resets the attempt count to 0, and the flow continues toward **Merge**. Red CI or new review feedback increments the count. The third failed return, at the default threshold, escalates.
 
 ### Repeated Review / CI failure
 
-Escalate when this task has failed the **In Progress → Review** gate, or has sat in **Review** while checks fail, and the failure count has reached the threshold.
+Escalate when the failed returns above have reached the threshold.
 
-One failure is one red evaluation: an attempt to enter **Review** whose CI is red (tests, lint, or Actions), or a check that fails while the issue is already in **Review**. A pending check is not a failure. The count is per task.
+One failure is one failed return trip: an attempt to enter or stay in **Review** whose CI is red, or whose review feedback is still open. A pending check is not a failure. The count is per task.
 
-The threshold is configurable. The knob is `LINEAR_WORKFLOW_CI_FAIL_ESCALATE_AFTER`. Unset, blank, or a value that is not a positive integer uses **3**. A default of 5 was considered; **3** is the chosen default. The third failure escalates. The orchestrator reads the knob when a Linear-sourced task evaluates the gate. The count is stored beside the worktree (`.prs/<task>.linear.json`) and resets to 0 when the gate passes.
+The threshold is configurable. The knob is `LINEAR_WORKFLOW_CI_FAIL_ESCALATE_AFTER`. Unset, blank, or a value that is not a positive integer uses **3**. A default of 5 was considered; **3** is the chosen default. The third failed return escalates. The orchestrator reads the knob when a Linear-sourced task evaluates the gate. The count and the last failure key are stored beside the worktree (`.prs/<task>.linear.json`, fields `ciFailureCount` and `lastFailureKey`). A green return to **Review** resets the count to 0.
 
 ### Blind alley
 
@@ -145,8 +168,8 @@ The multi-repo catalog holds `optio-new` and `findjobabroad` ([ops/multi-repo-cx
 For a task whose intake `source` is `linear`, the production handler drives the board:
 
 - `record_diff` opens a **draft** pull request on the catalog repo for that `repoId`, with base `main`, then sets **In Progress**.
-- `record_ci_wait` moves to **Review** and undrafts only when commit status is `success`. A red status counts toward the escape hatch. Pending does not. The webhook does not undraft.
-- `merge_branch` merges that pull request only after a GitHub review with state `APPROVED`, then sets **Merge** and **Done** (or **Completed** when that is the only finished name on the team).
+- `record_ci_wait` moves to **Review** and undrafts only when commit status is `success` and review feedback is clear. A red status, or a review that requests changes or comments, moves the issue back to **In Progress** with the feedback comment, re-requests review, and asks the implementation agent to fix `linear-review-feedback.md`. That return keeps the pull request ready (`draft` stays false). Pending does not count. The same commit and the same feedback do not count twice. The third failed return escalates. The webhook does not undraft or re-request.
+- `merge_branch` uses the same return when CI is red or review feedback is still open. When CI is green, feedback is clear, and a GitHub review is `APPROVED`, it merges that pull request, then sets **Merge** and **Done** (or **Completed** when that is the only finished name on the team). Green without approval waits and sets **Review** again.
 - A human move into **Review**, **Merge**, or **Done** is reverted to `updatedFrom.stateId` after the Phase 1 `queued` comment. The agent's own `issueUpdate` is marked for 60 seconds so that webhook does not revert it.
 
 `open_pr` still runs at ready for every task. On a Linear task it reuses the draft already opened and does not undraft it. Other intake sources keep the catalog `defaultBranch` and a non-draft pull request. Phase 1 intake does not itself open or merge a pull request.

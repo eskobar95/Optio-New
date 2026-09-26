@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -620,6 +620,122 @@ describe("production stage handler", () => {
       /typecheck_not_run/,
     );
     expect(git.calls.some((call) => call.startsWith("push "))).toBe(false);
+  });
+
+  it("sends Review feedback back to In Progress and retries the fix without drafting", async () => {
+    const taskId = "lin-FIN-12";
+    const { handle, worktrees } = worktreeFixture(taskId, true);
+    mkdirSync(join(handle.path, "..", ".prs"), { recursive: true });
+    writeFileSync(
+      join(handle.path, "..", ".prs", `${taskId}.json`),
+      `${JSON.stringify({
+        url: "https://github.com/acme/widgets/pull/7",
+        number: 7,
+        head: handle.branch,
+        base: "main",
+      })}\n`,
+    );
+    const agentCalls: CodingAgentInput[] = [];
+    let head = "aaa111";
+    let ciState = "failure";
+    const githubBodies: { url: string; method: string; body?: string }[] = [];
+    const handler = createProductionStageHandler({
+      env: handlerEnv({ OPTIO_NEW_LINEAR_API_KEY: "lin_api_testkey12345678" }),
+      worktrees,
+      codingAgent: codingAgent(agentCalls),
+      git: async (_cwd, args) => {
+        const command = args[0] === "-c" ? "commit" : args[0];
+        if (command === "rev-parse") return head;
+        if (command === "status") return head === "aaa111" ? " M src/app.ts" : "";
+        if (command === "add") return "";
+        if (command === "commit") {
+          head = "bbb222";
+          return "";
+        }
+        if (command === "push") return "";
+        throw new Error(`unexpected git ${args.join(" ")}`);
+      },
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        const body = typeof init?.body === "string" ? init.body : undefined;
+        githubBodies.push({ url, method, body });
+        if (url.includes("api.linear.app/graphql")) {
+          const query = body ? ((JSON.parse(body) as { query?: string }).query ?? "") : "";
+          if (query.includes("IssueStates")) {
+            return jsonResponse(200, {
+              data: {
+                issue: {
+                  team: {
+                    states: {
+                      nodes: [
+                        { id: "s-ip", name: "In Progress" },
+                        { id: "s-re", name: "Review" },
+                        { id: "s-nh", name: "Needs Human" },
+                      ],
+                    },
+                  },
+                },
+              },
+            });
+          }
+          return jsonResponse(200, {
+            data: { commentCreate: { success: true }, issueUpdate: { success: true } },
+          });
+        }
+        if (method === "GET" && url.endsWith("/status"))
+          return jsonResponse(200, { state: ciState });
+        if (method === "GET" && url.endsWith("/reviews")) {
+          return jsonResponse(
+            200,
+            ciState === "success"
+              ? []
+              : [{ user: { login: "ada" }, state: "CHANGES_REQUESTED", body: "Fix the parser" }],
+          );
+        }
+        if (method === "POST" && url.endsWith("/requested_reviewers")) {
+          return jsonResponse(201, { requested_reviewers: [{ login: "ada" }] });
+        }
+        if (method === "POST" && url.endsWith("/comments")) return jsonResponse(201, { id: 1 });
+        if (method === "PATCH") return jsonResponse(200, { draft: false });
+        return jsonResponse(500, { message: `unexpected ${method} ${url}` });
+      },
+    });
+    const ctx = {
+      ...step("ready", "record_ci_wait", taskId),
+      source: "linear" as const,
+      linearIssueId: "2174add1-f7c8-44e3-bbf3-2d60b5ea8bc9",
+    };
+    await expect(handler.run(ctx)).rejects.toThrow(/return_to_progress/);
+    expect(agentCalls[0]?.prompt).toContain("Fix the parser");
+    expect(agentCalls[0]?.prompt).toContain("Attempt: 1/3");
+    expect(existsSync(join(handle.path, "linear-review-feedback.md"))).toBe(true);
+    const feedback = readFileSync(join(handle.path, "linear-review-feedback.md"), "utf8");
+    expect(feedback).toContain("Failed:");
+    expect(feedback).toContain("Must fix:");
+    expect(githubBodies.some((call) => call.url.endsWith("/requested_reviewers"))).toBe(true);
+    expect(
+      githubBodies.some((call) => call.method === "POST" && call.url.endsWith("/comments")),
+    ).toBe(true);
+    expect(githubBodies.some((call) => call.body?.includes('"draft":true'))).toBe(false);
+    expect(githubBodies.some((call) => call.method === "PATCH")).toBe(false);
+
+    const progress = JSON.parse(
+      readFileSync(join(handle.path, "..", ".prs", `${taskId}.linear.json`), "utf8"),
+    ) as { ciFailureCount: number };
+    expect(progress.ciFailureCount).toBe(1);
+    expect(head).toBe("bbb222");
+
+    ciState = "success";
+    githubBodies.length = 0;
+    await handler.run(ctx);
+    expect(
+      githubBodies.some((call) => call.method === "PATCH" && call.body?.includes('"draft":false')),
+    ).toBe(true);
+    const reviewUpdate = githubBodies.find(
+      (call) => call.url.includes("api.linear.app") && call.body?.includes("s-re"),
+    );
+    expect(reviewUpdate).toBeTruthy();
   });
 });
 

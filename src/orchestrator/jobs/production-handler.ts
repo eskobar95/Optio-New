@@ -20,11 +20,13 @@ import {
   GithubRequestError,
   findOpenGithubPullRequest,
   githubPullRequestApproved,
+  listGithubPullRequestReviews,
   mergeGithubPullRequest,
   githubRepoFromCloneUrl,
   markGithubPullRequestReady,
   openGithubPullRequest,
   readCommitStatus,
+  reRequestGithubPullRequestReview,
   redact,
   type PullRequestRef,
 } from "../github/pull-request.js";
@@ -36,11 +38,14 @@ import {
 } from "../linear/status.js";
 import {
   LINEAR_PULL_REQUEST_BASE,
+  REVIEW_FEEDBACK_FILE,
+  blockingReviewFeedback,
   decideAgentAdvance,
   mapCommitStatus,
   noteAgentStatusWrite,
   readBlindAlley,
   readCiFailEscalateAfter,
+  reviewFailureKey,
   type WorkflowDecision,
 } from "../linear/workflow.js";
 import { CANONICAL_SPAN } from "../telemetry/spans.js";
@@ -345,7 +350,13 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       }),
     );
     if (isLinearTask(ctx)) {
-      await runLinear(ctx, { action: "review", ci: mapCommitStatus(state) });
+      const feedback = await linearReviewFeedback(ctx, handle);
+      await runLinear(ctx, {
+        action: "review",
+        ci: mapCommitStatus(state),
+        reviewFeedback: feedback,
+        failureKey: reviewFailureKey(sha, feedback),
+      });
       return;
     }
     if (state !== "success") {
@@ -361,7 +372,24 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       return;
     }
     if (isLinearTask(ctx)) {
-      await runLinear(ctx, { action: "merge" });
+      const github = requireGithub(ctx);
+      const sha = await git(handle.path, ["rev-parse", "HEAD"], [github.token]);
+      const state = await mapGithub(() =>
+        readCommitStatus({
+          token: github.token,
+          owner: github.owner,
+          repo: github.repo,
+          sha,
+          fetchImpl,
+        }),
+      );
+      const feedback = await linearReviewFeedback(ctx, handle);
+      await runLinear(ctx, {
+        action: "merge",
+        ci: mapCommitStatus(state),
+        reviewFeedback: feedback,
+        failureKey: reviewFailureKey(sha, feedback),
+      });
       return;
     }
     const github = requireGithub(ctx);
@@ -500,26 +528,36 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       action: "start" | "review" | "merge" | "blind_alley";
       ci?: ReturnType<typeof mapCommitStatus>;
       blindAlley?: { why: string; tried: string; failed: string };
+      reviewFeedback?: string;
+      failureKey?: string;
     },
   ): Promise<void> {
     const issueId = ctx.linearIssueId?.trim() ?? "";
     const handle = await requireWorktree(ctx);
+    const progress = await readLinearProgress(handle);
     const humanApproved = input.action === "merge" ? await linearPullApproved(ctx, handle) : false;
     const decision = decideAgentAdvance({
       action: input.action,
       ci: input.ci,
-      ciFailureCount: await readCiCount(handle),
+      ciFailureCount: progress.ciFailureCount,
       escalateAfter: readCiFailEscalateAfter(env),
       humanApproved,
       whenIso: new Date().toISOString(),
       blindAlley: input.blindAlley,
+      reviewFeedback: input.reviewFeedback,
+      failureKey: input.failureKey,
+      lastFailureKey: progress.lastFailureKey,
     });
     if (decision.effects.length > 0) {
       await applyWorkflowEffects(decision, linearPorts(ctx, handle, issueId));
     }
-    await writeCiCount(handle, decision.ciFailureCount);
+    await writeLinearProgress(handle, nextLinearProgress(progress, decision, input.failureKey));
     await traceLinear(ctx, decision);
     if (decision.halt) throw new Error(`linear workflow escalated: ${decision.reason}`);
+    if (decision.reason === "return_to_progress" || decision.reason === "ci_unchanged") {
+      await attemptReviewFix(ctx, handle, await reviewFixText(decision, input, handle));
+      throw new Error(`linear workflow ${decision.reason} for ${ctx.taskId}`);
+    }
     if (!decision.ok) throw new Error(`linear workflow ${decision.reason} for ${ctx.taskId}`);
   }
 
@@ -565,6 +603,31 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
         );
         logStageEvent({ msg: "pull request merged", taskId: ctx.taskId, number: stored.number });
       },
+      rereview: async (comment) => {
+        const stored = await readPullRecordOptional(handle);
+        if (!stored) return;
+        const github = requireGithub(ctx);
+        const notes = await mapGithub(() =>
+          listGithubPullRequestReviews({
+            token: github.token,
+            owner: github.owner,
+            repo: github.repo,
+            number: stored.number,
+            fetchImpl,
+          }),
+        );
+        await mapGithub(() =>
+          reRequestGithubPullRequestReview({
+            token: github.token,
+            owner: github.owner,
+            repo: github.repo,
+            number: stored.number,
+            reviewers: notes.map((note) => note.login),
+            comment,
+            fetchImpl,
+          }),
+        );
+      },
       setStatus: async (status) => {
         noteAgentStatusWrite(issueId, status, Date.now());
         await updateLinearIssueStatus({
@@ -601,9 +664,99 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     );
   }
 
+  async function linearReviewFeedback(
+    ctx: StageStepContext,
+    handle: WorktreeHandle,
+  ): Promise<string | undefined> {
+    const stored = await readPullRecordOptional(handle);
+    if (!stored) return undefined;
+    const github = requireGithub(ctx);
+    const notes = await mapGithub(() =>
+      listGithubPullRequestReviews({
+        token: github.token,
+        owner: github.owner,
+        repo: github.repo,
+        number: stored.number,
+        fetchImpl,
+      }),
+    );
+    return blockingReviewFeedback(notes);
+  }
+
+  async function attemptReviewFix(
+    ctx: StageStepContext,
+    handle: WorktreeHandle,
+    feedback: string,
+  ): Promise<void> {
+    await writeFile(path.join(handle.path, REVIEW_FEEDBACK_FILE), `${feedback.trim()}\n`, "utf8");
+    const before = await git(handle.path, ["rev-parse", "HEAD"], []);
+    const backend = resolveCodingBackend({
+      defaultBackend: env.OPTIO_NEW_CODING_BACKEND?.trim() || "cursor",
+    });
+    if (backend !== "cursor" || env.CURSOR_API_KEY?.trim()) {
+      try {
+        const agent = options.codingAgent ?? createCodingAgent(backend, { env });
+        const output = await agent.run({
+          worktree_path: handle.path,
+          prompt: [
+            "Review sent this task back to In Progress.",
+            feedback.trim(),
+            `Read ${REVIEW_FEEDBACK_FILE} and fix the failure. Commit the fix on the current branch.`,
+          ].join("\n\n"),
+          instructions:
+            "Fix the review feedback in this worktree and commit on the current branch. Do not push, open a pull request, convert a pull request to draft, or merge.",
+          allowed_tools: ["shell", "edit", "write"],
+          permission_tier: "edit-worktree",
+          budget: { maxWallClockMs: timeoutMs },
+          metadata: {
+            task_id: ctx.taskId,
+            worktree_id: handle.worktreeId,
+            workflow_id: "default-task",
+            step_id: "invoke_implementation",
+            agent_id: "agents/implementation",
+          },
+        });
+        if (output.status !== "succeeded") {
+          logStageEvent({
+            msg: "review fix attempt failed",
+            taskId: ctx.taskId,
+            status: output.status,
+          });
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logStageEvent({ msg: "review fix attempt failed", taskId: ctx.taskId, status: message });
+      }
+    }
+    const dirty = await git(handle.path, ["status", "--short"], []);
+    const token = env.OPTIO_NEW_GITHUB_TOKEN?.trim() ?? "";
+    if (dirty.trim()) {
+      await git(handle.path, ["add", "-A"], [token]);
+      await git(
+        handle.path,
+        [
+          "-c",
+          "user.name=optio-new",
+          "-c",
+          "user.email=optio-new@users.noreply.github.com",
+          "commit",
+          "-m",
+          "fix: address review feedback",
+        ],
+        [token],
+      );
+    }
+    const after = await git(handle.path, ["rev-parse", "HEAD"], [token]);
+    if (after === before) return;
+    const github = requireGithub(ctx);
+    const remote = `https://x-access-token:${encodeURIComponent(github.token)}@github.com/${github.owner}/${github.repo}.git`;
+    await git(handle.path, ["push", remote, `${handle.branch}:${handle.branch}`], [github.token]);
+  }
+
   async function traceLinear(ctx: StageStepContext, decision: WorkflowDecision): Promise<void> {
     if (!ctx.tracer) return;
-    const name = decision.ok && !decision.halt ? CANONICAL_SPAN.gatePass : CANONICAL_SPAN.gateFail;
+    const passed = decision.ok && !decision.halt && decision.reason !== "return_to_progress";
+    const name = passed ? CANONICAL_SPAN.gatePass : CANONICAL_SPAN.gateFail;
     await ctx.tracer.runStage(
       name,
       {
@@ -618,6 +771,11 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
   }
 }
 
+interface LinearProgress {
+  ciFailureCount: number;
+  lastFailureKey?: string;
+}
+
 function isLinearCount(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
@@ -626,21 +784,64 @@ function ciCountPath(handle: WorktreeHandle): string {
   return path.join(path.dirname(handle.path), ".prs", `${worktreeKey(handle.taskId)}.linear.json`);
 }
 
-async function readCiCount(handle: WorktreeHandle): Promise<number> {
+async function readLinearProgress(handle: WorktreeHandle): Promise<LinearProgress> {
   try {
     const parsed: unknown = JSON.parse(await readFile(ciCountPath(handle), "utf8"));
-    if (!parsed || typeof parsed !== "object") return 0;
-    const count = (parsed as { ciFailureCount?: unknown }).ciFailureCount;
-    return isLinearCount(count) ? count : 0;
+    if (!parsed || typeof parsed !== "object") return { ciFailureCount: 0 };
+    const row = parsed as { ciFailureCount?: unknown; lastFailureKey?: unknown };
+    return {
+      ciFailureCount: isLinearCount(row.ciFailureCount) ? row.ciFailureCount : 0,
+      ...(typeof row.lastFailureKey === "string" && row.lastFailureKey
+        ? { lastFailureKey: row.lastFailureKey }
+        : {}),
+    };
   } catch {
-    return 0;
+    return { ciFailureCount: 0 };
   }
 }
 
-async function writeCiCount(handle: WorktreeHandle, count: number): Promise<void> {
+function nextLinearProgress(
+  previous: LinearProgress,
+  decision: WorkflowDecision,
+  failureKey: string | undefined,
+): LinearProgress {
+  const row: LinearProgress = { ciFailureCount: decision.ciFailureCount };
+  const passed =
+    decision.reason === "review" ||
+    decision.reason === "merge" ||
+    (decision.reason === "awaiting_approval" && decision.ciFailureCount === 0);
+  if (
+    (decision.reason === "return_to_progress" || decision.reason === "ci_failures") &&
+    failureKey
+  ) {
+    row.lastFailureKey = failureKey;
+  } else if (!passed && previous.lastFailureKey) {
+    row.lastFailureKey = previous.lastFailureKey;
+  }
+  return row;
+}
+
+async function writeLinearProgress(
+  handle: WorktreeHandle,
+  progress: LinearProgress,
+): Promise<void> {
   const file = ciCountPath(handle);
   await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, `${JSON.stringify({ ciFailureCount: count })}\n`, "utf8");
+  await writeFile(file, `${JSON.stringify(progress)}\n`, "utf8");
+}
+
+async function reviewFixText(
+  decision: WorkflowDecision,
+  input: { reviewFeedback?: string },
+  handle: WorktreeHandle,
+): Promise<string> {
+  const comment = decision.effects.find((effect) => effect.kind === "linear.comment");
+  if (comment?.kind === "linear.comment") return comment.body;
+  try {
+    return await readFile(path.join(handle.path, REVIEW_FEEDBACK_FILE), "utf8");
+  } catch {
+    return input.reviewFeedback?.trim() || "GitHub checks are still red. Make CI green.";
+  }
 }
 
 function usageFromCoding(usage: CodingAgentUsage): StageStepUsage {
