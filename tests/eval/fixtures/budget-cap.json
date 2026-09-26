@@ -1,0 +1,32 @@
+{
+  "id": "budget-cap",
+  "mode": "mock",
+  "intake": {
+    "taskId": "eval-budget",
+    "title": "Budget cap",
+    "description": "Coding agent reports more tokens than the cap."
+  },
+  "credentials": "present",
+  "agent": {
+    "maxTokens": 8,
+    "exitCode": 0,
+    "stdout": "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"usage\":{\"input_tokens\":5,\"output_tokens\":9}}",
+    "stderr": "",
+    "timedOut": false
+  },
+  "github": {
+    "owner": "acme",
+    "repo": "widgets",
+    "pull": {
+      "number": 41,
+      "url": "https://github.com/acme/widgets/pull/41"
+    }
+  },
+  "expect": {
+    "outcome": "controlled_fail",
+    "error_class": "token_budget",
+    "stages_completed": [],
+    "open_pr_calls": 0,
+    "cli_invoked": 1
+  }
+}

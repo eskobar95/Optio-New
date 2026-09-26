@@ -291,3 +291,12 @@ export {
   type RoutingDecision,
   type RoutingState,
 } from "./gateway/jev-router/index.js";
+export {
+  loadEvalFixtures,
+  renderEvalReport,
+  runHarnessEval,
+  writeEvalReport,
+  type EvalCaseReport,
+  type EvalFixture,
+  type EvalReport,
+} from "./eval/harness-eval.js";

@@ -29,6 +29,9 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `src/agent/`                                          | §9, §13           | Request-response loop; tool calls pass hard gates before effects          |
 | `src/harness/gates/`                                  | §9.1, §13         | Secrets deny, harness config lock, tool timeout; sidecar cannot override  |
 | `tests/`                                              | —                 | Unit/smoke tests (`tsx --test`)                                           |
+| `tests/eval/`                                         | —                 | Harness regression fixtures: intake → stages → mocked pull request        |
+| `src/eval/`                                           | §11, §14.0        | Eval runner for the factory path                                          |
+| `docs/ops/harness-eval.md`                            | —                 | How to run the harness eval in CI, nightly, or pre-release                |
 | `AGENTS.md`                                           | —                 | Agent operating guide (New Bot, no Linear)                                |
 | `src/adapters/cursor/`                                | §13, §14.1        | Cursor CLI headless (subscription only)                                   |
 | `src/adapters/codex/`                                 | §13, §14.1–§14.2  | Codex CLI → LiteLLM, optional Caveman compat mount                        |

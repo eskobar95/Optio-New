@@ -51,6 +51,12 @@ export interface ProductionStageOptions {
   git?: GitRunner;
   /** Wall clock for one coding-agent invocation. Default 15 minutes. */
   agentTimeoutMs?: number;
+  /**
+   * Token cap forwarded on each coding-agent call.
+   * Unset leaves the adapter's token check off. A total above this cap
+   * returns `budget_exhausted` / `token_budget` and fails the step.
+   */
+  maxTokens?: number;
 }
 
 const E2E_TASK = /^e2e-[A-Za-z0-9._-]+$/;
@@ -137,7 +143,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     }
     const handle = await ensureWorktree(ctx.taskId);
     const agent = options.codingAgent ?? createCodingAgent(backend, { env });
-    const output = await agent.run(codingInput(ctx, handle, timeoutMs));
+    const output = await agent.run(codingInput(ctx, handle, timeoutMs, options.maxTokens));
     if (output.status === "succeeded") return;
     if (output.error_class === "missing_credentials") {
       throw new StageCredentialsError(
@@ -341,6 +347,7 @@ function codingInput(
   ctx: StageStepContext,
   handle: WorktreeHandle,
   timeoutMs: number,
+  maxTokens?: number,
 ): CodingAgentInput {
   const review = ctx.step === "invoke_review";
   return {
@@ -350,7 +357,10 @@ function codingInput(
       ? "Review the worktree diff. Do not edit files, push, open a pull request, or merge."
       : "Implement the task in this worktree and commit on the current branch. Do not push, open a pull request, or merge.",
     allowed_tools: review ? ["read"] : ["shell", "edit", "write"],
-    budget: { maxWallClockMs: timeoutMs },
+    budget:
+      maxTokens === undefined
+        ? { maxWallClockMs: timeoutMs }
+        : { maxWallClockMs: timeoutMs, maxTokens },
     metadata: {
       task_id: ctx.taskId,
       worktree_id: handle.worktreeId,

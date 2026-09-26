@@ -124,6 +124,8 @@ Each `processStageJob` call emits `workflow.step` with `task_id`, `worktree_id` 
 
 `npm test` covers the happy path and crash resume with in-memory and SQL-executor cursors. It does not need Redis, Postgres, or `MODEL_API_KEY`.
 
+The harness regression suite (`npm run eval`, also part of `npm test`) runs fixture tasks from intake through the production stage handler. CI mocks the Cursor CLI and `open_pr`. See [ops/harness-eval.md](ops/harness-eval.md).
+
 Optional:
 
 - `OPTIO_NEW_REDIS_URL` — enqueue the flow and let workers drain it
