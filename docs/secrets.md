@@ -33,6 +33,7 @@ Templates list every name Compose and the agent loop read:
 - `MODEL_API_KEY`, `MODEL_ENDPOINT` — model adapter (`src/agent/env-adapter.ts`)
 - `OPTIO_NEW_*` — Postgres, Redis, Jev, intake, GitHub, backups
 - `LITELLM_MASTER_KEY`, `LITELLM_BASE_URL`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` — LiteLLM process env
+- `OPTIO_NEW_HARNESS_URL` — kit-harness on the host (`http://127.0.0.1:3200`). Not a public name.
 - `CURSOR_API_KEY` — Cursor subscription CLI
 - `KIT_HARNESS_PORT` — decision sidecar bind port (default 3200, host `127.0.0.1`)
 - `CAVEMAN_*` and optional `CAVE_SSRF_ALLOWLIST` — local proxy, default off
@@ -96,11 +97,14 @@ Run from `/opt/optio-new`. The helper prints paths, key counts, and the age publ
    bash scripts/secrets.sh check
    ```
 
-5. Start Compose through the helper. Once ciphertext exists, the helper prefers it and ignores the plaintext file:
+5. Start Compose through the helper. Once ciphertext exists, the helper prefers it and ignores the plaintext file. Export the boot profiles or kit-harness and the orchestrator stay stopped (LiteLLM still starts):
 
    ```bash
+   export COMPOSE_PROFILES=harness,orchestrator
    bash scripts/secrets.sh compose up -d
    ```
+
+   The systemd unit sets `COMPOSE_PROFILES` itself. See [deploy/README.md](../deploy/README.md).
 
 6. Remove the plaintext only after the stack is healthy:
 
@@ -125,7 +129,7 @@ Run from `/opt/optio-new`. The helper prints paths, key counts, and the age publ
 1. Edit a throwaway plaintext copy outside the repo, or decrypt to a `0600` file under `/dev/shm` yourself.
 2. `bash scripts/secrets.sh encrypt --force /dev/shm/optio-new.env secrets/optio-new.env`
 3. `bash scripts/secrets.sh check` against that plaintext, then shred the plaintext.
-4. `bash scripts/secrets.sh compose up -d` so containers pick up the new interpolation.
+4. `COMPOSE_PROFILES=harness,orchestrator bash scripts/secrets.sh compose up -d` so containers pick up the new interpolation.
 5. To replace the age key: `init` will refuse to overwrite `key.txt`. Generate a new key beside it, `init --force` after pointing `SOPS_AGE_KEY_FILE` at the new key, re-encrypt with `--force`, confirm `check`, then shred the old key.
 
 Postgres password changes also require `ALTER USER` (or a new volume). Encrypting a new password does not rewrite the data directory.
@@ -139,7 +143,7 @@ Postgres password changes also require `ALTER USER` (or a new volume). Encryptin
 3. Delete the temp file when the command exits.
 4. If ciphertext is not there yet, fall back to `.env`, then `secrets/.env`, and say so on stderr without values. That keeps the current host working before step 3 above.
 
-`--env-file` replaces Compose's default `.env` lookup. The unit sets `WorkingDirectory=/opt/optio-new` and `SOPS_AGE_KEY_FILE=/opt/optio-new/secrets/age/key.txt`.
+`--env-file` replaces Compose's default `.env` lookup. The unit sets `WorkingDirectory=/opt/optio-new`, `SOPS_AGE_KEY_FILE=/opt/optio-new/secrets/age/key.txt`, and `COMPOSE_PROFILES=harness,orchestrator`. LiteLLM stays in the default service set. The profile list is not a secret. `EnvironmentFile` stays unset.
 
 ## CI
 

@@ -27,12 +27,14 @@ services:
     volumes:
       - optio_new_postgres:/var/lib/postgresql/data
 
-  # BullMQ / orchestrator worker stub
+  # BullMQ / orchestrator worker stub.
+  # Profile full keeps `docker compose --profile full` working.
+  # Profile orchestrator is the Hetzner boot set (see deploy/README.md).
   orchestrator:
     build:
       context: .
       dockerfile: Dockerfile.orchestrator
-    profiles: ["full"]
+    profiles: ["full", "orchestrator"]
     restart: unless-stopped
     depends_on:
       - redis

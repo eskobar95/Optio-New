@@ -49,6 +49,9 @@ Usage: scripts/secrets.sh <command>
                   Encrypt the host .env (default: .env -> secrets/optio-new.env)
   check           Decrypt and compare assignment hashes to the plaintext .env
   compose [args]  Decrypt to a tmpfs file and run docker compose --env-file
+                  Boot set is COMPOSE_PROFILES=harness,orchestrator
+                  (deploy/systemd/optio-new-compose.service). Not a secret.
+                  LiteLLM stays in the default service set.
   audit           Gitignore / tracked-file checks. Prints paths and rule ids only
   roundtrip       Encrypt and decrypt a placeholder env with a throwaway key
 
@@ -215,6 +218,9 @@ cmd_compose() {
     add_cleanup "$cleanup"
   fi
   require_cmd docker
+  if [[ " $* " == *" up "* && -z "${COMPOSE_PROFILES:-}" && " $* " != *" --profile "* ]]; then
+    echo "[secrets] COMPOSE_PROFILES is unset and no --profile was passed; kit-harness and orchestrator stay stopped (litellm still starts)" >&2
+  fi
   docker compose --env-file "$envfile" -f "$ROOT/docker-compose.yml" "$@"
 }
 

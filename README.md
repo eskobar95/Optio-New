@@ -49,6 +49,7 @@ Optional data plane:
 
 ```bash
 docker compose up -d redis postgres litellm
+docker compose --profile harness --profile orchestrator up -d
 docker compose --profile laya up -d laya
 docker compose --profile edge up -d caddy
 docker compose --profile harness up -d --build kit-harness
@@ -65,7 +66,7 @@ bash scripts/smoke-compose-mac.sh
 
 See [docs/mac-compose-smoke.md](docs/mac-compose-smoke.md). GitHub Actions stays on `scripts/smoke-local.sh` (`--config-only` when Docker is present).
 
-Secrets on the Hetzner kit-harness (`/opt/optio-new`): **sops + age**. Runbook: [docs/secrets.md](docs/secrets.md).
+On the Hetzner host (`/opt/optio-new`), load secrets with `scripts/secrets.sh`. LiteLLM stays in the default service set. The boot unit adds `COMPOSE_PROFILES=harness,orchestrator`. After merge: `bash scripts/vps-pull-rebuild.sh`. Runbook: [deploy/README.md](deploy/README.md). Secrets: [docs/secrets.md](docs/secrets.md).
 Postgres backup example: `scripts/backup-postgres-to-storagebox.sh.example`.
 
 ## CI and pre-commit (always on)
