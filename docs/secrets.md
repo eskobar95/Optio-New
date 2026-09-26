@@ -34,6 +34,7 @@ Templates list every name Compose and the agent loop read:
 - `OPTIO_NEW_*` — Postgres, Redis, Jev, intake, GitHub, backups
 - `LITELLM_MASTER_KEY`, `LITELLM_BASE_URL`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` — LiteLLM process env
 - `CURSOR_API_KEY` — Cursor subscription CLI
+- `KIT_HARNESS_PORT` — decision sidecar bind port (default 3200, host `127.0.0.1`)
 - `CAVEMAN_*` and optional `CAVE_SSRF_ALLOWLIST` — local proxy, default off
 
 `LITELLM_*` and provider keys are unprefixed because the LiteLLM image reads those names. `gateway/litellm/config.yaml.example` references them with `os.environ/...`.
