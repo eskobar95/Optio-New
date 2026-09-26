@@ -37,7 +37,10 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `specs/agent-harness-skeleton-spec.md`                | —                 | Spec copy under specs/                                                    |
 | `specs/harness-working-skills/`                       | §6 (staging)      | Historical skills snapshot                                                |
 | `harness/staging/skills-from-git-collective/`         | §6 (staging)      | Historical skills snapshot (not SoT)                                      |
-| `docker-compose.yml`                                  | §12.5–§12.6       | Redis, Postgres, orchestrator/eve stubs, LiteLLM, Laya, OTel, Caddy       |
+| `docker-compose.yml`                                  | §12.5–§12.6       | Redis, Postgres, orchestrator, LiteLLM, kit-harness, Laya, OTel, Caddy    |
+| `deploy/README.md`                                    | §12.5             | Hetzner boot profiles, loopback ports, rollback, pull+rebuild             |
+| `Dockerfile.kit-harness`                              | §12.5–§12.6       | Profile `harness`; decision sidecar on `127.0.0.1:3200`                   |
+| `scripts/vps-pull-rebuild.sh`                         | §12.5             | On-host `git pull` and Compose rebuild after merge                        |
 | `Caddyfile`                                           | §12.5             | Optional intake + GitHub webhook TLS                                      |
 | `deploy/systemd/*.service`                            | §12.5             | Compose on boot                                                           |
 | `deploy/otel-collector-config.yaml`                   | §12.1             | Collector stub                                                            |

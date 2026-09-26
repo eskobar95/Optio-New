@@ -1,13 +1,19 @@
 # Optio-New — Compose on boot via sops+age (SPEC §12.5, docs/secrets.md)
-# Install:
+# Install on the VPS (do not connect to production from CI):
 #   sudo cp deploy/systemd/optio-new-compose.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now optio-new-compose.service
 # The helper decrypts to a mode-0600 tmpfs file. Do not add EnvironmentFile:
 # systemd would expose those values through systemctl show.
+# COMPOSE_PROFILES is not a secret. Boot adds harness and orchestrator.
+# LiteLLM stays unprofiled (default set, with redis and postgres) so
+# scripts/smoke-compose-mac.sh still sees it. kit-harness is 127.0.0.1:3200.
+# Profile edge stays off until DNS exists.
+# After merge: bash scripts/vps-pull-rebuild.sh — see deploy/README.md.
+# ExecStop is `down` without -v so named volumes stay.
 
 [Unit]
-Description=Optio-New Docker Compose stack
+Description=Optio-New Docker Compose stack (litellm, harness, orchestrator)
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
@@ -16,6 +22,7 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/optio-new
+Environment=COMPOSE_PROFILES=harness,orchestrator
 Environment=SOPS_AGE_KEY_FILE=/opt/optio-new/secrets/age/key.txt
 ExecStart=/opt/optio-new/scripts/secrets.sh compose up -d
 ExecStop=/usr/bin/docker compose -f /opt/optio-new/docker-compose.yml down

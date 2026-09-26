@@ -473,6 +473,8 @@ Recommended extra attributes (where applicable): `workflow_id`, `step_id`, `agen
 | Worker health       | HTTP **health endpoints** for queue workers (liveness + optional queue lag)                                                                                                |
 | Merge / CI signals  | **GitHub webhooks** (PR merged, check suite) in addition to New Bot status                                                                                                 |
 
+The Hetzner boot unit (`deploy/systemd/optio-new-compose.service`) enables Compose profiles `harness` and `orchestrator` next to the default set (Redis, Postgres, LiteLLM). kit-harness is published on `127.0.0.1:3200` only. Profile `edge` stays off until `OPTIO_NEW_WEBHOOK_HOST` has DNS. After a merge to `main`, rebuild on the VPS with `scripts/vps-pull-rebuild.sh`. Runbook: `deploy/README.md`.
+
 ### 12.6 Practical v1 Compose stack
 
 ```text
@@ -480,7 +482,8 @@ Redis
 Postgres
 BullMQ workers (orchestrator)
 Eve / agent runner
-LiteLLM Proxy     # Codex gateway; optional thin pre-proxy
+LiteLLM Proxy     # Codex gateway; default service set (no profile)
+kit-harness       # profile harness; 127.0.0.1:3200
 OTel Collector
 Langfuse          # or Phoenix on small boxes
 SigNoz            # or Grafana Loki (+ Tempo + Prometheus)
