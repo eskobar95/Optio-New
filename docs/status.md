@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 01:21 UTC
+Last refreshed: 2026-09-26 01:24 UTC
 
 ## Bootstrap progress
 
@@ -51,11 +51,10 @@ curl -fsS -X POST http://127.0.0.1:3100/intake \\
 
 ## Open issues
 
-Open: 6.
+Open: 5.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
-- #62 [EVE-5] Vitest for Eve skill budget, materialize, specialist share (P1, enhancement, orchestration)
 - #60 [EVE-3] Local eve-runner invoked by BullMQ stage (P0, enhancement, orchestration)
 - #45 [e2e] Add a hello-world endpoint to the agent loop (P2, enhancement, good first issue, orchestration)
 - #22 [P2] Caddy TLS edge for optional intake webhook (P2, deploy, infra, security)
