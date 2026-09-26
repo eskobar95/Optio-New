@@ -7,6 +7,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { ZodError, z } from "zod";
 import { enqueueIntakePipeline, type FlowEnqueuer } from "../jobs/enqueue-pipeline.js";
 import { HELLO_WORLD_RESPONSE, type PlanStageView } from "../jobs/hello-world.js";
+import { HitlDecisionError, type HitlAction, type HitlPoint } from "../jobs/hitl.js";
 import type { TaskRunView } from "../observability/run-log.js";
 import { PipelineIdentitySchema, STAGE_QUEUES } from "../jobs/stages.js";
 import {
@@ -36,6 +37,13 @@ const PipelineIdSchema = PipelineIdentitySchema.shape.taskId;
 const HelloPlanQuerySchema = z.object({
   taskId: PipelineIdSchema,
   sessionId: PipelineIdSchema,
+});
+
+const ApprovalDecisionSchema = z.object({
+  taskId: PipelineIdSchema,
+  sessionId: PipelineIdSchema.optional(),
+  point: z.enum(["plan", "merge"]),
+  action: z.enum(["approve", "reject", "replan"]),
 });
 
 export const IntakeHttpSchema = z.object({
@@ -87,6 +95,18 @@ export interface IntakeServerOptions {
   githubWebhookSecret?: string;
   /** HMAC secret for POST /webhooks/slack. Blank fails that route closed (503). */
   slackSigningSecret?: string;
+  /** When set, GET/POST /approvals reads and decides human gates. Omitted means 404. */
+  approvals?: {
+    list(taskId: string, sessionId: string): Promise<unknown>;
+    decide(input: {
+      taskId: string;
+      sessionId: string;
+      point: HitlPoint;
+      action: HitlAction;
+    }): Promise<unknown>;
+  };
+  /** When set, GET /budget returns caps and usage. Omitted means 404. */
+  budgetStatus?: (taskId: string, sessionId: string) => Promise<unknown>;
 }
 
 export interface IntakeAccepted {
@@ -241,6 +261,70 @@ async function enqueueAdapter(
   sendJson(res, result.status, body);
 }
 
+function identityFromQuery(url: URL): { taskId: string; sessionId: string } {
+  const sessionRaw = url.searchParams.get("sessionId");
+  return HelloPlanQuerySchema.parse({
+    taskId: url.searchParams.get("taskId") ?? "",
+    sessionId:
+      sessionRaw && sessionRaw.length > 0 ? sessionRaw : (url.searchParams.get("taskId") ?? ""),
+  });
+}
+
+async function handleApprovals(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  options: IntakeServerOptions,
+): Promise<void> {
+  if (!options.approvals) {
+    sendJson(res, 404, { error: "not_found", message: "Approvals are unavailable" });
+    return;
+  }
+  if (req.method === "GET") {
+    const query = identityFromQuery(url);
+    const approvals = await options.approvals.list(query.taskId, query.sessionId);
+    sendJson(res, 200, {
+      ok: true,
+      taskId: query.taskId,
+      sessionId: query.sessionId,
+      approvals,
+    });
+    return;
+  }
+  if (req.method !== "POST") {
+    res.setHeader("allow", "GET, POST");
+    sendJson(res, 405, { error: "method_not_allowed", message: "Use GET or POST /approvals" });
+    return;
+  }
+  const parsed = ApprovalDecisionSchema.parse(await readJsonBody(req));
+  const decided = await options.approvals.decide({
+    taskId: parsed.taskId,
+    sessionId: parsed.sessionId ?? parsed.taskId,
+    point: parsed.point,
+    action: parsed.action,
+  });
+  sendJson(res, 200, { ok: true, approval: decided });
+}
+
+async function handleBudget(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  options: IntakeServerOptions,
+): Promise<void> {
+  if (req.method !== "GET") {
+    res.setHeader("allow", "GET");
+    sendJson(res, 405, { error: "method_not_allowed", message: "Use GET /budget" });
+    return;
+  }
+  if (!options.budgetStatus) {
+    sendJson(res, 404, { error: "not_found", message: "Budget status is unavailable" });
+    return;
+  }
+  const query = identityFromQuery(url);
+  sendJson(res, 200, await options.budgetStatus(query.taskId, query.sessionId));
+}
+
 function invalidIntake(error: ZodError): IntakeHttpError {
   return new IntakeHttpError(400, {
     error: "invalid_intake",
@@ -335,6 +419,14 @@ export async function handleIntakeRequest(
       sendJson(res, 200, await options.readTaskActions(parsedId.data));
       return;
     }
+    if (url.pathname === "/approvals") {
+      await handleApprovals(req, res, url, options);
+      return;
+    }
+    if (url.pathname === "/budget") {
+      await handleBudget(req, res, url, options);
+      return;
+    }
     if (url.pathname === INTAKE_WEBHOOK_PATH) {
       if (req.method !== "POST") {
         res.setHeader("allow", "POST");
@@ -401,7 +493,7 @@ export async function handleIntakeRequest(
       sendJson(res, 404, {
         error: "not_found",
         message:
-          "Known routes: GET /health, GET /hello, GET /hello/plan, GET /tasks/:taskId/actions, POST /intake, POST /webhooks/intake, POST /webhooks/github, POST /webhooks/slack",
+          "Known routes: GET /health, GET /hello, GET /hello/plan, GET /tasks/:taskId/actions, GET /approvals, POST /approvals, GET /budget, POST /intake, POST /webhooks/intake, POST /webhooks/github, POST /webhooks/slack",
       });
       return;
     }
@@ -418,6 +510,10 @@ export async function handleIntakeRequest(
   } catch (error) {
     if (error instanceof IntakeHttpError) {
       sendJson(res, error.status, error.body);
+      return;
+    }
+    if (error instanceof HitlDecisionError) {
+      sendJson(res, error.statusCode, { error: error.code, message: error.message });
       return;
     }
     if (error instanceof ZodError) {

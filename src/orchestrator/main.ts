@@ -7,20 +7,41 @@
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { FlowProducer } from "bullmq";
+import { FlowProducer, Queue } from "bullmq";
 import { Redis } from "ioredis";
 import { readPlanStage } from "./jobs/hello-world.js";
 import { createIntakeServer } from "./intake/http.js";
+import { loadTaskBudgetCaps, createPgUsageStore, readTaskBudgetStatus } from "./jobs/budget.js";
 import { createPgStepCursorStore } from "./jobs/cursor.js";
+import { applyHitlDecision, createHitlQueuePort, loadHitlConfig } from "./jobs/hitl.js";
+import { createPgHitlStore } from "./jobs/hitl-store.js";
 import { createProductionStageHandler } from "./jobs/production-handler.js";
+import { STAGE_QUEUES } from "./jobs/stages.js";
 import { createPgStageRunStore, createStageRunLog } from "./observability/run-log.js";
 import { bullmqStageWorkerFactory, startStageGraph } from "./jobs/workers.js";
 import { logStageEvent } from "./jobs/stage-log.js";
-import { RepoCatalogError, loadRepoCatalog, readWorkflowRepoId } from "./repos/catalog.js";
+import { loadRepoCatalog, readWorkflowRepoId } from "./repos/catalog.js";
 import { createGuardedRepoWorktrees } from "./repos/router.js";
 import { readOrchestratorPort, redisConnectionOptions } from "./redis.js";
 import { getStageTracer } from "./telemetry/index.js";
 import { loadWorktreeRuntimeConfig } from "./worktrees/config.js";
+
+async function readWorkflowYaml(): Promise<string | undefined> {
+  const candidates = [
+    path.join(process.cwd(), "workflows", "default-task.yaml"),
+    process.env.OPTIO_NEW_REPO_PATH
+      ? path.join(process.env.OPTIO_NEW_REPO_PATH, "workflows", "default-task.yaml")
+      : "",
+  ].filter((candidate) => candidate.length > 0);
+  for (const candidate of candidates) {
+    try {
+      return await readFile(candidate, "utf8");
+    } catch {
+      // The next candidate, or the built-in defaults, still load the gates.
+    }
+  }
+  return undefined;
+}
 
 export async function startOrchestrator(): Promise<void> {
   const port = readOrchestratorPort(process.env.ORCHESTRATOR_PORT);
@@ -40,17 +61,34 @@ export async function startOrchestrator(): Promise<void> {
     catalog: repoCatalog,
     tracer: getStageTracer(),
   });
-  let workflowRepoId: string | undefined;
-  try {
-    const workflowYaml = await readFile(
-      path.join(process.cwd(), "workflows", "default-task.yaml"),
-      "utf8",
-    );
-    workflowRepoId = readWorkflowRepoId(workflowYaml);
-  } catch (error) {
-    if (error instanceof RepoCatalogError) throw error;
-    workflowRepoId = undefined;
-  }
+  const workflowYaml = await readWorkflowYaml();
+  const workflowRepoId = workflowYaml === undefined ? undefined : readWorkflowRepoId(workflowYaml);
+  const hitlConfig = loadHitlConfig(process.env, workflowYaml);
+  const caps = loadTaskBudgetCaps(process.env, workflowYaml);
+  const hitlState = await createPgHitlStore(databaseUrl);
+  const usage = await createPgUsageStore(databaseUrl);
+  const planQueue = new Queue(STAGE_QUEUES.plan, { connection });
+  const implementQueue = new Queue(STAGE_QUEUES.implement, { connection });
+  const readyQueue = new Queue(STAGE_QUEUES.ready, { connection });
+  const hitl = {
+    config: hitlConfig,
+    store: hitlState,
+    signals: hitlState,
+    queue: createHitlQueuePort({
+      plan: planQueue,
+      implement: implementQueue,
+      ready: readyQueue,
+    }),
+  };
+  const budget = { caps, usage };
+  logStageEvent({
+    msg: "orchestrator gates",
+    hitlPlan: hitlConfig.plan.mode,
+    hitlMerge: hitlConfig.merge.mode,
+    hitlTimeoutMs: hitlConfig.timeoutMs,
+    maxTokens: caps.maxTokens,
+    maxUsd: caps.maxUsd,
+  });
   logStageEvent({
     msg: "orchestrator stage handler",
     cursorApiKey: Boolean(process.env.CURSOR_API_KEY?.trim()),
@@ -69,8 +107,10 @@ export async function startOrchestrator(): Promise<void> {
       worktrees,
       handler: createProductionStageHandler({ env: process.env, worktrees }),
       runLog,
+      hitl,
+      budget,
     },
-    bullmqStageWorkerFactory(connection),
+    bullmqStageWorkerFactory(connection, { hitlPollMs: hitlConfig.pollMs }),
   );
 
   const flow = new FlowProducer({ connection });
@@ -93,6 +133,11 @@ export async function startOrchestrator(): Promise<void> {
     },
     readPlanStage: (taskId, sessionId) => readPlanStage(cursors, taskId, sessionId),
     readTaskActions: (taskId) => runLog.inspect(taskId),
+    approvals: {
+      list: (taskId, sessionId) => hitlState.list(taskId, sessionId),
+      decide: (input) => applyHitlDecision(input, hitl, cursors),
+    },
+    budgetStatus: (taskId, sessionId) => readTaskBudgetStatus(budget, { taskId, sessionId }),
     webhookSecret: process.env.OPTIO_NEW_INTAKE_WEBHOOK_SECRET,
     repoCatalog,
     workflowRepoId,
@@ -122,8 +167,11 @@ export async function startOrchestrator(): Promise<void> {
     server.close();
     await Promise.all(workers.map((worker) => worker.close()));
     await flow.close();
+    await Promise.all([planQueue.close(), implementQueue.close(), readyQueue.close()]);
     await cursors.close();
     await stageRuns.close();
+    await hitlState.close();
+    await usage.close();
     redis.disconnect();
     process.exit(0);
   };

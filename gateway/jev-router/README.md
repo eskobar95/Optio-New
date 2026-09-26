@@ -46,3 +46,9 @@ The client appends `/v1/systemone` (a base that already ends in `/v1` is not dou
 - **subscription_pool / alt_api** — forward to the example LiteLLM `model_name`.
 
 LiteLLM's own local cache is only for forwarded calls. The proxy does not host these TypeScript plugins (LiteLLM callbacks are Python).
+
+## Task caps (orchestrator)
+
+The orchestrator enforces a separate per-task cap around agent steps: default **200000 tokens** and **USD 2** (`OPTIO_TASK_MAX_TOKENS`, `OPTIO_TASK_MAX_USD`, or `budget` in `workflows/default-task.yaml`). Those numbers are the hard stop for a Hetzner CX33 host using this Gateway as pass-through: one coding slice, not an open retry loop. Exceeding the cap, or omitting usage for a capped dimension, throws `BudgetExceeded` and does not run later BullMQ stages.
+
+This router does not raise that cap. A Hop 2 `deny` is still HTTP 429 (`budget_exhausted` or `rate_limited`). A task under its cap does not turn a `deny` into a forward. See [docs/task-budget.md](../../docs/task-budget.md).

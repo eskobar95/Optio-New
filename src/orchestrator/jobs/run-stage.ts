@@ -20,13 +20,28 @@ import type { StageRunLog, StageUsageReport } from "../observability/run-log.js"
 import { redactSecrets } from "../../security/redact.js";
 import type { WorktreeLifecycle } from "../worktrees/manager.js";
 import { createWorktreeStageHandler } from "../worktrees/stage-hooks.js";
+import {
+  accountBudgetAfterRun,
+  assertBudgetBeforeRun,
+  isBudgetedAgentStep,
+  reportedUsage,
+  type BudgetBinding,
+} from "./budget.js";
 import type { StepCursor, StepCursorStore } from "./cursor.js";
 import { logStageEvent } from "./stage-log.js";
+import {
+  ApprovalRequiredError,
+  assertNoTerminalHitl,
+  enforceHitlGate,
+  releaseReplanAfterPlan,
+  type HitlBinding,
+} from "./hitl.js";
 import {
   ReviewGateClosedError,
   evaluateReviewGate,
   type ReviewGateBinding,
 } from "./review-gate.js";
+import { readAttachedUsage, type StageStepResult, type StageStepUsage } from "./stage-result.js";
 import {
   PIPELINE_STAGES,
   STAGE_STEPS,
@@ -67,7 +82,7 @@ export interface StageStepContext {
 }
 
 export interface StageStepHandler {
-  run(ctx: StageStepContext): Promise<void>;
+  run(ctx: StageStepContext): Promise<void | StageStepResult>;
 }
 
 export interface StageRuntime {
@@ -84,6 +99,13 @@ export interface StageRuntime {
   tracer?: StageTracer;
   /** Empty string on the span when omitted (no worktree yet). */
   worktreeId?: string;
+  /**
+   * When set, implement waits on plan approval and ready/merge wait before open_pr.
+   * A required gate never approves on timeout.
+   */
+  hitl?: HitlBinding;
+  /** When set, agent steps fail closed with BudgetExceeded once a cap is exceeded. */
+  budget?: BudgetBinding;
   /** When set, review-gate and implementation failures are fingerprinted. */
   learning?: LearningSink;
   /** When set, stage timing, failures, usage, and step actions are stored for the task. */
@@ -178,6 +200,11 @@ export function createAgentStageHandler(
           costUsd: result.usage.cost_usd,
         });
       }
+      const stepResult: StageStepResult = {};
+      const mappedUsage = result.usage ? stepUsageFromModel(result.usage) : undefined;
+      if (mappedUsage) stepResult.usage = mappedUsage;
+      if (result.confidence !== undefined) stepResult.confidence = result.confidence;
+      return stepResult;
     },
   };
 }
@@ -198,6 +225,19 @@ async function safeRunLog<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 
 function errorReason(error: unknown): string {
   return redactSecrets(error instanceof Error ? error.message : String(error));
+}
+
+/** Map adapter snake_case usage onto the camelCase ledger. Absent fields stay absent. */
+function stepUsageFromModel(usage: {
+  input_tokens?: number;
+  output_tokens?: number;
+  cost_usd?: number;
+}): StageStepUsage | undefined {
+  const reported: StageStepUsage = {};
+  if (typeof usage.input_tokens === "number") reported.inputTokens = usage.input_tokens;
+  if (typeof usage.output_tokens === "number") reported.outputTokens = usage.output_tokens;
+  if (typeof usage.cost_usd === "number") reported.costUsd = usage.cost_usd;
+  return Object.keys(reported).length > 0 ? reported : undefined;
 }
 
 async function recordLearning(
@@ -322,6 +362,9 @@ async function executeStageJob(
   }
 
   try {
+    if (deps.hitl) {
+      await assertNoTerminalHitl(payload.stage, deps.hitl, payload);
+    }
     const blockedBy = previousStage(payload.stage);
     if (blockedBy) {
       const previous = await deps.cursors.get(payload.taskId, payload.sessionId, blockedBy);
@@ -381,6 +424,10 @@ async function executeStageJob(
       }
     }
 
+    if (deps.hitl) {
+      await enforceHitlGate(payload.stage, deps.hitl, payload);
+    }
+
     cursor = { ...cursor, status: "running", updatedAt: nowIso() };
     await deps.cursors.save(cursor);
 
@@ -411,9 +458,19 @@ async function executeStageJob(
           await safeRunLog(() => runLog.recordUsage({ ...identity, ...usage }), undefined);
         },
       };
+      if (deps.budget && isBudgetedAgentStep(step)) {
+        await assertBudgetBeforeRun(deps.budget, ctx);
+      }
+      let result: void | StageStepResult;
       try {
-        await handler.run(ctx);
+        result = await handler.run(ctx);
       } catch (error) {
+        if (deps.budget && isBudgetedAgentStep(step)) {
+          const attached = readAttachedUsage(error);
+          if (attached && reportedUsage(deps.budget.caps, payload.stage, attached)) {
+            await accountBudgetAfterRun(deps.budget, ctx, attached);
+          }
+        }
         if (payload.stage === "implement" || payload.stage === "review") {
           await recordLearning(
             deps.learning,
@@ -431,6 +488,17 @@ async function executeStageJob(
           );
         }
         throw error;
+      }
+      if (deps.hitl && step === "invoke_planner" && result && result.confidence !== undefined) {
+        await deps.hitl.signals.note({
+          taskId: payload.taskId,
+          sessionId: payload.sessionId,
+          point: "plan",
+          confidence: result.confidence,
+        });
+      }
+      if (deps.budget && isBudgetedAgentStep(step)) {
+        await accountBudgetAfterRun(deps.budget, ctx, result?.usage);
       }
       if (ctx.worktreeId) activeWorktreeId = ctx.worktreeId;
       const actedAt = clock();
@@ -457,6 +525,10 @@ async function executeStageJob(
         updatedAt: nowIso(),
       };
       await deps.cursors.save(cursor);
+    }
+
+    if (deps.hitl && payload.stage === "plan") {
+      await releaseReplanAfterPlan(deps.hitl, payload);
     }
 
     const ended = clock();
@@ -491,7 +563,9 @@ async function executeStageJob(
       nextStepIndex: steps.length,
     };
   } catch (error) {
-    await recordFailure(error, activeStep);
+    if (!(error instanceof ApprovalRequiredError)) {
+      await recordFailure(error, activeStep);
+    }
     throw error;
   }
 }

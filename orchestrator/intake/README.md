@@ -41,6 +41,8 @@ A valid body returns `202`:
 
 `jobId` is the first stage job. `enqueueIntakePipeline` adds the whole flow; BullMQ runs `optio.plan` first. Malformed JSON returns `400` with `error: "invalid_json"`. A payload that fails validation returns `400` with `error: "invalid_intake"` and `issues` (`path`, `message`). Nothing is enqueued in either case.
 
+`GET /approvals?taskId=&sessionId=` and `POST /approvals` (`point` `plan` or `merge`, `action` `approve`, `reject`, or `replan`) are the human gate. `GET /budget?taskId=&sessionId=` returns the task caps and usage. Both stay 404 until the process wires them. See `docs/hitl.md` and `docs/task-budget.md`.
+
 The stage job payload includes `taskId`, `sessionId`, `stage`, the brief `title` / `description`, and `repoId` when intake resolved one. `repo` and `baseBranch` stay hints and are not copied.
 
 ## Public webhook

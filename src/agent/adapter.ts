@@ -30,6 +30,8 @@ export interface ModelResponse {
   toolCalls?: readonly ModelToolCall[];
   /** Present only when the adapter exposes usage. The loop does not invent tokens. */
   usage?: ModelUsage;
+  /** Planner confidence in [0, 1]. The HITL gate ignores values outside that range. */
+  confidence?: number;
 }
 
 export interface ModelAdapter {

@@ -6,6 +6,40 @@ base_branch: development
 # Optional catalog selector. Omit repo_id to use OPTIO_NEW_DEFAULT_REPO_ID.
 # repo_id: optio-new
 
+# Human approval (issue #86). Timeout notifies and stays paused. See docs/hitl.md.
+# OPTIO_HITL_PLAN / OPTIO_HITL_MERGE override these modes.
+hitl:
+  plan:
+    mode: when_confidence_low
+    confidence_threshold: 0.8
+  merge:
+    mode: always
+    confidence_threshold: 0.8
+  timeout_ms: 86400000
+  poll_ms: 60000
+
+# Per-task spend caps (issue #87). Exceeding them fails the stage with BudgetExceeded.
+# OPTIO_TASK_MAX_TOKENS / OPTIO_TASK_MAX_USD override the task totals. See docs/task-budget.md.
+budget:
+  max_tokens: 200000
+  max_usd: 2
+  stages:
+    plan:
+      max_tokens: 40000
+      max_usd: 0.4
+    implement:
+      max_tokens: 120000
+      max_usd: 1.2
+    review:
+      max_tokens: 20000
+      max_usd: 0.2
+    ready:
+      max_tokens: 10000
+      max_usd: 0.1
+    merge:
+      max_tokens: 10000
+      max_usd: 0.1
+
 steps:
   - id: planner
     permission_tier: read-only

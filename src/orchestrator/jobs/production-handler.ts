@@ -7,7 +7,11 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
-import type { CodingAgent, CodingAgentInput } from "../../adapters/coding-agent.js";
+import type {
+  CodingAgent,
+  CodingAgentInput,
+  CodingAgentUsage,
+} from "../../adapters/coding-agent.js";
 import { defaultPermissionForStep } from "../../kit-harness/permissions.js";
 import { createCodingAgent, resolveCodingBackend } from "../../adapters/select.js";
 import type { ModelAdapter } from "../../agent/adapter.js";
@@ -34,6 +38,7 @@ import {
   type StageStepHandler,
 } from "./run-stage.js";
 import { logStageEvent } from "./stage-log.js";
+import { attachStepUsage, type StageStepResult, type StageStepUsage } from "./stage-result.js";
 
 export class StageCredentialsError extends Error {
   readonly error_class = "missing_credentials";
@@ -74,6 +79,7 @@ export interface ProductionStageOptions {
 
 const E2E_TASK = /^e2e-[A-Za-z0-9._-]+$/;
 const AGENT_TIMEOUT_MS = 15 * 60 * 1000;
+const ZERO_USAGE: StageStepUsage = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
 interface StoredPullRequest extends PullRequestRef {
   head: string;
@@ -93,41 +99,38 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     options.loadPrSafety ?? ((cwd: string) => collectPrSafetyInput(cwd, { base: baseBranch }));
 
   return {
-    async run(ctx) {
+    async run(ctx): Promise<void | StageStepResult> {
       switch (ctx.step) {
         case "ack_session":
         case "record_cleanup":
-          return;
+          return { usage: ZERO_USAGE };
         case "invoke_planner":
-          await runPlanner(ctx);
-          return;
+          return runPlanner(ctx);
         case "invoke_implementation":
         case "invoke_review":
-          await runCoding(ctx);
-          return;
+          return runCoding(ctx);
         case "record_diff":
         case "record_verdict":
           await recordGitSummary(ctx);
-          return;
+          return { usage: ZERO_USAGE };
         case "open_pr":
           await openPullRequest(ctx);
-          return;
+          return { usage: ZERO_USAGE };
         case "record_ci_wait":
           await waitForCi(ctx);
-          return;
+          return { usage: ZERO_USAGE };
         case "merge_branch":
           await mergePullRequest(ctx);
-          return;
+          return { usage: ZERO_USAGE };
         default:
           throw new Error(`unknown step ${ctx.stage}:${ctx.step}`);
       }
     },
   };
 
-  async function runPlanner(ctx: StageStepContext): Promise<void> {
+  async function runPlanner(ctx: StageStepContext): Promise<StageStepResult> {
     if (env.CURSOR_API_KEY?.trim()) {
-      await runCoding(ctx);
-      return;
+      return runCoding(ctx);
     }
     const modelKey = env.MODEL_API_KEY?.trim() ?? "";
     const endpoint = env.MODEL_ENDPOINT?.trim() ?? "";
@@ -137,7 +140,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       );
     }
     try {
-      await plannerLoop.run(ctx);
+      return (await plannerLoop.run(ctx)) ?? {};
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes("does not perform HTTP") || message.includes("performs no HTTP")) {
@@ -149,7 +152,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     }
   }
 
-  async function runCoding(ctx: StageStepContext): Promise<void> {
+  async function runCoding(ctx: StageStepContext): Promise<StageStepResult> {
     const backend = resolveCodingBackend({
       defaultBackend: env.OPTIO_NEW_CODING_BACKEND?.trim() || "cursor",
     });
@@ -159,6 +162,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     const handle = await ensureWorktree(ctx);
     const agent = options.codingAgent ?? createCodingAgent(backend, { env });
     const output = await agent.run(codingInput(ctx, handle, timeoutMs, options.maxTokens));
+    const usage = usageFromCoding(output.usage);
     if (ctx.recordUsage) {
       await ctx.recordUsage({
         agentId: `agents/${ctx.stage}`,
@@ -170,16 +174,20 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
         costUsd: output.usage.cost_usd,
       });
     }
-    if (output.status === "succeeded") return;
+    if (output.status === "succeeded") return { usage };
     if (output.error_class === "missing_credentials") {
-      throw new StageCredentialsError(
+      const error = new StageCredentialsError(
         `coding agent ${backend} is missing credentials (${output.error_class})`,
       );
+      attachStepUsage(error, usage);
+      throw error;
     }
     const detail = output.logs ? `: ${output.logs.slice(0, 500)}` : "";
-    throw new Error(
+    const error = new Error(
       `coding agent ${backend} ${output.status} (${output.error_class ?? "failed"})${detail}`,
     );
+    attachStepUsage(error, usage);
+    throw error;
   }
 
   async function ensureWorktree(ctx: StageStepContext): Promise<WorktreeHandle> {
@@ -368,6 +376,14 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       throw error;
     }
   }
+}
+
+function usageFromCoding(usage: CodingAgentUsage): StageStepUsage {
+  const reported: StageStepUsage = {};
+  if (typeof usage.input_tokens === "number") reported.inputTokens = usage.input_tokens;
+  if (typeof usage.output_tokens === "number") reported.outputTokens = usage.output_tokens;
+  if (typeof usage.cost_usd === "number") reported.costUsd = usage.cost_usd;
+  return reported;
 }
 
 function codingInput(

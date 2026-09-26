@@ -17,6 +17,8 @@
 # exit 0 in the worktree, and the diff review must not find secrets or
 # destructive changes. A closed gate does not open the pull request.
 # See docs/review-gate.md. Host proof without GitHub: bash scripts/pr-safety-gate-proof.sh
+# Plan and merge gates pause until this script POSTs /approvals. That approve
+# is an explicit proof step. The orchestrator does not auto-approve a required gate.
 #
 # Close the pull request and delete the remote branch when you are done:
 #   gh pr close <url> --delete-branch
@@ -75,9 +77,30 @@ if (body.taskId !== taskId || body.queue !== "optio.plan") process.exit(1);
 ' "$accepted" "$task_id" || fail "POST /intake body did not accept ${task_id}"
 pass "POST /intake taskId=${task_id}"
 
+approve_waiting() {
+  local body points point
+  body="$(curl -sS --max-time 5 "${base}/approvals?taskId=${task_id}&sessionId=${task_id}" || true)"
+  points="$(node --input-type=module -e '
+const raw = process.argv[1];
+let body;
+try { body = JSON.parse(raw); } catch { process.exit(0); }
+const rows = Array.isArray(body.approvals) ? body.approvals : [];
+const waiting = rows.filter((row) => row && (row.status === "pending" || row.status === "timed_out"));
+process.stdout.write(waiting.map((row) => String(row.point)).join(" "));
+' "$body" || true)"
+  for point in $points; do
+    curl -fsS --max-time 10 -X POST "${base}/approvals" \
+      -H 'content-type: application/json' \
+      -d "{\"taskId\":\"${task_id}\",\"sessionId\":\"${task_id}\",\"point\":\"${point}\",\"action\":\"approve\"}" \
+      >/dev/null || true
+    pass "POST /approvals ${point} approve"
+  done
+}
+
 deadline=$((SECONDS + timeout))
 found=""
 while (( SECONDS < deadline )); do
+  approve_waiting
   body="$(curl -sS --max-time 15 --netrc-file "$netrc" \
     -H "Accept: application/vnd.github+json" \
     -H "User-Agent: optio-new-intake-pr-e2e" \
