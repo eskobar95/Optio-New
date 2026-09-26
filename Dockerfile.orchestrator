@@ -1,8 +1,13 @@
 # Optio-New orchestrator — intake HTTP + BullMQ stage workers.
 # Build compiles src/ and gateway/. The runtime image omits TypeScript and Husky.
 # The prod install ignores lifecycle scripts so Husky (a devDependency) is not required.
+#
+# Runtime is Debian bookworm (glibc). The Cursor `agent` CLI links glibc (`fcntl64`);
+# Alpine/musl reports cli_not_found. The image bakes that CLI onto PATH at build time
+# via https://cursor.com/install (no API key). Compose injects CURSOR_API_KEY at runtime.
+# .dockerignore excludes .env. This file has no ARG for secrets.
 
-FROM node:22-alpine AS build
+FROM node:22-bookworm-slim AS build
 WORKDIR /app
 ENV HUSKY=0
 COPY package.json package-lock.json tsconfig.json tsconfig.orchestrator.json ./
@@ -11,20 +16,33 @@ COPY src ./src
 COPY gateway ./gateway
 RUN npx tsc -p tsconfig.orchestrator.json
 
-FROM node:22-alpine
+FROM node:22-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
 ENV HUSKY=0
 ENV ORCHESTRATOR_PORT=3100
+# Docker AppArmor blocks Cursor's user-namespace sandbox. Host/dev runs leave this
+# unset and keep --sandbox enabled on read-only steps.
+ENV OPTIO_CURSOR_SANDBOX=disabled
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl bash git \
+  && rm -rf /var/lib/apt/lists/* \
+  && git config --system --add safe.directory /opt/optio-new \
+  && git config --system --add safe.directory '*' \
+  && mkdir -p /opt/cursor-cli \
+  && curl -fsS https://cursor.com/install -o /tmp/cursor-install.sh \
+  && HOME=/opt/cursor-cli bash /tmp/cursor-install.sh \
+  && rm -f /tmp/cursor-install.sh \
+  && ln -sfn /opt/cursor-cli/.local/bin/agent /usr/local/bin/agent \
+  && ln -sfn /opt/cursor-cli/.local/bin/cursor-agent /usr/local/bin/cursor-agent \
+  && chmod -R a+rX /opt/cursor-cli \
+  && agent --version
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=build /app/dist ./dist
 # cursor.ts resolves the DDL three levels above its compiled file
 # (dist/src/orchestrator/jobs -> dist/state/migrations).
 COPY state/migrations ./dist/state/migrations
-RUN apk add --no-cache git ca-certificates \
-  && git config --system --add safe.directory /opt/optio-new \
-  && git config --system --add safe.directory '*'
 USER node
 EXPOSE 3100
 CMD ["node", "dist/src/orchestrator/main.js"]

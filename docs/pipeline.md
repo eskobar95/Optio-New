@@ -93,7 +93,11 @@ Compose interpolates these names from the env file into `orchestrator` and `eve-
 
 Inside the container, `OPTIO_NEW_REPO_PATH` is `/opt/optio-new` and `OPTIO_NEW_WORKTREE_ROOT` is `/var/lib/optio-new/worktrees` (volume `optio_new_worktrees`). The host side of the checkout mount is `${OPTIO_NEW_REPO_PATH:-/opt/optio-new}`. `OPTIO_NEW_WORKTREE_RETAIN_ON_FAILURE` defaults to `true`; `false` removes the named `wt-<task>` directory when merge fails.
 
-`CURSOR_AGENT_BIN` is passed through when set. The image installs `git` and does not download the Cursor CLI. A missing `agent` binary fails the coding step with `cli_not_found`.
+`CURSOR_AGENT_BIN` is passed through when set. Empty keeps the `agent` binary baked into `Dockerfile.orchestrator`. A missing binary fails the coding step with `cli_not_found`.
+
+The orchestrator image is Debian bookworm (glibc), not Alpine. Alpine cannot run the Cursor CLI (`fcntl64`, then `cli_not_found`). The image build downloads the CLI with `curl -fsS https://cursor.com/install` into `/opt/cursor-cli` and links `/usr/local/bin/agent`. That script does not take `CURSOR_API_KEY`. The key stays in the sops env file and Compose injects it at runtime. Rebuild the image to pick up a newer CLI. `eve-runner` stays on Alpine and does not bake `agent`.
+
+Inside that container, `OPTIO_CURSOR_SANDBOX` is the literal `disabled`. The adapter keeps the permission-tier flags and rewrites `--sandbox enabled` to `--sandbox disabled` (allowlist mode), including on `--force` implement steps, so Docker AppArmor does not reject Cursor's user-namespace sandbox. Host and dev runs leave the variable unset, so the tier table in [permission-tiers.md](permission-tiers.md) stays in effect.
 
 | Step                                     | What the process does                                                                                                                                                                                                                                                                                                       |
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

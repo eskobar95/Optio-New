@@ -117,7 +117,9 @@ If `up --build` fails before containers are replaced, the previous containers ke
 
 Planner steps run the Cursor coding agent when `CURSOR_API_KEY` is set. `createEnvModelAdapter` performs no HTTP. With the Cursor key absent, planner throws `StageCredentialsError` when `MODEL_API_KEY` or `MODEL_ENDPOINT` is empty, and also when both are set, because that adapter has no HTTP client.
 
-The image includes `git`. Install the Cursor CLI on the host (or in the image PATH) and set `CURSOR_AGENT_BIN` when the binary is not named `agent`. A missing binary fails the coding step with `cli_not_found`.
+`Dockerfile.orchestrator` is Debian bookworm so the glibc Cursor CLI can run. Alpine fails with `fcntl64` and the step reports `cli_not_found`. The image build runs `curl -fsS https://cursor.com/install` as `HOME=/opt/cursor-cli` and links `/usr/local/bin/agent` (and `cursor-agent`). No API key is baked in. `CURSOR_API_KEY` still comes from the sops env file through Compose. Set `CURSOR_AGENT_BIN` only when the binary is not the baked `agent`. A missing binary fails the coding step with `cli_not_found`.
+
+Compose sets `OPTIO_CURSOR_SANDBOX: disabled` on `orchestrator` (not interpolated from the host). Review and implement pass `--sandbox disabled` so AppArmor does not block Cursor's sandbox. On the host, leave that variable unset.
 
 ```bash
 cd /opt/optio-new

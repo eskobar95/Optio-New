@@ -50,6 +50,8 @@ describe("compose full stack profiles", () => {
     ]) {
       expect(slices.orchestrator).toContain(`${name}: \${${name}:-}`);
     }
+    expect(slices.orchestrator).toContain("OPTIO_CURSOR_SANDBOX: disabled");
+    expect(slices.orchestrator).not.toContain("OPTIO_CURSOR_SANDBOX: ${");
   });
 
   it("publishes eve-runner on 127.0.0.1:3210", () => {
@@ -69,7 +71,16 @@ describe("compose full stack profiles", () => {
   });
 
   it("installs git for orchestrator and eve-runner worktrees", () => {
-    expect(readFileSync("Dockerfile.orchestrator", "utf8")).toContain("apk add --no-cache git");
+    const orchestrator = readFileSync("Dockerfile.orchestrator", "utf8");
+    expect(orchestrator).toContain("node:22-bookworm-slim");
+    expect(orchestrator).not.toContain("alpine");
+    expect(orchestrator).toContain("apt-get install");
+    expect(orchestrator).toContain("git");
+    expect(orchestrator).toContain("https://cursor.com/install");
+    expect(orchestrator).toContain("/usr/local/bin/agent");
+    expect(orchestrator).toContain("OPTIO_CURSOR_SANDBOX=disabled");
+    expect(orchestrator).not.toMatch(/^(ENV|ARG)\s+CURSOR_API_KEY/m);
+    expect(orchestrator).not.toContain("COPY .env");
     expect(readFileSync("Dockerfile.eve-runner", "utf8")).toContain("apk add --no-cache git");
   });
 });
