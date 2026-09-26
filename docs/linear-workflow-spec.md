@@ -80,10 +80,10 @@ Default: the agent runs from **In Progress** through **Merge** without asking fo
 
 While the attempt count is under the threshold, a problem found at **Review** sends the issue back to **In Progress**. A problem is CI red (tests, lint, or Actions), or review feedback: the latest review from a person requests changes, or leaves a comment with a body. A later approval from that person clears their feedback. A pending check is not a failure and does not move the issue. The same commit with the same feedback is one failure; a retry of that evaluation does not increment the count and does not post the comment again. The agent may still attempt the fix on that retry.
 
-The return posts a Linear comment the agent consumes:
+The return posts a Linear `[review]` comment the agent consumes. The same text is the GitHub review comment and the pull request comment:
 
 ```text
-Review feedback
+[review]
 Failed: <what failed>
 Must fix: <what must be fixed>
 Attempt: <n>/<threshold>
@@ -123,13 +123,31 @@ It leaves three traces:
 
 - **When and why.** Name the hatch, the moment it tripped, and a short rationale. For the CI hatch, include the failure count and the configured threshold.
 - **What was tried, and what failed.** Enough for a person to continue. Not a dump of logs or secrets.
+- **What the human should do next.** A `Next:` line on the `[escalate]` comment. For a CI hatch, fix the failure and move the issue back to **In Progress** when the agent should resume. For a blind alley, choose a different approach.
 - **Where the issue sits.** Move it to **Needs Human** when that column exists. That is the preferred target. Until the column exists, move it back to **In Progress** (leave it there if it never left). **Needs Human** is not one of the six in-flight statuses until the board has the column.
 
-Post that context as a Linear `commentCreate`. The body is this rationale, not the Phase 1 ack `queued`. The status move is `issueUpdate` of `stateId` only. `applyWorkflowEffects` resolves **Needs Human** from the issue's team states and falls back to **In Progress** when that name is missing. The code does not create the column (`boardSetupPlan().createColumns` is false). The pull request stays unmerged. Escalation does not undraft it and does not open the **Review** gate.
+Post that context as a Linear `commentCreate` whose first line is `[escalate] Human help needed`. A `[status]` comment records the move. The body is this rationale, not the Phase 1 ack `queued`. The status move is `issueUpdate` of `stateId` only. `applyWorkflowEffects` resolves **Needs Human** from the issue's team states and falls back to **In Progress** when that name is missing. The code does not create the column (`boardSetupPlan().createColumns` is false). The pull request stays unmerged. Escalation does not undraft it and does not open the **Review** gate.
 
 The rest of the flow stays autonomous. Outside these hatches, humans still intervene only by reading and approving the pull request at **Review**.
 
-## 6. What already exists
+## 6. Issue history
+
+Opening the Linear issue is enough to read the run. GitHub still holds the pull request, the checks, and the review thread. The issue comment list is the copy a person can read without leaving Linear.
+
+Phase 1 still posts exactly `queued` after intake. Every later workflow comment is a short structured note. The first line is one of `[status]`, `[ci]`, `[review]`, or `[escalate]`.
+
+| Prefix       | When it is posted                                                                                                                                                         | What it contains                                                                                         |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `[status]`   | Every status move the agent or the webhook gate writes, including a human move into **Review**, **Merge**, or **Done** that is reverted.                                  | `Status`, `Trigger` (`agent`, `ci`, `human`, or `review`), and a one-line `Rationale`.                   |
+| `[ci]`       | Once when a commit's checks start, and once for each distinct result on that commit (`pending`, `green`, or `red`). A retry of the same commit and the same result waits. | `Phase: started` or `Result`, the failed check names when the result is red, and `Attempt: n/threshold`. |
+| `[review]`   | A failed return to **In Progress**, whether CI is red or a reviewer left feedback.                                                                                        | `Failed`, `Must fix`, and `Attempt`. The implementation agent reads this same text.                      |
+| `[escalate]` | The attempt threshold or a blind alley stops the autonomous chain.                                                                                                        | `When`, `Why`, `Tried`, `Failed`, and `Next`.                                                            |
+
+A red result with no named GitHub status contexts says `Failed checks: combined status`. Named contexts (for example `ci/lint`) are listed when the commit status payload includes them.
+
+The `[review]` text is also posted on the GitHub pull request: a review with event `COMMENT`, then an issue comment with the same body. Reviewers are re-requested in the same step. None of those calls set `draft`.
+
+## 7. What already exists
 
 This workflow sits on the live edge and on Phase 1 intake. It does not replace them.
 
@@ -150,10 +168,10 @@ Team **FIN** (“Find Job Abroad”) and team **Engineering** (**ENG**) may both
 
 `OPTIO_NEW_LINEAR_API_KEY` is limited by `src/orchestrator/linear/policy.ts`:
 
-| Allowed         | Rule                                                                                             |
-| --------------- | ------------------------------------------------------------------------------------------------ |
-| `commentCreate` | Live write. Phase 1 posts `queued`.                                                              |
-| `issueUpdate`   | May set `stateId` only. The workflow module calls it for status moves. The Phase 1 ack does not. |
+| Allowed         | Rule                                                                                                           |
+| --------------- | -------------------------------------------------------------------------------------------------------------- |
+| `commentCreate` | Live write. Phase 1 posts `queued`. Later workflow notes use `[status]`, `[ci]`, `[review]`, and `[escalate]`. |
+| `issueUpdate`   | May set `stateId` only. The workflow module calls it for status moves. The Phase 1 ack does not.               |
 
 `issueCreate`, `issueDelete`, and `issueArchive` are rejected. Agent Sessions stay out of scope. The key must not gain create, delete, or archive in order to run this board.
 
@@ -167,14 +185,14 @@ The multi-repo catalog holds `optio-new` and `findjobabroad` ([ops/multi-repo-cx
 
 For a task whose intake `source` is `linear`, the production handler drives the board:
 
-- `record_diff` opens a **draft** pull request on the catalog repo for that `repoId`, with base `main`, then sets **In Progress**.
-- `record_ci_wait` moves to **Review** and undrafts only when commit status is `success` and review feedback is clear. A red status, or a review that requests changes or comments, moves the issue back to **In Progress** with the feedback comment, re-requests review, and asks the implementation agent to fix `linear-review-feedback.md`. That return keeps the pull request ready (`draft` stays false). Pending does not count. The same commit and the same feedback do not count twice. The third failed return escalates. The webhook does not undraft or re-request.
+- `record_diff` opens a **draft** pull request on the catalog repo for that `repoId`, with base `main`, then sets **In Progress** and posts a `[status]` comment (trigger `agent`).
+- `record_ci_wait` posts `[ci] Phase: started` once per commit, then a `[ci]` result. It moves to **Review** and undrafts only when commit status is `success` and review feedback is clear, with a `[status]` comment (trigger `ci`). A red status, or a review that requests changes or comments, moves the issue back to **In Progress** with `[status]`, `[review]`, and `[ci]` comments, re-requests review, posts that `[review]` text on the pull request, and asks the implementation agent to fix `linear-review-feedback.md`. That return keeps the pull request ready (`draft` stays false). Pending does not count. The same commit and the same feedback do not count twice, and the same CI result is not commented twice. The third failed return escalates with `[escalate]`. The webhook does not undraft or re-request.
 - `merge_branch` uses the same return when CI is red or review feedback is still open. When CI is green, feedback is clear, and a GitHub review is `APPROVED`, it merges that pull request, then sets **Merge** and **Done** (or **Completed** when that is the only finished name on the team). Green without approval waits and sets **Review** again.
-- A human move into **Review**, **Merge**, or **Done** is reverted to `updatedFrom.stateId` after the Phase 1 `queued` comment. The agent's own `issueUpdate` is marked for 60 seconds so that webhook does not revert it.
+- A human move into **Review**, **Merge**, or **Done** is reverted to `updatedFrom.stateId` after the Phase 1 `queued` comment, and a `[status]` comment records that revert (trigger `human`). The agent's own `issueUpdate` is marked for 60 seconds so that webhook does not revert it.
 
 `open_pr` still runs at ready for every task. On a Linear task it reuses the draft already opened and does not undraft it. Other intake sources keep the catalog `defaultBranch` and a non-draft pull request. Phase 1 intake does not itself open or merge a pull request.
 
-## 7. Out of scope
+## 8. Out of scope
 
 - Creating or renaming Linear columns. The board must already contain the names this workflow sets. **Needs Human** is optional; escalation falls back to **In Progress**.
 - Adding **Triage**, **Review**, and **Merge** on a board that still has Linear's classic six columns. Those columns are a later board edit.
@@ -184,7 +202,7 @@ For a task whose intake `source` is `linear`, the production handler drives the 
 - Linear Agent Sessions, OAuth agent scopes, Agent Activities, backlog polling, and any create, delete, or archive of issues.
 - Retuning the HITL pause, the review gate, or `open_pr`.
 
-## 8. Open questions
+## 9. Open questions
 
 - Linear-sourced pull requests use base `main`. Other sources still use the catalog `defaultBranch`. A task branch that was not cut from `main` can fail the draft open.
 - A later `issueUpdate` of `stateId` on a FIN issue will hit the Phase 1 webhook again. That delivery must keep the existing task id and must not start a second pipeline. The `queued` comment on a reused job id is the current ack.

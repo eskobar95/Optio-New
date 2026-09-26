@@ -25,7 +25,7 @@ import {
   githubRepoFromCloneUrl,
   markGithubPullRequestReady,
   openGithubPullRequest,
-  readCommitStatus,
+  readCommitStatusReport,
   reRequestGithubPullRequestReview,
   redact,
   type PullRequestRef,
@@ -40,6 +40,7 @@ import {
   LINEAR_PULL_REQUEST_BASE,
   REVIEW_FEEDBACK_FILE,
   blockingReviewFeedback,
+  ciLogComment,
   decideAgentAdvance,
   mapCommitStatus,
   noteAgentStatusWrite,
@@ -340,8 +341,8 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     const github = requireGithub(ctx);
     const handle = await requireWorktree(ctx);
     const sha = await git(handle.path, ["rev-parse", "HEAD"], [github.token]);
-    const state = await mapGithub(() =>
-      readCommitStatus({
+    const report = await mapGithub(() =>
+      readCommitStatusReport({
         token: github.token,
         owner: github.owner,
         repo: github.repo,
@@ -353,14 +354,16 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       const feedback = await linearReviewFeedback(ctx, handle);
       await runLinear(ctx, {
         action: "review",
-        ci: mapCommitStatus(state),
+        ci: mapCommitStatus(report.state),
         reviewFeedback: feedback,
+        failedChecks: report.failedChecks,
         failureKey: reviewFailureKey(sha, feedback),
+        sha,
       });
       return;
     }
-    if (state !== "success") {
-      throw new Error(`ci ${state} for ${ctx.taskId}`);
+    if (report.state !== "success") {
+      throw new Error(`ci ${report.state} for ${ctx.taskId}`);
     }
   }
 
@@ -374,8 +377,8 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     if (isLinearTask(ctx)) {
       const github = requireGithub(ctx);
       const sha = await git(handle.path, ["rev-parse", "HEAD"], [github.token]);
-      const state = await mapGithub(() =>
-        readCommitStatus({
+      const report = await mapGithub(() =>
+        readCommitStatusReport({
           token: github.token,
           owner: github.owner,
           repo: github.repo,
@@ -386,9 +389,11 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       const feedback = await linearReviewFeedback(ctx, handle);
       await runLinear(ctx, {
         action: "merge",
-        ci: mapCommitStatus(state),
+        ci: mapCommitStatus(report.state),
         reviewFeedback: feedback,
+        failedChecks: report.failedChecks,
         failureKey: reviewFailureKey(sha, feedback),
+        sha,
       });
       return;
     }
@@ -529,29 +534,64 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       ci?: ReturnType<typeof mapCommitStatus>;
       blindAlley?: { why: string; tried: string; failed: string };
       reviewFeedback?: string;
+      failedChecks?: readonly string[];
       failureKey?: string;
+      sha?: string;
     },
   ): Promise<void> {
     const issueId = ctx.linearIssueId?.trim() ?? "";
     const handle = await requireWorktree(ctx);
-    const progress = await readLinearProgress(handle);
+    let progress = await readLinearProgress(handle);
+    const escalateAfter = readCiFailEscalateAfter(env);
+    const ports = linearPorts(ctx, handle, issueId);
+    if (
+      (input.action === "review" || input.action === "merge") &&
+      input.sha &&
+      progress.lastCiStartSha !== input.sha
+    ) {
+      await ports.comment(
+        ciLogComment({
+          phase: "start",
+          attempt: progress.ciFailureCount,
+          escalateAfter,
+        }),
+      );
+      progress = { ...progress, lastCiStartSha: input.sha };
+    }
     const humanApproved = input.action === "merge" ? await linearPullApproved(ctx, handle) : false;
     const decision = decideAgentAdvance({
       action: input.action,
       ci: input.ci,
       ciFailureCount: progress.ciFailureCount,
-      escalateAfter: readCiFailEscalateAfter(env),
+      escalateAfter,
       humanApproved,
       whenIso: new Date().toISOString(),
       blindAlley: input.blindAlley,
       reviewFeedback: input.reviewFeedback,
+      failedChecks: input.failedChecks,
       failureKey: input.failureKey,
       lastFailureKey: progress.lastFailureKey,
     });
-    if (decision.effects.length > 0) {
-      await applyWorkflowEffects(decision, linearPorts(ctx, handle, issueId));
+    const resultKey =
+      input.sha && input.ci
+        ? `${input.sha}:result:${input.ci}:${decision.ciFailureCount}`
+        : undefined;
+    const skipCiResult = Boolean(resultKey && progress.lastCiResultKey === resultKey);
+    const effects = skipCiResult
+      ? decision.effects.filter(
+          (effect) => !(effect.kind === "linear.comment" && effect.body.startsWith("[ci]")),
+        )
+      : decision.effects;
+    if (effects.length > 0) {
+      await applyWorkflowEffects({ ...decision, effects }, ports);
     }
-    await writeLinearProgress(handle, nextLinearProgress(progress, decision, input.failureKey));
+    await writeLinearProgress(
+      handle,
+      nextLinearProgress(progress, decision, input.failureKey, {
+        lastCiStartSha: progress.lastCiStartSha,
+        lastCiResultKey: resultKey ?? progress.lastCiResultKey,
+      }),
+    );
     await traceLinear(ctx, decision);
     if (decision.halt) throw new Error(`linear workflow escalated: ${decision.reason}`);
     if (decision.reason === "return_to_progress" || decision.reason === "ci_unchanged") {
@@ -774,6 +814,8 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
 interface LinearProgress {
   ciFailureCount: number;
   lastFailureKey?: string;
+  lastCiStartSha?: string;
+  lastCiResultKey?: string;
 }
 
 function isLinearCount(value: unknown): value is number {
@@ -788,11 +830,22 @@ async function readLinearProgress(handle: WorktreeHandle): Promise<LinearProgres
   try {
     const parsed: unknown = JSON.parse(await readFile(ciCountPath(handle), "utf8"));
     if (!parsed || typeof parsed !== "object") return { ciFailureCount: 0 };
-    const row = parsed as { ciFailureCount?: unknown; lastFailureKey?: unknown };
+    const row = parsed as {
+      ciFailureCount?: unknown;
+      lastFailureKey?: unknown;
+      lastCiStartSha?: unknown;
+      lastCiResultKey?: unknown;
+    };
     return {
       ciFailureCount: isLinearCount(row.ciFailureCount) ? row.ciFailureCount : 0,
       ...(typeof row.lastFailureKey === "string" && row.lastFailureKey
         ? { lastFailureKey: row.lastFailureKey }
+        : {}),
+      ...(typeof row.lastCiStartSha === "string" && row.lastCiStartSha
+        ? { lastCiStartSha: row.lastCiStartSha }
+        : {}),
+      ...(typeof row.lastCiResultKey === "string" && row.lastCiResultKey
+        ? { lastCiResultKey: row.lastCiResultKey }
         : {}),
     };
   } catch {
@@ -804,6 +857,7 @@ function nextLinearProgress(
   previous: LinearProgress,
   decision: WorkflowDecision,
   failureKey: string | undefined,
+  ciLog: { lastCiStartSha?: string; lastCiResultKey?: string },
 ): LinearProgress {
   const row: LinearProgress = { ciFailureCount: decision.ciFailureCount };
   const passed =
@@ -818,6 +872,10 @@ function nextLinearProgress(
   } else if (!passed && previous.lastFailureKey) {
     row.lastFailureKey = previous.lastFailureKey;
   }
+  const startSha = ciLog.lastCiStartSha ?? previous.lastCiStartSha;
+  const resultKey = ciLog.lastCiResultKey ?? previous.lastCiResultKey;
+  if (startSha) row.lastCiStartSha = startSha;
+  if (resultKey) row.lastCiResultKey = resultKey;
   return row;
 }
 
@@ -835,6 +893,10 @@ async function reviewFixText(
   input: { reviewFeedback?: string },
   handle: WorktreeHandle,
 ): Promise<string> {
+  const review = decision.effects.find(
+    (effect) => effect.kind === "linear.comment" && effect.body.startsWith("[review]"),
+  );
+  if (review?.kind === "linear.comment") return review.body;
   const comment = decision.effects.find((effect) => effect.kind === "linear.comment");
   if (comment?.kind === "linear.comment") return comment.body;
   try {

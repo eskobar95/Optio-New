@@ -4,7 +4,7 @@
  * Phase 1 still comments `queued` and enqueues before this runs.
  */
 import { applyWorkflowEffects, type WorkflowPorts } from "./apply.js";
-import { updateLinearIssueStateId } from "./status.js";
+import { commentOnIssue, updateLinearIssueStateId } from "./status.js";
 import { consumeAgentStatusWrite, decideObservedMove } from "./workflow.js";
 
 export async function enforceObservedLinearStatus(input: {
@@ -33,7 +33,14 @@ export async function enforceObservedLinearStatus(input: {
     merge: unused,
     rereview: unused,
     setStatus: unused,
-    comment: async () => undefined,
+    comment: async (body) => {
+      await commentOnIssue({
+        apiKey: input.apiKey,
+        issueId: input.issueId,
+        body,
+        fetchImpl: input.fetchImpl,
+      });
+    },
     escalationStatus: async () => {
       throw new Error("Linear webhook does not escalate");
     },

@@ -696,6 +696,9 @@ describe("production stage handler", () => {
         if (method === "POST" && url.endsWith("/requested_reviewers")) {
           return jsonResponse(201, { requested_reviewers: [{ login: "ada" }] });
         }
+        if (method === "POST" && url.endsWith("/reviews")) {
+          return jsonResponse(201, { id: 3, state: "COMMENTED" });
+        }
         if (method === "POST" && url.endsWith("/comments")) return jsonResponse(201, { id: 1 });
         if (method === "PATCH") return jsonResponse(200, { draft: false });
         return jsonResponse(500, { message: `unexpected ${method} ${url}` });
@@ -713,7 +716,24 @@ describe("production stage handler", () => {
     const feedback = readFileSync(join(handle.path, "linear-review-feedback.md"), "utf8");
     expect(feedback).toContain("Failed:");
     expect(feedback).toContain("Must fix:");
+    const linearNotes = githubBodies
+      .filter((call) => call.url.includes("api.linear.app"))
+      .map((call) => call.body ?? "");
+    expect(
+      linearNotes.some((body) => body.includes("[ci]") && body.includes("Phase: started")),
+    ).toBe(true);
+    expect(linearNotes.some((body) => body.includes("Result: red"))).toBe(true);
+    expect(linearNotes.some((body) => body.includes("[review]"))).toBe(true);
+    expect(linearNotes.some((body) => body.includes("[status]"))).toBe(true);
     expect(githubBodies.some((call) => call.url.endsWith("/requested_reviewers"))).toBe(true);
+    expect(
+      githubBodies.some(
+        (call) =>
+          call.method === "POST" &&
+          call.url.endsWith("/reviews") &&
+          call.body?.includes('"event":"COMMENT"'),
+      ),
+    ).toBe(true);
     expect(
       githubBodies.some((call) => call.method === "POST" && call.url.endsWith("/comments")),
     ).toBe(true);

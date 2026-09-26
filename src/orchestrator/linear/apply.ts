@@ -2,7 +2,7 @@
  * Runs a workflow decision against injected GitHub and Linear ports.
  * A denied decision with no effects changes nothing.
  */
-import { LINEAR_STATUS } from "./workflow.js";
+import { LINEAR_STATUS, statusLogComment } from "./workflow.js";
 import { LinearStatusMissingError } from "./status.js";
 import type { WorkflowDecision } from "./workflow.js";
 
@@ -45,5 +45,12 @@ async function escalate(comment: string, ports: WorkflowPorts): Promise<void> {
     status = LINEAR_STATUS.inProgress;
     await ports.setStatus(status);
   }
+  await ports.comment(
+    statusLogComment({
+      status,
+      trigger: "agent",
+      rationale: "Autonomous work stopped. A human needs to take the next step.",
+    }),
+  );
   await ports.comment(comment);
 }

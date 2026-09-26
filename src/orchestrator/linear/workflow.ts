@@ -100,19 +100,58 @@ export function normalizeStatus(name: string): string {
   return trimmed;
 }
 
+const DEFAULT_ESCALATION_NEXT =
+  "Fix the failure, then move the issue back to In Progress so the agent can resume. Do not merge while checks are red.";
+
 export function escalationComment(input: {
   whenIso: string;
   why: string;
   tried: string;
   failed: string;
+  next?: string;
 }): string {
   return [
-    "Human help needed",
+    "[escalate] Human help needed",
     `When: ${input.whenIso}`,
     `Why: ${input.why}`,
     `Tried: ${input.tried}`,
     `Failed: ${input.failed}`,
+    `Next: ${input.next?.trim() || DEFAULT_ESCALATION_NEXT}`,
   ].join("\n");
+}
+
+export function statusLogComment(input: {
+  status: string;
+  trigger: "agent" | "ci" | "human" | "review";
+  rationale: string;
+}): string {
+  return [
+    "[status]",
+    `Status: ${input.status}`,
+    `Trigger: ${input.trigger}`,
+    `Rationale: ${input.rationale}`,
+  ].join("\n");
+}
+
+export function ciLogComment(input: {
+  phase: "start" | "result";
+  result?: CiState;
+  failedChecks?: readonly string[];
+  attempt: number;
+  escalateAfter: number;
+}): string {
+  const lines = ["[ci]"];
+  if (input.phase === "start") {
+    lines.push("Phase: started");
+  } else {
+    lines.push(`Result: ${input.result ?? "pending"}`);
+    if (input.result === "red") {
+      const checks = (input.failedChecks ?? []).map((check) => check.trim()).filter(Boolean);
+      lines.push(`Failed checks: ${checks.length > 0 ? checks.join(", ") : "combined status"}`);
+    }
+  }
+  lines.push(`Attempt: ${input.attempt}/${input.escalateAfter}`);
+  return lines.join("\n");
 }
 
 /** One line the coding agent may emit. The orchestrator escalates instead of looping. */
@@ -167,7 +206,7 @@ export function reviewLoopComment(input: {
   escalateAfter: number;
 }): string {
   return [
-    "Review feedback",
+    "[review]",
     `Failed: ${input.failed}`,
     `Must fix: ${input.mustFix}`,
     `Attempt: ${input.attempt}/${input.escalateAfter}`,
@@ -203,6 +242,8 @@ export function decideAgentAdvance(input: {
   blindAlley?: { why: string; tried: string; failed: string };
   /** Concrete review comments. Empty means no open feedback. */
   reviewFeedback?: string;
+  /** Named GitHub checks that are red. Empty means the combined status had no contexts. */
+  failedChecks?: readonly string[];
   /** `reviewFailureKey` for this evaluation. Matches `lastFailureKey` to avoid a double count. */
   failureKey?: string;
   lastFailureKey?: string;
@@ -211,11 +252,21 @@ export function decideAgentAdvance(input: {
   if (input.action === "start") {
     return ok("start_work", count, [
       { kind: "github.draft" },
-      { kind: "linear.status", status: LINEAR_STATUS.inProgress },
+      ...statusMove(
+        LINEAR_STATUS.inProgress,
+        "agent",
+        "The agent started the task and opened a draft pull request.",
+      ),
     ]);
   }
   if (input.action === "triage") {
-    return ok("triage", count, [{ kind: "linear.status", status: LINEAR_STATUS.triage }]);
+    return ok("triage", count, [
+      ...statusMove(
+        LINEAR_STATUS.triage,
+        "agent",
+        "The task is unclear or problematic, so the agent stopped guessing.",
+      ),
+    ]);
   }
   if (input.action === "blind_alley") {
     const detail = input.blindAlley ?? {
@@ -223,7 +274,15 @@ export function decideAgentAdvance(input: {
       tried: "Further attempts",
       failed: "Another attempt would not move the solution forward",
     };
-    return escalate(count, input.whenIso, detail.why, detail.tried, detail.failed, "blind_alley");
+    return escalate(
+      count,
+      input.whenIso,
+      detail.why,
+      detail.tried,
+      detail.failed,
+      "blind_alley",
+      "Choose a different approach. Another autonomous attempt will not move this forward.",
+    );
   }
   if (input.action === "merge") {
     if (input.ci !== undefined || Boolean(input.reviewFeedback?.trim())) {
@@ -239,7 +298,20 @@ export function decideAgentAdvance(input: {
           ciFailureCount: 0,
           effects: [
             { kind: "github.ready" },
-            { kind: "linear.status", status: LINEAR_STATUS.review },
+            ...statusMove(
+              LINEAR_STATUS.review,
+              "ci",
+              "CI is green. Waiting for a human to approve the pull request.",
+            ),
+            {
+              kind: "linear.comment",
+              body: ciLogComment({
+                phase: "result",
+                result: "green",
+                attempt: 0,
+                escalateAfter: input.escalateAfter,
+              }),
+            },
           ],
         };
       }
@@ -247,15 +319,32 @@ export function decideAgentAdvance(input: {
     }
     return ok("merge", count, [
       { kind: "github.merge" },
-      { kind: "linear.status", status: LINEAR_STATUS.merge },
-      { kind: "linear.status", status: LINEAR_STATUS.done },
+      ...statusMove(
+        LINEAR_STATUS.merge,
+        "agent",
+        "A human approved the pull request. The agent is merging it into main.",
+      ),
+      ...statusMove(LINEAR_STATUS.done, "agent", "The pull request is on main."),
     ]);
   }
   const problem = reviewProblem(input);
   if (problem) return problem;
   return ok("review", 0, [
     { kind: "github.ready" },
-    { kind: "linear.status", status: LINEAR_STATUS.review },
+    ...statusMove(
+      LINEAR_STATUS.review,
+      "ci",
+      "CI is green and review feedback is clear. The pull request is ready for review.",
+    ),
+    {
+      kind: "linear.comment",
+      body: ciLogComment({
+        phase: "result",
+        result: "green",
+        attempt: 0,
+        escalateAfter: input.escalateAfter,
+      }),
+    },
   ]);
 }
 
@@ -265,29 +354,66 @@ function reviewProblem(input: {
   escalateAfter: number;
   whenIso: string;
   reviewFeedback?: string;
+  failedChecks?: readonly string[];
   failureKey?: string;
   lastFailureKey?: string;
 }): WorkflowDecision | undefined {
   const feedback = input.reviewFeedback?.trim() ?? "";
-  if (input.ci === "pending") return deny("ci_pending", input.ciFailureCount);
+  if (input.ci === "pending") {
+    return {
+      ok: false,
+      halt: false,
+      reason: "ci_pending",
+      ciFailureCount: input.ciFailureCount,
+      effects: [
+        {
+          kind: "linear.comment",
+          body: ciLogComment({
+            phase: "result",
+            result: "pending",
+            attempt: input.ciFailureCount,
+            escalateAfter: input.escalateAfter,
+          }),
+        },
+      ],
+    };
+  }
   if (input.ci === "green" && !feedback) return undefined;
   const count = input.ciFailureCount;
   if (input.failureKey && input.lastFailureKey && input.failureKey === input.lastFailureKey) {
     return deny("ci_unchanged", count);
   }
   const next = count + 1;
+  const red = input.ci !== "green";
   const failed = feedback
-    ? input.ci === "green"
-      ? feedback
-      : `GitHub checks red (tests, lint, or Actions). ${feedback}`
+    ? red
+      ? `GitHub checks red (tests, lint, or Actions). ${feedback}`
+      : feedback
     : "GitHub checks red (tests, lint, or Actions)";
   const mustFix = feedback || "Make CI green (tests, lint, and Actions)";
+  const ciComment: WorkflowEffect = {
+    kind: "linear.comment",
+    body: ciLogComment({
+      phase: "result",
+      result: red ? "red" : "green",
+      failedChecks: input.failedChecks,
+      attempt: next,
+      escalateAfter: input.escalateAfter,
+    }),
+  };
   if (next >= input.escalateAfter) {
-    const why =
-      input.ci === "green"
-        ? `Repeated review feedback (${next}/${input.escalateAfter})`
-        : `Repeated CI failure (${next}/${input.escalateAfter})`;
-    return escalate(next, input.whenIso, why, "In Progress → Review", failed, "ci_failures");
+    const why = red
+      ? `Repeated CI failure (${next}/${input.escalateAfter})`
+      : `Repeated review feedback (${next}/${input.escalateAfter})`;
+    const decision = escalate(
+      next,
+      input.whenIso,
+      why,
+      "In Progress → Review",
+      failed,
+      "ci_failures",
+    );
+    return { ...decision, effects: [ciComment, ...decision.effects] };
   }
   const body = reviewLoopComment({
     failed,
@@ -295,11 +421,27 @@ function reviewProblem(input: {
     attempt: next,
     escalateAfter: input.escalateAfter,
   });
+  const trigger = red ? "ci" : "review";
+  const rationale = red
+    ? "CI is red. The agent is returning the issue to In Progress for a fix."
+    : "Review feedback is still open. The agent is returning the issue to In Progress for a fix.";
   return ok("return_to_progress", next, [
-    { kind: "linear.status", status: LINEAR_STATUS.inProgress },
+    ...statusMove(LINEAR_STATUS.inProgress, trigger, rationale),
     { kind: "linear.comment", body },
+    ciComment,
     { kind: "github.rereview", comment: body },
   ]);
+}
+
+function statusMove(
+  status: string,
+  trigger: "agent" | "ci" | "human" | "review",
+  rationale: string,
+): WorkflowEffect[] {
+  return [
+    { kind: "linear.status", status },
+    { kind: "linear.comment", body: statusLogComment({ status, trigger, rationale }) },
+  ];
 }
 
 export function decideObservedMove(input: {
@@ -318,7 +460,17 @@ export function decideObservedMove(input: {
     halt: false,
     reason: "human_override",
     ciFailureCount: 0,
-    effects: [{ kind: "linear.revert", stateId: fromStateId }],
+    effects: [
+      { kind: "linear.revert", stateId: fromStateId },
+      {
+        kind: "linear.comment",
+        body: statusLogComment({
+          status: "previous",
+          trigger: "human",
+          rationale: `A person moved this issue to ${to}. That move was reverted. Only the agent may enter Review, Merge, or Done, and Review requires green CI.`,
+        }),
+      },
+    ],
   };
 }
 
@@ -329,6 +481,7 @@ function escalate(
   tried: string,
   failed: string,
   reason: string,
+  next?: string,
 ): WorkflowDecision {
   return {
     ok: true,
@@ -338,7 +491,7 @@ function escalate(
     effects: [
       {
         kind: "linear.escalate",
-        comment: escalationComment({ whenIso, why, tried, failed }),
+        comment: escalationComment({ whenIso, why, tried, failed, next }),
       },
     ],
   };

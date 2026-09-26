@@ -27,6 +27,14 @@ import type { Server } from "node:http";
 
 const WHEN = "2026-09-26T15:00:00.000Z";
 
+function commentBodies(decision: {
+  effects: readonly { kind: string; body?: string }[];
+}): string[] {
+  return decision.effects.flatMap((effect) =>
+    effect.kind === "linear.comment" && typeof effect.body === "string" ? [effect.body] : [],
+  );
+}
+
 function advance(
   partial: Partial<Parameters<typeof decideAgentAdvance>[0]> & {
     action: Parameters<typeof decideAgentAdvance>[0]["action"];
@@ -82,23 +90,43 @@ describe("Linear workflow decisions", () => {
 
   it("opens a draft on In Progress, undrafts on green Review, and merges to Done", () => {
     const start = advance({ action: "start" });
-    expect(start.effects.map((effect) => effect.kind)).toEqual(["github.draft", "linear.status"]);
+    expect(start.effects.map((effect) => effect.kind)).toEqual([
+      "github.draft",
+      "linear.status",
+      "linear.comment",
+    ]);
     expect(start.effects[1]).toMatchObject({ status: "In Progress" });
+    expect(start.effects[2]).toMatchObject({
+      kind: "linear.comment",
+      body: expect.stringContaining("[status]\nStatus: In Progress\nTrigger: agent"),
+    });
 
     const review = advance({ action: "review", ci: "green", ciFailureCount: 2 });
     expect(review.ok).toBe(true);
     expect(review.ciFailureCount).toBe(0);
-    expect(review.effects.map((effect) => effect.kind)).toEqual(["github.ready", "linear.status"]);
+    expect(review.effects.map((effect) => effect.kind)).toEqual([
+      "github.ready",
+      "linear.status",
+      "linear.comment",
+      "linear.comment",
+    ]);
     expect(review.effects[1]).toMatchObject({ status: "Review" });
+    expect(commentBodies(review)).toEqual([
+      expect.stringContaining("[status]\nStatus: Review\nTrigger: ci"),
+      expect.stringContaining("[ci]\nResult: green\nAttempt: 0/3"),
+    ]);
 
     const merge = advance({ action: "merge", humanApproved: true });
     expect(merge.effects.map((effect) => effect.kind)).toEqual([
       "github.merge",
       "linear.status",
+      "linear.comment",
       "linear.status",
+      "linear.comment",
     ]);
     expect(merge.effects[1]).toMatchObject({ status: "Merge" });
-    expect(merge.effects[2]).toMatchObject({ status: "Done" });
+    expect(merge.effects[3]).toMatchObject({ status: "Done" });
+    expect(commentBodies(merge).join("\n")).toContain("Trigger: agent");
   });
 
   it("returns to In Progress with feedback when CI is red and keeps the pull request ready", () => {
@@ -110,15 +138,20 @@ describe("Linear workflow decisions", () => {
     expect(decision.effects.map((effect) => effect.kind)).toEqual([
       "linear.status",
       "linear.comment",
+      "linear.comment",
+      "linear.comment",
       "github.rereview",
     ]);
     expect(decision.effects[0]).toMatchObject({ status: "In Progress" });
-    const comment = decision.effects[1];
-    expect(comment?.kind).toBe("linear.comment");
-    if (comment?.kind !== "linear.comment") return;
-    expect(comment.body).toContain("Failed: GitHub checks red (tests, lint, or Actions)");
-    expect(comment.body).toContain("Must fix: Make CI green (tests, lint, and Actions)");
-    expect(comment.body).toContain("Attempt: 1/3");
+    const bodies = commentBodies(decision);
+    expect(bodies[0]).toContain("[status]\nStatus: In Progress\nTrigger: ci");
+    expect(bodies[1]).toContain("[review]");
+    expect(bodies[1]).toContain("Failed: GitHub checks red (tests, lint, or Actions)");
+    expect(bodies[1]).toContain("Must fix: Make CI green (tests, lint, and Actions)");
+    expect(bodies[1]).toContain("Attempt: 1/3");
+    expect(bodies[2]).toContain("[ci]\nResult: red");
+    expect(bodies[2]).toContain("Failed checks: combined status");
+    expect(bodies[2]).toContain("Attempt: 1/3");
     expect(decision.effects.some((effect) => effect.kind === "github.draft")).toBe(false);
     expect(decision.effects.some((effect) => effect.kind === "github.ready")).toBe(false);
   });
@@ -132,11 +165,9 @@ describe("Linear workflow decisions", () => {
     });
     expect(decision.reason).toBe("return_to_progress");
     expect(decision.ciFailureCount).toBe(2);
-    const comment = decision.effects.find((effect) => effect.kind === "linear.comment");
-    expect(comment).toMatchObject({
-      kind: "linear.comment",
-      body: expect.stringContaining("Must fix: Rename the helper"),
-    });
+    expect(commentBodies(decision).join("\n")).toContain("[review]");
+    expect(commentBodies(decision).join("\n")).toContain("Must fix: Rename the helper");
+    expect(commentBodies(decision).join("\n")).toContain("Trigger: review");
   });
 
   it("does not count the same commit and the same feedback twice", () => {
@@ -173,8 +204,19 @@ describe("Linear workflow decisions", () => {
   it("does not count a pending check as a failure", () => {
     const pending = advance({ action: "review", ci: "pending", ciFailureCount: 1 });
     expect(pending.reason).toBe("ci_pending");
+    expect(pending.ok).toBe(false);
     expect(pending.ciFailureCount).toBe(1);
-    expect(pending.effects).toEqual([]);
+    expect(pending.effects.map((effect) => effect.kind)).toEqual(["linear.comment"]);
+    expect(commentBodies(pending)[0]).toContain("[ci]\nResult: pending\nAttempt: 1/3");
+  });
+
+  it("names the failed checks on a red CI log", () => {
+    const decision = advance({
+      action: "review",
+      ci: "red",
+      failedChecks: ["ci/lint", "ci/test"],
+    });
+    expect(commentBodies(decision).join("\n")).toContain("Failed checks: ci/lint, ci/test");
   });
 
   it("escalates on the third CI failure with when, why, tried, and failed", () => {
@@ -182,17 +224,25 @@ describe("Linear workflow decisions", () => {
     expect(decision.halt).toBe(true);
     expect(decision.reason).toBe("ci_failures");
     expect(decision.ciFailureCount).toBe(3);
-    expect(decision.effects).toEqual([
-      {
-        kind: "linear.escalate",
-        comment: escalationComment({
-          whenIso: WHEN,
-          why: "Repeated CI failure (3/3)",
-          tried: "In Progress → Review",
-          failed: "GitHub checks red (tests, lint, or Actions)",
-        }),
-      },
-    ]);
+    expect(decision.effects[0]).toMatchObject({
+      kind: "linear.comment",
+      body: expect.stringContaining(
+        "[ci]\nResult: red\nFailed checks: combined status\nAttempt: 3/3",
+      ),
+    });
+    expect(decision.effects[1]).toEqual({
+      kind: "linear.escalate",
+      comment: escalationComment({
+        whenIso: WHEN,
+        why: "Repeated CI failure (3/3)",
+        tried: "In Progress → Review",
+        failed: "GitHub checks red (tests, lint, or Actions)",
+      }),
+    });
+    expect(decision.effects[1]).toMatchObject({
+      kind: "linear.escalate",
+      comment: expect.stringContaining("Next:"),
+    });
   });
 
   it("escalates a blind alley before the CI count is reached", () => {
@@ -211,10 +261,12 @@ describe("Linear workflow decisions", () => {
     const effect = decision.effects[0];
     expect(effect?.kind).toBe("linear.escalate");
     if (effect?.kind !== "linear.escalate") return;
+    expect(effect.comment).toContain("[escalate] Human help needed");
     expect(effect.comment).toContain("When: 2026-09-26T15:00:00.000Z");
     expect(effect.comment).toContain("Why: The approach cannot satisfy the schema");
     expect(effect.comment).toContain("Tried: Two rewrites of the parser");
     expect(effect.comment).toContain("Failed: Both still drop the required field");
+    expect(effect.comment).toContain("Next: Choose a different approach.");
   });
 
   it("reverts a human move to Review and does not undraft", () => {
@@ -225,14 +277,19 @@ describe("Linear workflow decisions", () => {
     });
     expect(human.ok).toBe(false);
     expect(human.reason).toBe("human_override");
-    expect(human.effects).toEqual([{ kind: "linear.revert", stateId: "state-in-progress" }]);
+    expect(human.effects[0]).toEqual({ kind: "linear.revert", stateId: "state-in-progress" });
+    expect(human.effects[1]).toMatchObject({
+      kind: "linear.comment",
+      body: expect.stringContaining("[status]\nStatus: previous\nTrigger: human"),
+    });
 
     const completed = decideObservedMove({
       toStatus: "Completed",
       actor: "human",
       fromStateId: "state-review",
     });
-    expect(completed.effects).toEqual([{ kind: "linear.revert", stateId: "state-review" }]);
+    expect(completed.effects[0]).toEqual({ kind: "linear.revert", stateId: "state-review" });
+    expect(completed.effects[1]).toMatchObject({ kind: "linear.comment" });
 
     const agent = decideObservedMove({ toStatus: "Review", actor: "agent", fromStateId: "x" });
     expect(agent.ok).toBe(true);
@@ -288,13 +345,17 @@ describe("Linear workflow effects", () => {
   it("applies draft then status, and a red gate returns to In Progress without drafting", async () => {
     const happy = ports();
     await applyWorkflowEffects(advance({ action: "start" }), happy.ports);
-    expect(happy.calls).toEqual(["draft", "status:In Progress"]);
+    expect(happy.calls[0]).toBe("draft");
+    expect(happy.calls[1]).toBe("status:In Progress");
+    expect(happy.calls[2]).toContain("[status]");
 
     const blocked = ports();
     await applyWorkflowEffects(advance({ action: "review", ci: "red" }), blocked.ports);
     expect(blocked.calls[0]).toBe("status:In Progress");
-    expect(blocked.calls[1]).toContain("Review feedback");
-    expect(blocked.calls[2]).toContain("rereview:");
+    expect(blocked.calls.some((call) => call.includes("[status]"))).toBe(true);
+    expect(blocked.calls.some((call) => call.includes("[review]"))).toBe(true);
+    expect(blocked.calls.some((call) => call.includes("[ci]"))).toBe(true);
+    expect(blocked.calls.some((call) => call.startsWith("rereview:"))).toBe(true);
     expect(blocked.calls.some((call) => call === "draft" || call === "ready")).toBe(false);
   });
 
@@ -302,8 +363,11 @@ describe("Linear workflow effects", () => {
     const preferred = ports();
     const decision = advance({ action: "review", ci: "red", ciFailureCount: 2 });
     await applyWorkflowEffects(decision, preferred.ports);
-    expect(preferred.calls[0]).toBe("status:Needs Human");
-    expect(preferred.calls[1]).toContain("Human help needed");
+    expect(preferred.calls).toContain("status:Needs Human");
+    expect(preferred.calls.some((call) => call.includes("[escalate] Human help needed"))).toBe(
+      true,
+    );
+    expect(preferred.calls.some((call) => call.includes("Next:"))).toBe(true);
     expect(preferred.calls.some((call) => call === "ready")).toBe(false);
 
     const fallback = ports({
@@ -359,13 +423,18 @@ describe("Linear workflow effects", () => {
     });
     expect(bodies.map((call) => call.url)).toEqual([
       "https://api.github.com/repos/acme/widgets/pulls/9/requested_reviewers",
+      "https://api.github.com/repos/acme/widgets/pulls/9/reviews",
       "https://api.github.com/repos/acme/widgets/issues/9/comments",
     ]);
     for (const call of bodies) {
       expect(call.body).not.toContain("draft");
     }
     expect(JSON.parse(bodies[0]?.body ?? "{}")).toEqual({ reviewers: ["ada"] });
-    expect(JSON.parse(bodies[1]?.body ?? "{}").body).toContain("Must fix: tests");
+    expect(JSON.parse(bodies[1]?.body ?? "{}")).toMatchObject({
+      event: "COMMENT",
+      body: expect.stringContaining("Must fix: tests"),
+    });
+    expect(JSON.parse(bodies[2]?.body ?? "{}").body).toContain("Must fix: tests");
   });
 });
 
@@ -449,9 +518,11 @@ describe("Linear webhook gate", () => {
       body: raw,
     });
     expect(response.status).toBe(200);
-    const comment = graphql.find((call) => call.query.includes("commentCreate"));
+    const comments = graphql.filter((call) => call.query.includes("commentCreate"));
     const revert = graphql.find((call) => call.query.includes("issueUpdate"));
-    expect(comment?.variables.body).toBe("queued");
+    expect(comments[0]?.variables.body).toBe("queued");
+    expect(comments.some((call) => call.variables.body.includes("[status]"))).toBe(true);
+    expect(comments.some((call) => call.variables.body.includes("Trigger: human"))).toBe(true);
     expect(revert?.variables).toEqual({ id: issueId, stateId: "state-in-progress" });
     expect(graphql.some((call) => call.query.includes("issueCreate"))).toBe(false);
   });
