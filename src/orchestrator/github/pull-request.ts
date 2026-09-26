@@ -112,6 +112,12 @@ export async function readCommitStatus(input: {
   return (await readCommitStatusReport(input)).state;
 }
 
+/**
+ * Combined CI signal for ready / `record_ci_wait`.
+ * Commit statuses and check runs both count. GitHub's combined status stays
+ * `pending` with zero contexts on Actions-only repos; green check runs are
+ * still success. `neutral` and `skipped` conclusions do not fail CI.
+ */
 export async function readCommitStatusReport(input: {
   token: string;
   owner: string;
@@ -120,28 +126,139 @@ export async function readCommitStatusReport(input: {
   fetchImpl?: typeof fetch;
 }): Promise<CommitStatusReport> {
   const fetchImpl = input.fetchImpl ?? fetch;
-  const endpoint = `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/commits/${encodeURIComponent(input.sha)}/status`;
+  const endpoint = commitResourceUrl(input, "status");
   const response = await githubFetch(fetchImpl, endpoint, input.token, { method: "GET" });
   if (!response.ok) {
     throw await requestError(response, input.token, "commit status");
   }
   const payload = (await response.json()) as unknown;
-  const row = record(payload);
-  const state = row?.state;
-  const failedChecks: string[] = [];
-  if (Array.isArray(row?.statuses)) {
-    for (const item of row.statuses) {
-      const status = record(item);
-      const checkState = status?.state;
-      if (checkState === "success" || checkState === "pending") continue;
-      const context = status?.context;
-      if (typeof context === "string" && context.trim()) failedChecks.push(context.trim());
+  const checks = await listLatestCheckRuns(input, fetchImpl);
+  return combineCiSignals([
+    ...signalsFromCommitStatus(record(payload)),
+    ...signalsFromCheckRuns(checks),
+  ]);
+}
+
+const PASSING_CHECK_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
+const CHECK_RUN_PAGE_CAP = 10;
+
+type CiOutcome = "success" | "pending" | "failure";
+
+interface CiSignal {
+  name: string;
+  outcome: CiOutcome;
+}
+
+async function listLatestCheckRuns(
+  input: {
+    token: string;
+    owner: string;
+    repo: string;
+    sha: string;
+  },
+  fetchImpl: typeof fetch,
+): Promise<Record<string, unknown>[]> {
+  const collected: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  let total = 0;
+  for (let page = 1; page <= CHECK_RUN_PAGE_CAP; page += 1) {
+    const endpoint = `${commitResourceUrl(input, "check-runs")}?filter=latest&per_page=100&page=${page}`;
+    const response = await githubFetch(fetchImpl, endpoint, input.token, { method: "GET" });
+    if (!response.ok) {
+      throw await requestError(response, input.token, "check runs");
     }
+    const row = record(await response.json());
+    total = typeof row?.total_count === "number" ? row.total_count : collected.length;
+    const batch = Array.isArray(row?.check_runs) ? row.check_runs : [];
+    for (const item of batch) {
+      const check = record(item);
+      if (!check) continue;
+      const id = typeof check.id === "number" ? String(check.id) : "";
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      collected.push(check);
+    }
+    if (batch.length === 0 || collected.length >= total) return collected;
   }
-  return {
-    state: typeof state === "string" && state.length > 0 ? state : "pending",
-    failedChecks,
-  };
+  if (collected.length < total) {
+    throw new GithubRequestError(200, "github check runs exceeded page cap");
+  }
+  return collected;
+}
+
+function signalsFromCommitStatus(row: Record<string, unknown> | undefined): CiSignal[] {
+  const rollup = typeof row?.state === "string" ? row.state : "";
+  const statuses = row?.statuses;
+  if (!Array.isArray(statuses)) return signalsFromStatusRollup(rollup, false);
+  if (statuses.length === 0) return signalsFromStatusRollup(rollup, true);
+  const signals: CiSignal[] = [];
+  for (const item of statuses) {
+    const status = record(item);
+    if (!status) continue;
+    const context = typeof status.context === "string" ? status.context.trim() : "";
+    const state = typeof status.state === "string" ? status.state : "";
+    signals.push({ name: context, outcome: statusOutcome(state) });
+  }
+  return signals;
+}
+
+/** Zero contexts and a pending rollup are GitHub's empty default, not an in-progress check. */
+function signalsFromStatusRollup(rollup: string, emptyContexts: boolean): CiSignal[] {
+  if (rollup === "success") return [{ name: "", outcome: "success" }];
+  if (rollup === "failure" || rollup === "error") return [{ name: "", outcome: "failure" }];
+  if (emptyContexts) return [];
+  return [{ name: "", outcome: "pending" }];
+}
+
+function statusOutcome(state: string): CiOutcome {
+  if (state === "success") return "success";
+  if (state === "pending" || state.length === 0) return "pending";
+  return "failure";
+}
+
+function signalsFromCheckRuns(checks: readonly Record<string, unknown>[]): CiSignal[] {
+  return checks.map((check) => {
+    const name = typeof check.name === "string" ? check.name.trim() : "";
+    const status = typeof check.status === "string" ? check.status : "";
+    const conclusion = typeof check.conclusion === "string" ? check.conclusion : "";
+    return { name, outcome: checkOutcome(status, conclusion) };
+  });
+}
+
+function checkOutcome(status: string, conclusion: string): CiOutcome {
+  if (status !== "completed") return "pending";
+  if (PASSING_CHECK_CONCLUSIONS.has(conclusion)) return "success";
+  if (conclusion.length === 0) return "pending";
+  return "failure";
+}
+
+function combineCiSignals(signals: readonly CiSignal[]): CommitStatusReport {
+  const failedChecks: string[] = [];
+  let pending = false;
+  let sawSuccess = false;
+  let sawFailure = false;
+  for (const signal of signals) {
+    if (signal.outcome === "failure") {
+      sawFailure = true;
+      if (signal.name) failedChecks.push(signal.name);
+      continue;
+    }
+    if (signal.outcome === "pending") {
+      pending = true;
+      continue;
+    }
+    sawSuccess = true;
+  }
+  if (sawFailure) return { state: "failure", failedChecks: [...new Set(failedChecks)] };
+  if (pending || !sawSuccess) return { state: "pending", failedChecks: [] };
+  return { state: "success", failedChecks: [] };
+}
+
+function commitResourceUrl(
+  input: { owner: string; repo: string; sha: string },
+  resource: "status" | "check-runs",
+): string {
+  return `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/commits/${encodeURIComponent(input.sha)}/${resource}`;
 }
 
 export async function mergeGithubPullRequest(input: {
