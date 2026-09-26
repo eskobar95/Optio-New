@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { afterEach, describe, expect, it } from "vitest";
@@ -104,7 +104,16 @@ function startStub(extra: Record<string, string> = {}): Promise<{ port: number }
   });
 }
 
-describe("laya placeholder", () => {
+function hasPython3(): boolean {
+  try {
+    execFileSync("python3", ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+describe.skipIf(!hasPython3())("laya placeholder", () => {
   it("answers /health on CPU and lets the laya plugin target /v1/systemone", async () => {
     const { port } = await startStub();
     const base = `http://127.0.0.1:${port}`;

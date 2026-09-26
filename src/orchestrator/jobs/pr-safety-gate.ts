@@ -4,6 +4,8 @@
  * Tests, lint, and typecheck fail closed: a missing exit code is not a pass.
  * The diff review blocks secrets and destructive changes. Findings name the
  * path and the rule. They do not include secret bytes or command output.
+ * Before npm checks, missing worktree deps are installed (`npm ci --include=dev`)
+ * and live Redis/Postgres URLs are stripped so optional integration tests stay skipped.
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -291,6 +293,33 @@ function stdoutText(value: unknown): string {
   return "";
 }
 
+/** Live orchestrator URLs must not activate optional integration tests. */
+const STRIP_FROM_NPM_CHECKS = [
+  "OPTIO_NEW_REDIS_URL",
+  "OPTIO_NEW_DATABASE_URL",
+  "CURSOR_API_KEY",
+  "MODEL_API_KEY",
+  "OPTIO_NEW_GITHUB_TOKEN",
+  "OPTIO_NEW_GITHUB_WEBHOOK_SECRET",
+  "OPTIO_NEW_INTAKE_WEBHOOK_SECRET",
+  "OPTIO_NEW_SLACK_SIGNING_SECRET",
+] as const;
+
+function shellEnv(command: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    CI: "1",
+    HUSKY: "0",
+    GIT_TERMINAL_PROMPT: "0",
+  };
+  if (command !== "npm") return env;
+  env.NODE_ENV = "test";
+  for (const key of STRIP_FROM_NPM_CHECKS) {
+    delete env[key];
+  }
+  return env;
+}
+
 export function createExecFileShell(): ShellRunner {
   return {
     async run(cwd, command, args) {
@@ -300,7 +329,7 @@ export function createExecFileShell(): ShellRunner {
           encoding: "utf8",
           timeout: 10 * 60 * 1000,
           maxBuffer: 8 * 1024 * 1024,
-          env: { ...process.env, CI: "1", HUSKY: "0", GIT_TERMINAL_PROMPT: "0" },
+          env: shellEnv(command),
         });
         return { exitCode: 0, stdout: stdoutText(stdout) };
       } catch (error) {
@@ -348,6 +377,20 @@ async function readDiff(
   return parts.join("\n");
 }
 
+/**
+ * Worktrees from a bind-mounted host checkout have no node_modules. The
+ * orchestrator image keeps prod deps under /app, so the gate installs into the
+ * worktree when vitest is missing. Failures still surface as tests_failed.
+ */
+async function ensureDevDependencies(cwd: string, shell: ShellRunner): Promise<void> {
+  const probe = await shell.run(cwd, "node", [
+    "--eval",
+    'require("fs").accessSync("node_modules/vitest/package.json")',
+  ]);
+  if (probe.exitCode === 0) return;
+  await shell.run(cwd, "npm", ["ci", "--ignore-scripts", "--include=dev"]);
+}
+
 /** Read the diff before npm so a secret or destructive change is not executed. */
 export async function collectPrSafetyInput(
   cwd: string,
@@ -358,6 +401,7 @@ export async function collectPrSafetyInput(
   const diff = await readDiff(cwd, base, shell);
   if (diff === undefined) return {};
   if (reviewDiff(diff).length > 0) return { diff };
+  await ensureDevDependencies(cwd, shell);
   const checks: NonNullable<PrSafetyInput["checks"]> = {};
   for (const check of CHECK_COMMANDS) {
     const result = await shell.run(cwd, "npm", check.args);

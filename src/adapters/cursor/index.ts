@@ -40,9 +40,10 @@ const STRIP_FROM_CURSOR = [
 
 /**
  * In-container runs set OPTIO_CURSOR_SANDBOX=disabled (Dockerfile and Compose).
- * That rewrites the tier's Cursor flags to `--sandbox disabled` (allowlist mode)
- * and keeps `--force` when the tier already adds it. Docker AppArmor cannot
- * start Cursor's user-namespace sandbox.
+ * That rewrites the tier's Cursor flags to `--sandbox disabled` and always
+ * includes `--force` (tiers that already pass it keep a single copy). Docker
+ * AppArmor cannot start Cursor's user-namespace sandbox, and allowlist mode
+ * without a TTY blocks read-only `git` during review.
  * Unset keeps `cursorSandboxArgs`: read-only and workspace-write stay enabled;
  * host-admin stays `--force` with no sandbox flag.
  */
@@ -55,6 +56,9 @@ function cursorLaunchArgs(env: NodeJS.ProcessEnv, sandbox: AgentSandbox): string
   const args = cursorSandboxArgs(sandbox);
   if (!cursorSandboxDisabled(env)) return args;
   const kept = args.filter((arg) => arg !== "--sandbox" && arg !== "enabled");
+  // Docker cannot start Cursor's user-namespace sandbox. Without a TTY, allowlist
+  // mode blocks even `git status` on read-only steps; keep --force so review can read.
+  if (!kept.includes("--force")) kept.push("--force");
   return ["--sandbox", "disabled", ...kept];
 }
 
