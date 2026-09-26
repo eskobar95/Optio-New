@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 00:53 UTC
+Last refreshed: 2026-09-26 00:54 UTC
 
 ## Bootstrap progress
 
@@ -19,7 +19,7 @@ Last refreshed: 2026-09-26 00:53 UTC
 
 [![CI](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml/badge.svg)](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml)
 
-Latest conclusion: **success**
+Latest conclusion: **cancelled**
 
 Actions: https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml
 
@@ -39,20 +39,18 @@ Gaps: LiteLLM tag `ghcr.io/berriai/litellm:main-latest` floats; profile `full` (
 
 ## Open issues
 
-Open: 11.
+Open: 9.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
 - #45 [e2e] Add a hello-world endpoint to the agent loop (P2, enhancement, good first issue, orchestration)
 - #22 [P2] Caddy TLS edge for optional intake webhook (P2, deploy, infra, security)
 - #21 [P2] Eve phase agents: planner / implementation / review / ready / merge contracts (P2, enhancement, orchestration)
-- #20 [P1] Hetzner deploy: systemd + Compose beside LiteLLM/BullMQ (P1, deploy, infra)
 - #19 [P2] Learning worker: failure fingerprints → meta GitHub issues (P2, enhancement, orchestration)
 - #18 [P1] Postgres backups to Hetzner Storage Box (P1, deploy, infra, security)
 - #16 [P2] Caveman Cloud/Platform evaluation (post-V1 only) (P2, cost-opt, documentation)
 - #14 [P2] Optional Laya CPU decision service Compose profile (P2, harness, infra)
 - #13 [P1] Observability: OTel spans + Langfuse/SigNoz wiring (P1, enhancement, infra)
-- #11 [P1] LiteLLM gateway + JevRouter plugins (jev / rules / laya) (P1, enhancement, harness, infra)
 - #4 [P1] Docker Compose full stack: redis, postgres, orchestrator, litellm, kit-harness (P1, enhancement, infra)
 
 ## Refresh
