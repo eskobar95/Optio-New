@@ -1,0 +1,27 @@
+{
+  "$schema_comment": "Refs only. Candidate pool for from_planner_selection. Bodies live under .cursor/skills. Do not copy SKILL.md into this directory.",
+  "source_of_truth_root": ".cursor/skills",
+  "budget_mode": "from_planner_selection",
+  "skills": [
+    {
+      "id": "skills/implement",
+      "cursor_native_id": "implement",
+      "cursor_native_path": ".cursor/skills/implement"
+    },
+    {
+      "id": "skills/tdd",
+      "cursor_native_id": "tdd",
+      "cursor_native_path": ".cursor/skills/tdd"
+    },
+    {
+      "id": "skills/codebase-design",
+      "cursor_native_id": "codebase-design",
+      "cursor_native_path": ".cursor/skills/codebase-design"
+    },
+    {
+      "id": "skills/diagnosing-bugs",
+      "cursor_native_id": "diagnosing-bugs",
+      "cursor_native_path": ".cursor/skills/diagnosing-bugs"
+    }
+  ]
+}

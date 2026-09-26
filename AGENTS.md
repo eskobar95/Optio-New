@@ -6,19 +6,19 @@
 
 ## Roles
 
-| Layer                    | Responsibility                                                                                                               |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| **New Bot**              | Intake and decisions: what to build, when to pause/advance, human elicitation in chat. Enqueues work; no Linear API.         |
-| **BullMQ workers**       | Own the job graph: plan → implement → review → ready → merge. Resume after crashes.                                          |
-| **Eve phase agents**     | `agents/planner`, `implementation`, `review`, `ready`, `merge` — contracts (`agent.ts` + `instructions.md`).                 |
-| **Specialists**          | Thin roles in `.cursor/agents/` (frontend, backend, devops, database). Loaded on demand.                                     |
-| **Skills**               | Full bodies in `.cursor/skills/` (SoT). Indexed by `skills/index.json`. Use `bot-session` instead of Linear `issue-session`. |
-| **CodingAgent adapters** | `src/adapters/cursor`, `src/adapters/codex` — mutate the worktree only; do not advance the workflow.                         |
+| Layer                    | Responsibility                                                                                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **New Bot**              | Intake and decisions: what to build, when to pause/advance, human elicitation in chat. Enqueues work; no Linear API.                                         |
+| **BullMQ workers**       | Own the job graph: plan → implement → review → ready → merge. Resume after crashes.                                                                          |
+| **Eve phase agents**     | `agents/{planner,implementation,review,ready,merge}/` — slots: `agent.ts`, `instructions.md`, `tools/`, `skills/` refs. See `docs/eve-patterns.md`.          |
+| **Specialists**          | Eve subagent slots under `specialists/*` (`instructions.md` + optional `tools/`). Prompt SoT stays `.cursor/agents/`. `specialists/index.json` points there. |
+| **Skills**               | Full bodies in `.cursor/skills/` (SoT). Indexed by `skills/index.json`. Use `bot-session` instead of Linear `issue-session`.                                 |
+| **CodingAgent adapters** | `src/adapters/cursor`, `src/adapters/codex` — mutate the worktree only; do not advance the workflow.                                                         |
 
 ## Source layout
 
 - `src/` — TypeScript harness code (intake, jobs, adapters, gateway types).
-- `agents/` — Eve phase contracts (markdown + thin TS stubs).
+- `agents/` — Eve phase slots (`agent.ts`, `instructions.md`, `tools/`, skill refs). Bodies stay in `.cursor/`.
 - `tests/` — unit/smoke tests (`tsx --test`).
 - `docs/` — SPEC and design docs.
 - `.cursor/skills`, `.cursor/agents` — in-repo Cursor SoT.

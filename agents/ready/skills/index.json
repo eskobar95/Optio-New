@@ -1,0 +1,17 @@
+{
+  "$schema_comment": "Refs only. Skill bodies live under .cursor/skills (SoT). Do not copy SKILL.md into this directory.",
+  "source_of_truth_root": ".cursor/skills",
+  "budget_mode": "fixed",
+  "skills": [
+    {
+      "id": "skills/land",
+      "cursor_native_id": "land",
+      "cursor_native_path": ".cursor/skills/land"
+    },
+    {
+      "id": "skills/sync-development",
+      "cursor_native_id": "sync-development",
+      "cursor_native_path": ".cursor/skills/sync-development"
+    }
+  ]
+}

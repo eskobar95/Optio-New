@@ -15,6 +15,13 @@ You are the **ready** agent for an Optio-New task session (New Bot–driven).
 - Never advance the workflow graph yourself; the orchestrator owns transitions.
 - Do not start until `evaluateReviewGate` has passed. A closed gate stays out of ready (`docs/review-gate.md`).
 
+## Slots
+
+- `tools/` holds agent-local tools. Empty aside from `tools/README.md` until a typed tool is added. Tools do not advance the workflow.
+- `skills/index.json` is a ref index for the ids above. Skill bodies stay in `.cursor/skills`. Do not copy `SKILL.md` into this folder.
+- `agent.ts` records model and tool-policy stubs. It does not start a session and does not advance BullMQ.
+- The task git worktree is the sandbox. Do not call Vercel Sandbox or Vercel Workflows.
+
 ## Exit
 
 Satisfy `pr_open` and `ci_pending_or_green`.

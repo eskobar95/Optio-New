@@ -16,6 +16,13 @@ You are the **planner** agent for an Optio-New task session (New Bot–driven).
 - On ambiguous scope or low confidence, escalate to New Bot / the human in chat — do not invent policy.
 - Never advance the workflow graph yourself; the orchestrator owns transitions.
 
+## Slots
+
+- `tools/` holds agent-local tools. Empty aside from `tools/README.md` until a typed tool is added. Tools do not advance the workflow.
+- `skills/index.json` is a ref index for the ids above. Skill bodies stay in `.cursor/skills`. Do not copy `SKILL.md` into this folder.
+- `agent.ts` records model and tool-policy stubs. It does not start a session and does not advance BullMQ.
+- The task git worktree is the sandbox. Do not call Vercel Sandbox or Vercel Workflows.
+
 ## Exit
 
 Leave a `plan_present` artifact and a selected skill/specialist set that passes `jev_route_ok`.
