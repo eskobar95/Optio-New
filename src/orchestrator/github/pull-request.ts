@@ -114,9 +114,13 @@ export async function readCommitStatus(input: {
 
 /**
  * Combined CI signal for ready / `record_ci_wait`.
- * Commit statuses and check runs both count. GitHub's combined status stays
- * `pending` with zero contexts on Actions-only repos; green check runs are
- * still success. `neutral` and `skipped` conclusions do not fail CI.
+ * Commit statuses and Actions workflow runs for the head SHA both count.
+ * Fine-grained PATs have no Checks permission, and Commit statuses is a
+ * separate permission. HTTP 403 on either is unavailable and does not fail
+ * the wait. GitHub's combined
+ * status stays `pending` with zero contexts on Actions-only repos; a green
+ * workflow run is still success. `neutral` and `skipped` conclusions do not
+ * fail CI. `cancelled` does.
  */
 export async function readCommitStatusReport(input: {
   token: string;
@@ -128,25 +132,70 @@ export async function readCommitStatusReport(input: {
   const fetchImpl = input.fetchImpl ?? fetch;
   const endpoint = commitResourceUrl(input, "status");
   const response = await githubFetch(fetchImpl, endpoint, input.token, { method: "GET" });
-  if (!response.ok) {
-    throw await requestError(response, input.token, "commit status");
-  }
-  const payload = (await response.json()) as unknown;
+  const statusSignals = await signalsFromStatusResponse(response, input.token);
+  const workflows = await listWorkflowRuns(input, fetchImpl);
   const checks = await listLatestCheckRuns(input, fetchImpl);
   return combineCiSignals([
-    ...signalsFromCommitStatus(record(payload)),
+    ...statusSignals,
+    ...signalsFromWorkflowRuns(workflows),
     ...signalsFromCheckRuns(checks),
   ]);
 }
 
 const PASSING_CHECK_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
 const CHECK_RUN_PAGE_CAP = 10;
+const WORKFLOW_RUN_PAGE_CAP = 10;
 
 type CiOutcome = "success" | "pending" | "failure";
 
 interface CiSignal {
   name: string;
   outcome: CiOutcome;
+}
+
+/**
+ * Actions workflow runs for this commit. Fine-grained PATs with Actions: Read
+ * can call this. Check Runs cannot: that permission does not exist on an FG PAT.
+ */
+async function listWorkflowRuns(
+  input: {
+    token: string;
+    owner: string;
+    repo: string;
+    sha: string;
+  },
+  fetchImpl: typeof fetch,
+): Promise<Record<string, unknown>[]> {
+  const matched: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  let total = 0;
+  let seenFromApi = 0;
+  for (let page = 1; page <= WORKFLOW_RUN_PAGE_CAP; page += 1) {
+    const endpoint = workflowRunsUrl(input, page);
+    const response = await githubFetch(fetchImpl, endpoint, input.token, { method: "GET" });
+    if (!response.ok) {
+      throw await requestError(response, input.token, "workflow runs");
+    }
+    const row = record(await response.json());
+    total = typeof row?.total_count === "number" ? row.total_count : seenFromApi;
+    const batch = Array.isArray(row?.workflow_runs) ? row.workflow_runs : [];
+    for (const item of batch) {
+      const run = record(item);
+      if (!run) continue;
+      seenFromApi += 1;
+      const id = typeof run.id === "number" ? String(run.id) : "";
+      if (id && seen.has(id)) continue;
+      if (id) seen.add(id);
+      const head = typeof run.head_sha === "string" ? run.head_sha : "";
+      if (head && head !== input.sha) continue;
+      matched.push(run);
+    }
+    if (batch.length === 0 || seenFromApi >= total) return matched;
+  }
+  if (seenFromApi < total) {
+    throw new GithubRequestError(200, "github workflow runs exceeded page cap");
+  }
+  return matched;
 }
 
 async function listLatestCheckRuns(
@@ -164,6 +213,11 @@ async function listLatestCheckRuns(
   for (let page = 1; page <= CHECK_RUN_PAGE_CAP; page += 1) {
     const endpoint = `${commitResourceUrl(input, "check-runs")}?filter=latest&per_page=100&page=${page}`;
     const response = await githubFetch(fetchImpl, endpoint, input.token, { method: "GET" });
+    // Fine-grained PATs cannot read Checks. 403 means unavailable, not a red CI.
+    if (response.status === 403) {
+      await response.body?.cancel();
+      return collected;
+    }
     if (!response.ok) {
       throw await requestError(response, input.token, "check runs");
     }
@@ -184,6 +238,19 @@ async function listLatestCheckRuns(
     throw new GithubRequestError(200, "github check runs exceeded page cap");
   }
   return collected;
+}
+
+/** 403 is unavailable (fine-grained PAT without Commit statuses). Other errors still fail the read. */
+async function signalsFromStatusResponse(response: Response, token: string): Promise<CiSignal[]> {
+  if (response.status === 403) {
+    await response.body?.cancel();
+    return [];
+  }
+  if (!response.ok) {
+    throw await requestError(response, token, "commit status");
+  }
+  const payload = (await response.json()) as unknown;
+  return signalsFromCommitStatus(record(payload));
 }
 
 function signalsFromCommitStatus(row: Record<string, unknown> | undefined): CiSignal[] {
@@ -214,6 +281,15 @@ function statusOutcome(state: string): CiOutcome {
   if (state === "success") return "success";
   if (state === "pending" || state.length === 0) return "pending";
   return "failure";
+}
+
+function signalsFromWorkflowRuns(runs: readonly Record<string, unknown>[]): CiSignal[] {
+  return runs.map((run) => {
+    const name = typeof run.name === "string" ? run.name.trim() : "";
+    const status = typeof run.status === "string" ? run.status : "";
+    const conclusion = typeof run.conclusion === "string" ? run.conclusion : "";
+    return { name, outcome: checkOutcome(status, conclusion) };
+  });
 }
 
 function signalsFromCheckRuns(checks: readonly Record<string, unknown>[]): CiSignal[] {
@@ -259,6 +335,18 @@ function commitResourceUrl(
   resource: "status" | "check-runs",
 ): string {
   return `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/commits/${encodeURIComponent(input.sha)}/${resource}`;
+}
+
+function workflowRunsUrl(
+  input: { owner: string; repo: string; sha: string },
+  page: number,
+): string {
+  const query = new URLSearchParams({
+    head_sha: input.sha,
+    per_page: "100",
+    page: String(page),
+  });
+  return `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/actions/runs?${query}`;
 }
 
 export async function mergeGithubPullRequest(input: {

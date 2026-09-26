@@ -27,7 +27,7 @@ Re-running a step must not open a second pull request or a second worktree.
 - **Implement.** `WorktreeManager.create(taskId)` returns the existing checkout when the lock file is present. If the process dies after `git worktree add` and before the lock is written, the next `create` adopts the registered worktree for `task/<id>` and rewrites the lock. A path that belongs to another branch still throws `WorktreeIsolationError`.
 - **open_pr.** The ready step writes `.prs/<task>.json` next to the worktree after GitHub accepts the pull request. A retry that finds that file does not push again and does not `POST /pulls`. If the file is missing but GitHub already has an open pull request for `task/<id>`, the step records that URL and does not create another. A `422` from a raced `POST` looks up the same head and returns it.
 
-`record_ci_wait` still fails the attempt when the combined commit statuses and check runs are not `success`, so BullMQ can retry CI without opening a second pull request.
+`record_ci_wait` still fails the attempt when commit statuses and Actions workflow runs are not `success`, so BullMQ can retry CI without opening a second pull request. A fine-grained PAT 403 on commit statuses or check runs does not fail the attempt.
 
 ## Kill during implement
 

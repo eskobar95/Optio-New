@@ -424,6 +424,9 @@ function githubFetch(fixture: EvalFixture, calls: { n: number }): typeof fetch {
     if (method === "GET" && url.includes("/commits/") && url.endsWith("/status")) {
       return jsonResponse(200, { state: "success" });
     }
+    if (method === "GET" && url.includes("/actions/runs")) {
+      return jsonResponse(200, { total_count: 0, workflow_runs: [] });
+    }
     if (method === "GET" && url.includes("/check-runs")) {
       return jsonResponse(200, { total_count: 0, check_runs: [] });
     }

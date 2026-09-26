@@ -110,6 +110,9 @@ function githubFetch(extra?: { onPost?: () => Response }) {
     if (method === "GET" && url.includes("/commits/") && url.endsWith("/status")) {
       return jsonResponse(200, { state: "success" });
     }
+    if (method === "GET" && url.includes("/actions/runs")) {
+      return jsonResponse(200, { total_count: 0, workflow_runs: [] });
+    }
     if (method === "GET" && url.includes("/check-runs")) {
       return jsonResponse(200, { total_count: 0, check_runs: [] });
     }
@@ -325,6 +328,9 @@ describe("production stage handler", () => {
             html_url: "https://github.com/kit/find-job-abroad/pull/4",
             number: 4,
           });
+        }
+        if (method === "GET" && url.includes("/actions/runs")) {
+          return jsonResponse(200, { total_count: 0, workflow_runs: [] });
         }
         if (method === "GET" && url.includes("/check-runs")) {
           return jsonResponse(200, { total_count: 0, check_runs: [] });
@@ -693,6 +699,9 @@ describe("production stage handler", () => {
             data: { commentCreate: { success: true }, issueUpdate: { success: true } },
           });
         }
+        if (method === "GET" && url.includes("/actions/runs")) {
+          return jsonResponse(200, { total_count: 0, workflow_runs: [] });
+        }
         if (method === "GET" && url.includes("/check-runs")) {
           return jsonResponse(200, { total_count: 0, check_runs: [] });
         }
@@ -817,6 +826,9 @@ describe("production stage handler", () => {
             html_url: "https://github.com/acme/widgets/pull/66",
             number: 66,
           });
+        }
+        if (method === "GET" && url.includes("/actions/runs")) {
+          return jsonResponse(200, { total_count: 0, workflow_runs: [] });
         }
         if (method === "GET" && url.includes("/check-runs")) {
           return jsonResponse(200, { total_count: 0, check_runs: [] });

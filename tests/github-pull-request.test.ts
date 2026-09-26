@@ -55,13 +55,31 @@ const statusInput = {
   sha: "abc123",
 };
 
-function ciFetch(payload: { status: unknown; checks: unknown }): typeof fetch {
+const emptyWorkflows = { total_count: 0, workflow_runs: [] };
+
+function ciFetch(payload: {
+  status: unknown;
+  statusCode?: number;
+  checks?: unknown;
+  checksStatus?: number;
+  workflows?: unknown;
+  onUrl?: (href: string) => void;
+}): typeof fetch {
   return async (url) => {
     const href = String(url);
+    payload.onUrl?.(href);
     if (href.includes("/commits/") && href.includes("/status")) {
-      return jsonResponse(200, payload.status);
+      return jsonResponse(payload.statusCode ?? 200, payload.status);
     }
-    if (href.includes("/check-runs")) return jsonResponse(200, payload.checks);
+    if (href.includes("/actions/runs")) {
+      return jsonResponse(200, payload.workflows ?? emptyWorkflows);
+    }
+    if (href.includes("/check-runs")) {
+      return jsonResponse(
+        payload.checksStatus ?? 200,
+        payload.checks ?? { total_count: 0, check_runs: [] },
+      );
+    }
     return jsonResponse(500, { message: href });
   };
 }
@@ -173,5 +191,142 @@ describe("readCommitStatusReport", () => {
       }),
     });
     expect(report).toEqual({ state: "failure", failedChecks: ["verify"] });
+  });
+
+  it("treats a green Actions workflow run as success when check runs return 403", async () => {
+    const urls: string[] = [];
+    const report = await readCommitStatusReport({
+      ...statusInput,
+      fetchImpl: ciFetch({
+        status: { state: "pending", statuses: [], total_count: 0 },
+        checksStatus: 403,
+        checks: { message: "Resource not accessible by personal access token" },
+        workflows: {
+          total_count: 1,
+          workflow_runs: [
+            {
+              id: 11,
+              name: "verify",
+              head_sha: "abc123",
+              status: "completed",
+              conclusion: "success",
+            },
+          ],
+        },
+        onUrl: (href) => urls.push(href),
+      }),
+    });
+    expect(report).toEqual({ state: "success", failedChecks: [] });
+    expect(
+      urls.some((href) => href.includes("/actions/runs") && href.includes("head_sha=abc123")),
+    ).toBe(true);
+  });
+
+  it("stays pending while an Actions workflow run is in progress and check runs are unavailable", async () => {
+    const report = await readCommitStatusReport({
+      ...statusInput,
+      fetchImpl: ciFetch({
+        status: { state: "pending", statuses: [], total_count: 0 },
+        checksStatus: 403,
+        checks: { message: "Resource not accessible by personal access token" },
+        workflows: {
+          total_count: 1,
+          workflow_runs: [
+            { id: 12, name: "verify", head_sha: "abc123", status: "in_progress", conclusion: null },
+          ],
+        },
+      }),
+    });
+    expect(report).toEqual({ state: "pending", failedChecks: [] });
+  });
+
+  it("fails when an Actions workflow run failed and check runs are unavailable", async () => {
+    const report = await readCommitStatusReport({
+      ...statusInput,
+      fetchImpl: ciFetch({
+        status: { state: "pending", statuses: [], total_count: 0 },
+        checksStatus: 403,
+        checks: { message: "Resource not accessible by personal access token" },
+        workflows: {
+          total_count: 1,
+          workflow_runs: [
+            {
+              id: 13,
+              name: "verify",
+              head_sha: "abc123",
+              status: "completed",
+              conclusion: "failure",
+            },
+          ],
+        },
+      }),
+    });
+    expect(report).toEqual({ state: "failure", failedChecks: ["verify"] });
+  });
+
+  it("fails when an Actions workflow run was cancelled and check runs are unavailable", async () => {
+    const report = await readCommitStatusReport({
+      ...statusInput,
+      fetchImpl: ciFetch({
+        status: { state: "pending", statuses: [], total_count: 0 },
+        checksStatus: 403,
+        checks: { message: "Resource not accessible by personal access token" },
+        workflows: {
+          total_count: 1,
+          workflow_runs: [
+            {
+              id: 14,
+              name: "verify",
+              head_sha: "abc123",
+              status: "completed",
+              conclusion: "cancelled",
+            },
+          ],
+        },
+      }),
+    });
+    expect(report).toEqual({ state: "failure", failedChecks: ["verify"] });
+  });
+
+  it("treats a green Actions workflow run as success when status and check runs both return 403", async () => {
+    const report = await readCommitStatusReport({
+      ...statusInput,
+      fetchImpl: ciFetch({
+        status: { message: "Resource not accessible by personal access token" },
+        statusCode: 403,
+        checksStatus: 403,
+        checks: { message: "Resource not accessible by personal access token" },
+        workflows: {
+          total_count: 1,
+          workflow_runs: [
+            {
+              id: 15,
+              name: "verify",
+              head_sha: "abc123",
+              status: "completed",
+              conclusion: "success",
+            },
+          ],
+        },
+      }),
+    });
+    expect(report).toEqual({ state: "success", failedChecks: [] });
+  });
+
+  it("keeps a green commit status when check runs return 403 and no workflow ran", async () => {
+    const report = await readCommitStatusReport({
+      ...statusInput,
+      fetchImpl: ciFetch({
+        status: {
+          state: "success",
+          total_count: 1,
+          statuses: [{ context: "ci/lint", state: "success" }],
+        },
+        checksStatus: 403,
+        checks: { message: "Resource not accessible by personal access token" },
+        workflows: emptyWorkflows,
+      }),
+    });
+    expect(report).toEqual({ state: "success", failedChecks: [] });
   });
 });
