@@ -1,6 +1,6 @@
 /**
  * New Bot intake → BullMQ enqueue stub.
- * No Linear. Call from chat/API or optional webhook.
+ * Call from chat/API or a webhook adapter (GitHub, Slack, Linear status change).
  */
 import { z } from "zod";
 
@@ -10,7 +10,7 @@ export const IntakeTaskSchema = z.object({
   description: z.string().default(""),
   /** Catalog repo. Omitted on legacy callers; HTTP and adapters set it. */
   repoId: z.string().min(1).optional(),
-  source: z.enum(["http", "github", "slack"]).optional(),
+  source: z.enum(["http", "github", "slack", "linear"]).optional(),
   event: z.literal("bot.intake.created").optional(),
 });
 

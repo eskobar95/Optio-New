@@ -1,7 +1,8 @@
 /**
  * HTTP intake for New Bot. Validates a task brief and metadata, then enqueues
  * the first BullMQ stage (`optio.plan`) via enqueueIntakePipeline.
- * Workers own later stages. This module does not call Linear.
+ * Workers own later stages. Linear status-change intake is the SPEC §8 exception.
+ * Agent Sessions stay out of this module.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { ZodError, z } from "zod";
@@ -19,8 +20,10 @@ import {
   type RepoCatalog,
 } from "../repos/catalog.js";
 import { GITHUB_WEBHOOK_PATH, handleGithubWebhook } from "./adapters/github.js";
+import { LINEAR_WEBHOOK_PATH, handleLinearWebhook } from "./adapters/linear.js";
 import { SLACK_WEBHOOK_PATH, handleSlackWebhook } from "./adapters/slack.js";
 import type { IntakeAdapterResult } from "./adapters/shared.js";
+import { commentQueuedOnIssue } from "../linear/comment.js";
 import { redactSecrets } from "./redact.js";
 import {
   authorizeIntakeWebhook,
@@ -28,8 +31,8 @@ import {
   INTAKE_WEBHOOK_SIGNATURE_HEADER,
 } from "./webhook-auth.js";
 
-/** Linear stays out of v1 (SPEC ADR). This path exists so the refusal is explicit. */
-export const TRACKER_WEBHOOK_PATH = "/webhooks/linear";
+/** Linear Issue status-change intake. Same path the v1 refusal used. */
+export const TRACKER_WEBHOOK_PATH = LINEAR_WEBHOOK_PATH;
 
 const MAX_BODY_BYTES = 65_536;
 
@@ -103,6 +106,16 @@ export interface IntakeServerOptions {
   githubWebhookSecret?: string;
   /** HMAC secret for POST /webhooks/slack. Blank fails that route closed (503). */
   slackSigningSecret?: string;
+  /** HMAC secret for POST /webhooks/linear. Blank fails that route closed (503). */
+  linearWebhookSecret?: string;
+  /** GraphQL key used to comment `queued` after a Linear issue is accepted. */
+  linearApiKey?: string;
+  /** Catalog repo for accepted Linear issues. Blank fails an accept closed (503). */
+  linearDefaultRepoId?: string;
+  /** Replaces the Linear GraphQL comment. Tests inject this. */
+  linearComment?: (issueId: string) => Promise<void>;
+  /** GraphQL fetch for the Linear comment. Defaults to global fetch. */
+  linearFetch?: typeof fetch;
   /** When set, GET/POST /approvals reads and decides human gates. Omitted means 404. */
   approvals?: {
     list(taskId: string, sessionId: string): Promise<unknown>;
@@ -247,17 +260,51 @@ async function acceptIntake(
   sendJson(res, 202, accepted);
 }
 
+function isDuplicatePipelineJob(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /already exists/i.test(message);
+}
+
+async function deliverLinearQueuedComment(
+  issueId: string,
+  options: IntakeServerOptions,
+): Promise<void> {
+  if (options.linearComment) {
+    await options.linearComment(issueId);
+    return;
+  }
+  const apiKey = options.linearApiKey?.trim() ?? "";
+  if (!apiKey) {
+    throw new IntakeHttpError(503, {
+      error: "linear_api_unconfigured",
+      message: "Linear API key is not configured",
+    });
+  }
+  await commentQueuedOnIssue({ apiKey, issueId, fetchImpl: options.linearFetch });
+}
+
 async function enqueueAdapter(
   result: Extract<IntakeAdapterResult, { action: "enqueue" }>,
   res: ServerResponse,
   options: IntakeServerOptions,
 ): Promise<void> {
-  const enqueued = await enqueueIntakePipeline(result.intake, options.enqueuer);
+  let taskId = result.intake.taskId;
+  let sessionId = result.intake.taskId;
+  try {
+    const enqueued = await enqueueIntakePipeline(result.intake, options.enqueuer);
+    taskId = enqueued.taskId;
+    sessionId = enqueued.sessionId;
+  } catch (error) {
+    if (!result.linearIssueId || !isDuplicatePipelineJob(error)) throw error;
+  }
+  if (result.linearIssueId) {
+    await deliverLinearQueuedComment(result.linearIssueId, options);
+  }
   const body: Record<string, unknown> = {
     event: result.intake.event,
-    taskId: enqueued.taskId,
-    sessionId: enqueued.sessionId,
-    jobId: `${enqueued.sessionId}__plan`,
+    taskId,
+    sessionId,
+    jobId: `${sessionId}__plan`,
     queue: STAGE_QUEUES.plan,
     repoId: result.intake.repoId,
     source: result.intake.source,
@@ -484,7 +531,11 @@ export async function handleIntakeRequest(
       await acceptIntake(parseJsonBody(raw), res, options);
       return;
     }
-    if (url.pathname === GITHUB_WEBHOOK_PATH || url.pathname === SLACK_WEBHOOK_PATH) {
+    if (
+      url.pathname === GITHUB_WEBHOOK_PATH ||
+      url.pathname === SLACK_WEBHOOK_PATH ||
+      url.pathname === TRACKER_WEBHOOK_PATH
+    ) {
       if (req.method !== "POST") {
         res.setHeader("allow", "POST");
         sendJson(res, 405, {
@@ -503,12 +554,22 @@ export async function handleIntakeRequest(
               secret: options.githubWebhookSecret,
               catalog,
             })
-          : handleSlackWebhook({
-              raw,
-              headers: req.headers,
-              secret: options.slackSigningSecret,
-              catalog,
-            });
+          : url.pathname === SLACK_WEBHOOK_PATH
+            ? handleSlackWebhook({
+                raw,
+                headers: req.headers,
+                secret: options.slackSigningSecret,
+                catalog,
+              })
+            : handleLinearWebhook({
+                raw,
+                headers: req.headers,
+                secret: options.linearWebhookSecret,
+                catalog,
+                defaultRepoId: options.linearDefaultRepoId,
+                apiKeyConfigured:
+                  Boolean(options.linearApiKey?.trim()) || Boolean(options.linearComment),
+              });
       if (adapter.action === "respond") {
         sendJson(res, adapter.status, adapter.body);
         return;
@@ -516,19 +577,11 @@ export async function handleIntakeRequest(
       await enqueueAdapter(adapter, res, options);
       return;
     }
-    if (url.pathname === TRACKER_WEBHOOK_PATH) {
-      sendJson(res, 404, {
-        error: "linear_deferred",
-        message:
-          "Linear intake is out of scope for Optio-New v1 (SPEC ADR). Use New Bot, GitHub Issues, or Slack.",
-      });
-      return;
-    }
     if (url.pathname !== "/intake") {
       sendJson(res, 404, {
         error: "not_found",
         message:
-          "Known routes: GET /health, GET /hello, GET /hello/plan, GET /tasks/:taskId/actions, GET /tasks/:taskId/artifacts, GET /approvals, POST /approvals, GET /budget, POST /intake, POST /webhooks/intake, POST /webhooks/github, POST /webhooks/slack",
+          "Known routes: GET /health, GET /hello, GET /hello/plan, GET /tasks/:taskId/actions, GET /tasks/:taskId/artifacts, GET /approvals, POST /approvals, GET /budget, POST /intake, POST /webhooks/intake, POST /webhooks/github, POST /webhooks/slack, POST /webhooks/linear",
       });
       return;
     }

@@ -18,7 +18,7 @@ Profile `edge` is in the boot unit (`COMPOSE_PROFILES=harness,orchestrator,edge`
 
 Port `80` is published on all host interfaces while this profile is running. Port `443` stays mapped for a later TLS swap; Caddy does not listen on it in this mode. Redis, Postgres, LiteLLM, the orchestrator, and kit-harness stay on `127.0.0.1`.
 
-`POST /webhooks/intake` enqueues the same pipeline as `POST /intake` after HMAC verification. `POST /webhooks/github` and `POST /webhooks/slack` are the same edge, with their own HMAC secrets ([intake-adapters.md](intake-adapters.md)). `POST /webhooks/linear` is refused (SPEC ADR). Other unknown `/webhooks/*` paths return `404`.
+`POST /webhooks/intake` enqueues the same pipeline as `POST /intake` after HMAC verification. `POST /webhooks/github`, `POST /webhooks/slack`, and `POST /webhooks/linear` are the same edge, with their own HMAC secrets ([intake-adapters.md](intake-adapters.md)). Linear delivers only to HTTPS; this IP edge is HTTP until a domain exists. Other unknown `/webhooks/*` paths return `404`.
 
 `GET /healthz` does not need a secret. The webhook route still needs `OPTIO_NEW_INTAKE_WEBHOOK_SECRET`. A blank secret returns `503` and does not enqueue.
 

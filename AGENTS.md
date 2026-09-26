@@ -1,19 +1,19 @@
 # AGENTS.md — how agents work in Optio-New
 
 **Language:** TypeScript (Node 20+, ESM, strict `tsc`).  
-**Decision layer:** **New Bot** (Grok Bot / Cursor agent) — not Linear.  
+**Decision layer:** **New Bot** (Grok Bot / Cursor agent). Linear is intake-only (FIN status change); Agent Sessions stay out.  
 **Pipeline orchestrator:** **BullMQ** on Redis (SPEC §14.0).
 
 ## Roles
 
-| Layer                    | Responsibility                                                                                                                                               |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **New Bot**              | Intake and decisions: what to build, when to pause/advance, human elicitation in chat. Enqueues work; no Linear API.                                         |
-| **BullMQ workers**       | Own the job graph: plan → implement → review → ready → merge. Resume after crashes.                                                                          |
-| **Eve phase agents**     | `agents/{planner,implementation,review,ready,merge}/` — slots: `agent.ts`, `instructions.md`, `tools/`, `skills/` refs. See `docs/eve-patterns.md`.          |
-| **Specialists**          | Eve subagent slots under `specialists/*` (`instructions.md` + optional `tools/`). Prompt SoT stays `.cursor/agents/`. `specialists/index.json` points there. |
-| **Skills**               | Full bodies in `.cursor/skills/` (SoT). Indexed by `skills/index.json`. Use `bot-session` instead of Linear `issue-session`.                                 |
-| **CodingAgent adapters** | `src/adapters/cursor`, `src/adapters/codex` — mutate the worktree only; do not advance the workflow.                                                         |
+| Layer                    | Responsibility                                                                                                                                                       |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **New Bot**              | Intake and decisions: what to build, when to pause/advance, human elicitation in chat. Enqueues work. Linear status-change webhooks also enqueue; no Agent Sessions. |
+| **BullMQ workers**       | Own the job graph: plan → implement → review → ready → merge. Resume after crashes.                                                                                  |
+| **Eve phase agents**     | `agents/{planner,implementation,review,ready,merge}/` — slots: `agent.ts`, `instructions.md`, `tools/`, `skills/` refs. See `docs/eve-patterns.md`.                  |
+| **Specialists**          | Eve subagent slots under `specialists/*` (`instructions.md` + optional `tools/`). Prompt SoT stays `.cursor/agents/`. `specialists/index.json` points there.         |
+| **Skills**               | Full bodies in `.cursor/skills/` (SoT). Indexed by `skills/index.json`. Use `bot-session` instead of Linear `issue-session`.                                         |
+| **CodingAgent adapters** | `src/adapters/cursor`, `src/adapters/codex` — mutate the worktree only; do not advance the workflow.                                                                 |
 
 ## Source layout
 
@@ -42,7 +42,7 @@ Unit tests mock Redis. Set `OPTIO_NEW_REDIS_URL` and/or `OPTIO_NEW_DATABASE_URL`
 
 ## Do not
 
-- Integrate Linear webhooks, GraphQL, Agent Sessions, or Linear status vocabulary.
+- Integrate Linear Agent Sessions, OAuth agent scopes, or Linear status names as factory stages. FIN status-change intake (`POST /webhooks/linear`) is the SPEC §8 exception.
 - Commit secrets (`.env`, real API keys).
 - Modify `~/Projects/optio` or `kit-collective` from this repo.
 - Let adapters own workflow advancement or worktree lifecycle.

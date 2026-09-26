@@ -274,6 +274,88 @@ describe("production stage handler", () => {
     expect(lines.join("\n")).not.toContain(TOKEN);
   });
 
+  it("opens the pull request on the catalog repo for repoId", async () => {
+    const taskId = "ship-fja";
+    const { handle, worktrees } = worktreeFixture(taskId, true);
+    const git = gitRunner({ ahead: "1" });
+    const calls: { url: string; method: string; body?: string }[] = [];
+    const repos = JSON.stringify([
+      {
+        repoId: "optio-new",
+        cloneUrl: "https://github.com/eskobar95/Optio-New.git",
+        localPath: "/opt/optio-new",
+        defaultBranch: "development",
+        worktreeRoot: "/wt/optio-new",
+      },
+      {
+        repoId: "findjobabroad",
+        cloneUrl: "https://github.com/kit/find-job-abroad.git",
+        localPath: "/opt/findjobabroad",
+        defaultBranch: "main",
+        worktreeRoot: "/wt/fja",
+      },
+    ]);
+    const handler = createProductionStageHandler({
+      env: handlerEnv({
+        OPTIO_NEW_GITHUB_REPO: "eskobar95/Optio-New",
+        OPTIO_NEW_REPOS: repos,
+        OPTIO_NEW_DEFAULT_REPO_ID: "optio-new",
+      }),
+      worktrees,
+      git: git.git,
+      loadPrSafety: passingSafety,
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        calls.push({
+          url,
+          method,
+          body: typeof init?.body === "string" ? init.body : undefined,
+        });
+        if (method === "GET" && url.includes("/pulls?")) return jsonResponse(200, []);
+        if (method === "POST" && url.endsWith("/pulls")) {
+          return jsonResponse(201, {
+            html_url: "https://github.com/kit/find-job-abroad/pull/4",
+            number: 4,
+          });
+        }
+        if (method === "GET" && url.includes("/status"))
+          return jsonResponse(200, { state: "success" });
+        if (method === "PUT" && url.endsWith("/merge")) return jsonResponse(200, { merged: true });
+        return jsonResponse(500, { message: "unexpected" });
+      },
+    });
+    await handler.run({
+      ...step("ready", "open_pr", taskId),
+      repoId: "findjobabroad",
+      title: "FJA",
+    });
+    const post = calls.find((call) => call.method === "POST");
+    expect(post?.url).toBe("https://api.github.com/repos/kit/find-job-abroad/pulls");
+    expect(JSON.parse(post?.body ?? "{}")).toMatchObject({ base: "main", head: handle.branch });
+    expect(calls.some((call) => call.url.includes("Optio-New"))).toBe(false);
+    const push = git.calls.find((call) => call.startsWith("push "));
+    expect(push).toContain("github.com/kit/find-job-abroad.git");
+    expect(push).not.toContain("Optio-New");
+
+    calls.length = 0;
+    await handler.run({ ...step("ready", "record_ci_wait", taskId), repoId: "findjobabroad" });
+    expect(calls.some((call) => call.url.includes("/repos/kit/find-job-abroad/commits/"))).toBe(
+      true,
+    );
+    expect(calls.some((call) => call.url.includes("Optio-New"))).toBe(false);
+
+    calls.length = 0;
+    await handler.run({ ...step("merge", "merge_branch", taskId), repoId: "findjobabroad" });
+    expect(
+      calls.some(
+        (call) =>
+          call.method === "PUT" && call.url.includes("/repos/kit/find-job-abroad/pulls/4/merge"),
+      ),
+    ).toBe(true);
+    expect(calls.some((call) => call.url.includes("Optio-New"))).toBe(false);
+  });
+
   it("writes an e2e marker commit, opens a pull request, and does not merge", async () => {
     const taskId = "e2e-marker";
     const { handle, worktrees } = worktreeFixture(taskId, true);

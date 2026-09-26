@@ -96,6 +96,9 @@ export async function startOrchestrator(): Promise<void> {
     cursorApiKey: Boolean(process.env.CURSOR_API_KEY?.trim()),
     githubToken: Boolean(process.env.OPTIO_NEW_GITHUB_TOKEN?.trim()),
     githubRepo: Boolean(process.env.OPTIO_NEW_GITHUB_REPO?.trim()),
+    linearWebhook: Boolean(process.env.OPTIO_NEW_LINEAR_WEBHOOK_SECRET?.trim()),
+    linearApiKey: Boolean(process.env.OPTIO_NEW_LINEAR_API_KEY?.trim()),
+    linearDefaultRepoId: process.env.OPTIO_NEW_LINEAR_DEFAULT_REPO_ID?.trim() || "",
     modelApiKey: Boolean(process.env.MODEL_API_KEY?.trim()),
     modelEndpoint: Boolean(process.env.MODEL_ENDPOINT?.trim()),
     worktreeRoot: worktreeConfig.root,
@@ -109,7 +112,11 @@ export async function startOrchestrator(): Promise<void> {
       worktrees,
       artifacts: database.artifacts,
       artifactLimits: readArtifactLimits(process.env),
-      handler: createProductionStageHandler({ env: process.env, worktrees }),
+      handler: createProductionStageHandler({
+        env: process.env,
+        worktrees,
+        catalog: repoCatalog,
+      }),
       runLog,
       hitl,
       budget,
@@ -149,6 +156,9 @@ export async function startOrchestrator(): Promise<void> {
     workflowRepoId,
     githubWebhookSecret: process.env.OPTIO_NEW_GITHUB_WEBHOOK_SECRET,
     slackSigningSecret: process.env.OPTIO_NEW_SLACK_SIGNING_SECRET,
+    linearWebhookSecret: process.env.OPTIO_NEW_LINEAR_WEBHOOK_SECRET,
+    linearApiKey: process.env.OPTIO_NEW_LINEAR_API_KEY,
+    linearDefaultRepoId: process.env.OPTIO_NEW_LINEAR_DEFAULT_REPO_ID,
     checkRedis: async () => {
       try {
         return (await redis.ping()) === "PONG";

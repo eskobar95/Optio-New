@@ -35,7 +35,10 @@ Templates list every name Compose and the agent loop read:
 - `LITELLM_MASTER_KEY`, `LITELLM_BASE_URL`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` — LiteLLM process env
 - `OPTIO_NEW_HARNESS_URL` — kit-harness on the host (`http://127.0.0.1:3200`). Not a public name.
 - `CURSOR_API_KEY` — Cursor subscription CLI
-- `OPTIO_NEW_GITHUB_REPO` — `owner/repo` for `ready` / `open_pr`
+- `OPTIO_NEW_GITHUB_REPO` — `owner/repo` used when `OPTIO_NEW_REPOS` is empty. With a catalog, `open_pr` uses the clone URL for the task `repoId`.
+- `OPTIO_NEW_LINEAR_API_KEY` — GraphQL key for the `queued` comment. Policy: `commentCreate`, and `issueUpdate` of `stateId` only. No issue create, delete, or archive. Team FIN.
+- `OPTIO_NEW_LINEAR_WEBHOOK_SECRET` — HMAC for `POST /webhooks/linear`.
+- `OPTIO_NEW_LINEAR_DEFAULT_REPO_ID` — catalog id for accepted Linear issues (`findjobabroad` on kit-harness).
 - `OPTIO_NEW_BASE_BRANCH` — worktree and pull request base (default `development`)
 - `OPTIO_NEW_REPOS`, `OPTIO_NEW_DEFAULT_REPO_ID`, `OPTIO_NEW_REPO_PATH`, `OPTIO_NEW_REPO_CLONE_URL` — multi-repo catalog. The JSON may contain clone URLs; do not log it.
 - `OPTIO_NEW_SLACK_SIGNING_SECRET` — Slack intake HMAC. Same handling as the GitHub webhook secret.

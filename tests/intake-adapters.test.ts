@@ -2,12 +2,14 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import type { FlowJob } from "bullmq";
 import { afterEach, describe, expect, it } from "vitest";
-import { createIntakeServer, signSlackBody } from "../src/index.js";
+import { createIntakeServer, signLinearBody, signSlackBody } from "../src/index.js";
 import { signIntakeWebhookBody } from "../src/orchestrator/intake/webhook-auth.js";
 import type { RepoCatalog } from "../src/orchestrator/repos/catalog.js";
 
 const GITHUB_SECRET = "github-webhook-test-secret";
 const SLACK_SECRET = "slack-signing-test-secret";
+const LINEAR_SECRET = "linear-webhook-test-secret";
+const LINEAR_ISSUE_ID = "2174add1-f7c8-44e3-bbf3-2d60b5ea8bc9";
 
 const catalog: RepoCatalog = {
   defaultRepoId: "optio-new",
@@ -25,6 +27,13 @@ const catalog: RepoCatalog = {
       localPath: "/opt/workplace",
       defaultBranch: "main",
       worktreeRoot: "/wt/workplace",
+    },
+    {
+      repoId: "findjobabroad",
+      cloneUrl: "https://github.com/kit/find-job-abroad.git",
+      localPath: "/opt/findjobabroad",
+      defaultBranch: "main",
+      worktreeRoot: "/wt/fja",
     },
   ],
 };
@@ -59,15 +68,26 @@ describe("GitHub and Slack intake", () => {
     );
   });
 
-  function start() {
+  function start(extra?: {
+    linearWebhookSecret?: string;
+    linearApiKey?: string;
+    linearDefaultRepoId?: string;
+    linearComment?: (issueId: string) => Promise<void>;
+    failEnqueue?: boolean;
+  }) {
     const added: FlowJob[] = [];
     const server = createIntakeServer({
       repoCatalog: catalog,
       workflowRepoId: "workplace",
       githubWebhookSecret: GITHUB_SECRET,
       slackSigningSecret: SLACK_SECRET,
+      linearWebhookSecret: extra?.linearWebhookSecret,
+      linearApiKey: extra?.linearApiKey,
+      linearDefaultRepoId: extra?.linearDefaultRepoId,
+      linearComment: extra?.linearComment,
       enqueuer: {
         async add(flow) {
+          if (extra?.failEnqueue) throw new Error("Job lin-FIN-12__plan already exists");
           added.push(flow);
         },
       },
@@ -261,7 +281,7 @@ describe("GitHub and Slack intake", () => {
     expect(added).toHaveLength(2);
   });
 
-  it("refuses Linear and an unknown intake repo without enqueueing", async () => {
+  it("fails a Linear webhook closed when the signing secret is unset", async () => {
     const { added, server } = start();
     const base = await listen(server);
     const linear = await fetch(`${base}/webhooks/linear`, {
@@ -269,11 +289,16 @@ describe("GitHub and Slack intake", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "create" }),
     });
-    expect(linear.status).toBe(404);
+    expect(linear.status).toBe(503);
     const linearBody = (await linear.json()) as { error: string; message: string };
-    expect(linearBody.error).toBe("linear_deferred");
-    expect(linearBody.message).toContain("SPEC ADR");
+    expect(linearBody.error).toBe("webhook_auth_unconfigured");
+    expect(JSON.stringify(linearBody)).not.toContain("linear_deferred");
+    expect(added).toHaveLength(0);
+  });
 
+  it("rejects an unknown intake repo without enqueueing", async () => {
+    const { added, server } = start();
+    const base = await listen(server);
     const unknown = await fetch(`${base}/intake`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -296,5 +321,287 @@ describe("GitHub and Slack intake", () => {
     expect(workflowDefault.status).toBe(202);
     expect(await workflowDefault.json()).toMatchObject({ repoId: "workplace" });
     expect(added).toHaveLength(1);
+  });
+
+  it("enqueues a FIN status change and comments queued", async () => {
+    const comments: string[] = [];
+    const { added, server } = start({
+      linearWebhookSecret: LINEAR_SECRET,
+      linearDefaultRepoId: "findjobabroad",
+      linearComment: async (issueId) => {
+        comments.push(issueId);
+      },
+    });
+    const base = await listen(server);
+    const now = Date.now();
+    const payload = JSON.stringify({
+      action: "update",
+      type: "Issue",
+      url: "https://linear.app/findjobabroad/issue/FIN-12/ship-intake",
+      webhookTimestamp: now,
+      data: {
+        id: LINEAR_ISSUE_ID,
+        identifier: "FIN-12",
+        title: "Ship intake",
+        description: "Status moved",
+      },
+      updatedFrom: { stateId: "previous-state" },
+    });
+    const raw = Buffer.from(payload);
+    const response = await fetch(`${base}/webhooks/linear`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "linear-signature": signLinearBody(LINEAR_SECRET, raw),
+      },
+      body: raw,
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { taskId: string; repoId: string; source: string };
+    expect(body).toMatchObject({
+      event: "bot.intake.created",
+      taskId: "lin-FIN-12",
+      repoId: "findjobabroad",
+      source: "linear",
+    });
+    expect(JSON.stringify(body)).not.toContain(LINEAR_SECRET);
+    expect(comments).toEqual([LINEAR_ISSUE_ID]);
+    expect(planJob(added[0] as FlowJob).data).toMatchObject({
+      taskId: "lin-FIN-12",
+      repoId: "findjobabroad",
+      title: "Ship intake",
+      description: "Status moved\n\nhttps://linear.app/findjobabroad/issue/FIN-12/ship-intake",
+      stage: "plan",
+    });
+
+    const titleEdit = JSON.stringify({
+      action: "update",
+      type: "Issue",
+      webhookTimestamp: now,
+      data: {
+        id: LINEAR_ISSUE_ID,
+        identifier: "FIN-12",
+        title: "Renamed",
+        team: { key: "FIN" },
+      },
+      updatedFrom: { title: "Ship intake" },
+    });
+    const titleRaw = Buffer.from(titleEdit);
+    const renamed = await fetch(`${base}/webhooks/linear`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "linear-signature": signLinearBody(LINEAR_SECRET, titleRaw),
+      },
+      body: titleRaw,
+    });
+    expect(renamed.status).toBe(200);
+    expect(await renamed.json()).toEqual({ accepted: false, reason: "ignored" });
+
+    const noise = JSON.stringify({
+      action: "create",
+      type: "Issue",
+      webhookTimestamp: now,
+      data: { id: LINEAR_ISSUE_ID, identifier: "FIN-13", title: "Created" },
+    });
+    const noiseRaw = Buffer.from(noise);
+    const ignored = await fetch(`${base}/webhooks/linear`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "linear-signature": signLinearBody(LINEAR_SECRET, noiseRaw),
+      },
+      body: noiseRaw,
+    });
+    expect(ignored.status).toBe(200);
+    expect(await ignored.json()).toEqual({ accepted: false, reason: "ignored" });
+
+    const otherTeam = JSON.stringify({
+      action: "update",
+      type: "Issue",
+      webhookTimestamp: now,
+      data: {
+        id: LINEAR_ISSUE_ID,
+        identifier: "ENG-3",
+        title: "Other team",
+        team: { key: "ENG" },
+      },
+      updatedFrom: { stateId: "previous-state" },
+    });
+    const otherRaw = Buffer.from(otherTeam);
+    const other = await fetch(`${base}/webhooks/linear`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "linear-signature": signLinearBody(LINEAR_SECRET, otherRaw),
+      },
+      body: otherRaw,
+    });
+    expect(other.status).toBe(200);
+    expect(await other.json()).toEqual({ accepted: false, reason: "ignored" });
+    expect(added).toHaveLength(1);
+    expect(comments).toEqual([LINEAR_ISSUE_ID]);
+  });
+
+  it("rejects a bad Linear signature and a stale timestamp", async () => {
+    const comments: string[] = [];
+    const { added, server } = start({
+      linearWebhookSecret: LINEAR_SECRET,
+      linearDefaultRepoId: "findjobabroad",
+      linearComment: async (issueId) => {
+        comments.push(issueId);
+      },
+    });
+    const base = await listen(server);
+    const payload = JSON.stringify({
+      action: "update",
+      type: "Issue",
+      webhookTimestamp: Date.now(),
+      data: {
+        id: LINEAR_ISSUE_ID,
+        identifier: "FIN-12",
+        title: "Ship intake",
+        team: { key: "FIN" },
+      },
+      updatedFrom: { stateId: "previous-state" },
+    });
+    const bad = await fetch(`${base}/webhooks/linear`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "linear-signature": signLinearBody("wrong-secret", Buffer.from(payload)),
+      },
+      body: payload,
+    });
+    expect(bad.status).toBe(401);
+    expect(await bad.json()).toMatchObject({ error: "invalid_signature" });
+
+    const staleBody = JSON.stringify({
+      action: "update",
+      type: "Issue",
+      webhookTimestamp: Date.now() - 120_000,
+      data: {
+        id: LINEAR_ISSUE_ID,
+        identifier: "FIN-12",
+        title: "Ship intake",
+        team: { key: "FIN" },
+      },
+      updatedFrom: { stateId: "previous-state" },
+    });
+    const staleRaw = Buffer.from(staleBody);
+    const stale = await fetch(`${base}/webhooks/linear`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "linear-signature": signLinearBody(LINEAR_SECRET, staleRaw),
+      },
+      body: staleRaw,
+    });
+    expect(stale.status).toBe(401);
+    expect(added).toHaveLength(0);
+    expect(comments).toEqual([]);
+  });
+
+  it("does not enqueue a FIN status change when the Linear repo or API key is missing", async () => {
+    const { added, server } = start({
+      linearWebhookSecret: LINEAR_SECRET,
+      linearApiKey: "lin_api_testkey12345678",
+    });
+    const base = await listen(server);
+    const payload = JSON.stringify({
+      action: "update",
+      type: "Issue",
+      webhookTimestamp: Date.now(),
+      data: {
+        id: LINEAR_ISSUE_ID,
+        identifier: "FIN-12",
+        title: "Ship intake",
+        team: { key: "FIN" },
+      },
+      updatedFrom: { stateId: "previous-state" },
+    });
+    const raw = Buffer.from(payload);
+    const missingRepo = await fetch(`${base}/webhooks/linear`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "linear-signature": signLinearBody(LINEAR_SECRET, raw),
+      },
+      body: raw,
+    });
+    expect(missingRepo.status).toBe(503);
+    expect(await missingRepo.json()).toMatchObject({ error: "linear_repo_unconfigured" });
+
+    const { server: keyed } = start({
+      linearWebhookSecret: LINEAR_SECRET,
+      linearDefaultRepoId: "missing-repo",
+      linearApiKey: "lin_api_testkey12345678",
+    });
+    const keyedBase = await listen(keyed);
+    const unknown = await fetch(`${keyedBase}/webhooks/linear`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "linear-signature": signLinearBody(LINEAR_SECRET, raw),
+      },
+      body: raw,
+    });
+    expect(unknown.status).toBe(400);
+    expect(await unknown.json()).toMatchObject({ error: "unknown_repo" });
+
+    const { server: noKey } = start({
+      linearWebhookSecret: LINEAR_SECRET,
+      linearDefaultRepoId: "findjobabroad",
+    });
+    const noKeyBase = await listen(noKey);
+    const unconfigured = await fetch(`${noKeyBase}/webhooks/linear`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "linear-signature": signLinearBody(LINEAR_SECRET, raw),
+      },
+      body: raw,
+    });
+    expect(unconfigured.status).toBe(503);
+    expect(await unconfigured.json()).toMatchObject({ error: "linear_api_unconfigured" });
+    expect(added).toHaveLength(0);
+  });
+
+  it("comments queued again when the Linear pipeline job already exists", async () => {
+    const comments: string[] = [];
+    const { added, server } = start({
+      linearWebhookSecret: LINEAR_SECRET,
+      linearDefaultRepoId: "findjobabroad",
+      failEnqueue: true,
+      linearComment: async (issueId) => {
+        comments.push(issueId);
+      },
+    });
+    const base = await listen(server);
+    const payload = JSON.stringify({
+      action: "update",
+      type: "Issue",
+      webhookTimestamp: Date.now(),
+      data: {
+        id: LINEAR_ISSUE_ID,
+        identifier: "FIN-12",
+        title: "Ship intake",
+        team: { key: "FIN" },
+      },
+      updatedFrom: { stateId: "previous-state" },
+    });
+    const raw = Buffer.from(payload);
+    const response = await fetch(`${base}/webhooks/linear`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "linear-signature": signLinearBody(LINEAR_SECRET, raw),
+      },
+      body: raw,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ taskId: "lin-FIN-12", repoId: "findjobabroad" });
+    expect(comments).toEqual([LINEAR_ISSUE_ID]);
+    expect(added).toHaveLength(0);
   });
 });

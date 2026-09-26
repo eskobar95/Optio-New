@@ -202,11 +202,13 @@ describe("POST /intake", () => {
     expect(await downResponse.json()).toEqual({ ok: false, redis: "down" });
   });
 
-  it("does not reference the Linear SDK", async () => {
+  it("wires Linear status-change intake without the Linear SDK", async () => {
     const source = await readFile(
       new URL("../src/orchestrator/intake/http.ts", import.meta.url),
       "utf8",
     );
-    expect(source).not.toMatch(/@linear|linear\.app|LinearClient|LINEAR_/);
+    expect(source).toContain("handleLinearWebhook");
+    expect(source).not.toContain("linear_deferred");
+    expect(source).not.toMatch(/@linear|LinearClient/);
   });
 });
