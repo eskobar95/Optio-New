@@ -15,7 +15,7 @@ Agents, specialists, and skills are directories and markdown, not rows in a data
 | Skill refs       | `agents/<phase>/skills/index.json`                    | Ids and Cursor paths only                          |
 | Specialist index | `specialists/index.json`                              | Ids → `.cursor/agents`                             |
 
-`agent.ts` is a policy stub. `model.selection` is `"orchestrator"` (the worker / Jev hop chooses the model). `toolPolicy.advancesWorkflow` is `false`. `toolPolicy.mode` records intent (`read_only`, `worktree_mutate`, `pr_only`, `merge_only`). EVE-1 does not enforce that enum in a runner. `tools/` may contain only `README.md` until a phase needs a typed tool.
+`agent.ts` is a policy stub. `model.selection` is `"orchestrator"` (the worker / Jev hop chooses the model). `toolPolicy.advancesWorkflow` is `false`. `gates` copies that step’s `entry_gates`, `exit_gates`, and `on_fail` / `on_success` when `workflows/default-task.yaml` sets them. `toolPolicy.mode` records intent (`read_only`, `worktree_mutate`, `pr_only`, `merge_only`). EVE-1 does not enforce that enum in a runner. `tools/` may contain only `README.md` until a phase needs a typed tool.
 
 `instructions.md` is the always-on prompt. It names specialist ids and skill ids. It does not embed specialist prompts or skill bodies.
 

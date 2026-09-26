@@ -24,3 +24,11 @@ You are the **merge** agent for an Optio-New task session (New Bot–driven).
 ## Exit
 
 Satisfy `merged_into_development`.
+
+## Gates
+
+Same ids as step `merge` in `workflows/default-task.yaml`. This phase does not advance BullMQ; the orchestrator worker does after the exit gate passes.
+
+- Entry: `ci_green`, `merge_policy_allow`
+- Exit: `merged_into_development`
+- On success: `delete_worktree`

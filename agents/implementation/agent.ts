@@ -27,6 +27,11 @@ export const implementationAgent = definePhaseAgent({
     "specialists/devops",
     "specialists/database",
   ],
+  gates: {
+    entry: ["worktree_ready", "plan_approved"],
+    exit: ["jev_completion", "local_checks"],
+    onFail: "retry_then_replan",
+  },
 });
 
 export default implementationAgent;

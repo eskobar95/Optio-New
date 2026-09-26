@@ -22,6 +22,11 @@ export const readyAgent = definePhaseAgent({
     allowed: ["skills/land", "skills/sync-development"],
   },
   specialistsAllowed: [],
+  gates: {
+    entry: ["review_pass"],
+    exit: ["pr_open", "ci_pending_or_green"],
+    onFail: "escalate_bot",
+  },
 });
 
 export default readyAgent;

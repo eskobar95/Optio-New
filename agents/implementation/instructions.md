@@ -26,3 +26,11 @@ You are the **implementation** agent for an Optio-New task session (New Bot–dr
 ## Exit
 
 Satisfy `jev_completion` and `local_checks` before the orchestrator advances.
+
+## Gates
+
+Same ids as step `implementation` in `workflows/default-task.yaml`. This phase does not advance BullMQ; the orchestrator worker does after the exit gates pass.
+
+- Entry: `worktree_ready`, `plan_approved`
+- Exit: `jev_completion`, `local_checks`
+- On fail: `retry_then_replan`

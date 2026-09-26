@@ -22,6 +22,11 @@ export const mergeAgent = definePhaseAgent({
     allowed: ["skills/land", "skills/reap-worktree"],
   },
   specialistsAllowed: [],
+  gates: {
+    entry: ["ci_green", "merge_policy_allow"],
+    exit: ["merged_into_development"],
+    onSuccess: "delete_worktree",
+  },
 });
 
 export default mergeAgent;
