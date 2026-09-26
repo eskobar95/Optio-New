@@ -467,7 +467,7 @@ Recommended extra attributes (where applicable): `workflow_id`, `step_id`, `agen
 | Process supervision | **Docker Compose** with `restart: unless-stopped`, plus **systemd** unit to ensure Compose stack starts on boot                                                            |
 | Public webhooks TLS | **Caddy** or **Traefik** terminating TLS for optional New Bot intake + GitHub webhook endpoints                                                                            |
 | Secrets             | **sops + age** on the Hetzner kit-harness (`/opt/optio-new`); Infisical is an optional later swap. Never commit plaintext or production ciphertext. See `docs/secrets.md`. |
-| Database backups    | **restic** or **borg** of Postgres dumps to a **Hetzner Storage Box** (scheduled)                                                                                          |
+| Database backups    | **restic** or **borg** of Postgres dumps to a **Hetzner Storage Box** (scheduled). Runbook: `docs/ops/postgres-storagebox-backup.md`.                                      |
 | Network hardening   | **Hetzner Cloud Firewall** + **fail2ban** on SSH                                                                                                                           |
 | Logging format      | Structured **JSON** logs on stdout (scraped to Loki/SigNoz); correlate with `trace_id`                                                                                     |
 | Worker health       | HTTP **health endpoints** for queue workers (liveness + optional queue lag)                                                                                                |

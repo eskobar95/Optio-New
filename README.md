@@ -67,7 +67,7 @@ bash scripts/smoke-compose-mac.sh
 See [docs/mac-compose-smoke.md](docs/mac-compose-smoke.md). GitHub Actions stays on `scripts/smoke-local.sh` (`--config-only` when Docker is present).
 
 On the Hetzner host (`/opt/optio-new`), load secrets with `scripts/secrets.sh`. LiteLLM stays in the default service set. The boot unit adds `COMPOSE_PROFILES=harness,orchestrator`. After merge: `bash scripts/vps-pull-rebuild.sh`. Runbook: [deploy/README.md](deploy/README.md). Secrets: [docs/secrets.md](docs/secrets.md).
-Postgres backup example: `scripts/backup-postgres-to-storagebox.sh.example`.
+Postgres backup to Hetzner Storage Box: [docs/ops/postgres-storagebox-backup.md](docs/ops/postgres-storagebox-backup.md).
 
 ## CI and pre-commit (always on)
 

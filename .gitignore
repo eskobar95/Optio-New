@@ -4,6 +4,8 @@ secrets/.env
 secrets/.sops.yaml
 secrets/optio-new.env
 secrets/age/
+# Storage Box SSH private key. The public key is pasted into the Hetzner console.
+secrets/storagebox_*
 *.agekey
 .env
 .env.*

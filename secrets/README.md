@@ -12,3 +12,5 @@ bash scripts/secrets.sh compose up -d
 ```
 
 Infisical is an optional later swap with the same key names. It is not installed on this VPS.
+
+Postgres dumps use the same encrypted env via `scripts/secrets.sh run`. See [docs/ops/postgres-storagebox-backup.md](../docs/ops/postgres-storagebox-backup.md).

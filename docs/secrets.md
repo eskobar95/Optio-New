@@ -145,6 +145,20 @@ Postgres password changes also require `ALTER USER` (or a new volume). Encryptin
 
 `--env-file` replaces Compose's default `.env` lookup. The unit sets `WorkingDirectory=/opt/optio-new`, `SOPS_AGE_KEY_FILE=/opt/optio-new/secrets/age/key.txt`, and `COMPOSE_PROFILES=harness,orchestrator`. LiteLLM stays in the default service set. The profile list is not a secret. `EnvironmentFile` stays unset.
 
+## Postgres backups
+
+The daily dump does not use systemd `EnvironmentFile`. That would print values through `systemctl show`. The timer runs:
+
+```bash
+scripts/secrets.sh run scripts/backup-postgres-to-storagebox.sh
+```
+
+`run` decrypts `secrets/optio-new.env` to a `0600` tmpfs file, exports the assignments, runs the command, and deletes the file. `OPTIO_NEW_DATABASE_URL` and `OPTIO_NEW_BACKUP_*` live in that same encrypted env. The Storage Box SSH private key is `secrets/storagebox_ed25519` (`mode 0600`, gitignored), not a value inside the env file.
+
+Runbook: [docs/ops/postgres-storagebox-backup.md](ops/postgres-storagebox-backup.md).
+
+Infisical is still not installed on this host. A later swap keeps these key names and points the timer at `infisical run` instead of `secrets.sh run`. Do not commit the token.
+
 ## CI
 
 GitHub Actions does not receive production env files and does not enable step debug. `bash scripts/secrets.sh audit` runs from `scripts/smoke-local.sh` and from Vitest. It checks gitignore rules and tracked paths, and it searches tracked files for private-key markers. Matches print the path only.

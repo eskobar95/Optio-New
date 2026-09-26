@@ -1,0 +1,7 @@
+# Cron alternative to deploy/systemd/optio-new-postgres-backup.timer.
+# Install one of them. Installing both runs two dumps per day.
+# /etc/cron.d/optio-new-postgres-backup
+# Secrets come from sops via scripts/secrets.sh run. Do not put values in this file.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+15 3 * * * root SOPS_AGE_KEY_FILE=/opt/optio-new/secrets/age/key.txt /opt/optio-new/scripts/secrets.sh run /opt/optio-new/scripts/backup-postgres-to-storagebox.sh

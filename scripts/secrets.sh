@@ -26,11 +26,14 @@ add_cleanup() {
 }
 
 cleanup() {
+  local code=$?
   local path
-  [[ ${#cleanup_paths[@]} -eq 0 ]] && return 0
-  for path in "${cleanup_paths[@]}"; do
-    rm -rf "$path"
-  done
+  if [[ ${#cleanup_paths[@]} -gt 0 ]]; then
+    for path in "${cleanup_paths[@]}"; do
+      rm -rf "$path"
+    done
+  fi
+  exit "$code"
 }
 
 trap cleanup EXIT
@@ -52,6 +55,7 @@ Usage: scripts/secrets.sh <command>
                   Boot set is COMPOSE_PROFILES=harness,orchestrator
                   (deploy/systemd/optio-new-compose.service). Not a secret.
                   LiteLLM stays in the default service set.
+  run <command>   Decrypt to a tmpfs file, export it, and run a command
   audit           Gitignore / tracked-file checks. Prints paths and rule ids only
   roundtrip       Encrypt and decrypt a placeholder env with a throwaway key
 
@@ -193,15 +197,17 @@ cmd_check() {
   fi
 }
 
-cmd_compose() {
-  local envfile="" cleanup=""
+# Sets RESOLVED_ENV_FILE. Decrypts ciphertext to a 0600 tmpfs file and registers cleanup.
+# Status text goes to stderr. The path is not a secret; the file contents are.
+resolve_env_file() {
+  RESOLVED_ENV_FILE=""
+  local envfile=""
   if [[ -f "$ENCRYPTED" ]]; then
     require_cmd sops
     [[ -f "$SOPS_AGE_KEY_FILE" ]] || die "missing age key: ${SOPS_AGE_KEY_FILE}"
     envfile="$(secret_tmp)"
-    cleanup="$envfile"
+    add_cleanup "$envfile"
     if ! sops --decrypt --input-type dotenv --output-type dotenv "$ENCRYPTED" >"$envfile"; then
-      rm -f "$envfile"
       die "decrypt failed"
     fi
     chmod 600 "$envfile"
@@ -214,14 +220,26 @@ cmd_compose() {
   else
     die "no env file. Copy .env.example to .env, then run scripts/secrets.sh init && scripts/secrets.sh encrypt"
   fi
-  if [[ -n "$cleanup" ]]; then
-    add_cleanup "$cleanup"
-  fi
+  RESOLVED_ENV_FILE="$envfile"
+}
+
+cmd_compose() {
+  resolve_env_file
   require_cmd docker
   if [[ " $* " == *" up "* && -z "${COMPOSE_PROFILES:-}" && " $* " != *" --profile "* ]]; then
     echo "[secrets] COMPOSE_PROFILES is unset and no --profile was passed; kit-harness and orchestrator stay stopped (litellm still starts)" >&2
   fi
-  docker compose --env-file "$envfile" -f "$ROOT/docker-compose.yml" "$@"
+  docker compose --env-file "$RESOLVED_ENV_FILE" -f "$ROOT/docker-compose.yml" "$@"
+}
+
+cmd_run() {
+  [[ $# -ge 1 ]] || die "usage: scripts/secrets.sh run <command> [args]"
+  resolve_env_file
+  set -a
+  # shellcheck disable=SC1090
+  . "$RESOLVED_ENV_FILE"
+  set +a
+  "$@"
 }
 
 audit_tracked_paths() {
@@ -261,7 +279,7 @@ cmd_audit() {
   require_cmd git
   git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "not a git checkout"
   local path
-  for path in .env secrets/.env secrets/.sops.yaml secrets/optio-new.env secrets/age/key.txt; do
+  for path in .env secrets/.env secrets/.sops.yaml secrets/optio-new.env secrets/age/key.txt secrets/storagebox_ed25519; do
     git check-ignore -q -- "$path" || die "not gitignored: ${path}"
   done
   echo "[secrets] PASS gitignore"
@@ -313,6 +331,7 @@ main() {
     encrypt) cmd_encrypt "$@" ;;
     check) cmd_check "$@" ;;
     compose) cmd_compose "$@" ;;
+    run) cmd_run "$@" ;;
     audit) cmd_audit "$@" ;;
     roundtrip) cmd_roundtrip "$@" ;;
     -h | --help | help) usage ;;
