@@ -5,8 +5,8 @@
 #   docker compose --profile full --profile harness up -d --build orchestrator
 #   HELLO_WORLD_E2E=1 bash scripts/hello-world-e2e.sh
 #
-# Profile `full` starts the orchestrator (and the eve-runner stub) beside redis
-# and postgres. kit-harness itself is profile `harness` on :3200 and is not
+# Profile `full` starts the orchestrator and eve-runner (127.0.0.1:3210) beside
+# redis and postgres. kit-harness itself is profile `harness` on :3200 and is not
 # required for this check. Compose publishes 3100 on 127.0.0.1 only.
 #
 # Without a listener the script skips, so `npm run ci` stays green.

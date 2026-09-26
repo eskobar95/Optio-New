@@ -481,7 +481,7 @@ The Hetzner boot unit (`deploy/systemd/optio-new-compose.service`) enables Compo
 Redis
 Postgres
 BullMQ workers (orchestrator)
-Eve / agent runner
+Eve / agent runner   # profile full and eve; 127.0.0.1:3210
 LiteLLM Proxy     # Codex gateway; default service set (no profile)
 kit-harness       # profile harness; 127.0.0.1:3200
 OTel Collector

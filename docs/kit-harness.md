@@ -114,7 +114,7 @@ npm run smoke
 
 ## Hello-world: intake → plan
 
-kit-harness does not enqueue pipeline jobs. The orchestrator does. On the kit-harness host, profile `full` starts that process on `127.0.0.1:3100`. The eve-runner container in the same profile is still a stub. This check does not open another port.
+kit-harness does not enqueue pipeline jobs. The orchestrator does. On the kit-harness host, profile `full` starts that process on `127.0.0.1:3100`. The eve-runner container in the same profile is published on `127.0.0.1:3210`. kit-harness stays on `:3200`. This check talks to the orchestrator and does not call eve-runner.
 
 ```bash
 docker compose --profile full --profile harness up -d --build orchestrator

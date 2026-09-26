@@ -35,4 +35,12 @@ describe("compose full stack profiles", () => {
     expect(slices.orchestrator).toContain("condition: service_healthy");
     expect(slices.orchestrator).toContain("healthcheck:");
   });
+
+  it("publishes eve-runner on 127.0.0.1:3210", () => {
+    const block = serviceSlice("eve-runner", "\n  litellm:\n");
+    expect(block).toContain('EVE_RUNNER_PORT: "3210"');
+    expect(block).toContain('"127.0.0.1:3210:3210"');
+    expect(block).toContain("http://127.0.0.1:3210/health");
+    expect(block).not.toContain("3200");
+  });
 });

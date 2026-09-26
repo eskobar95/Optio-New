@@ -43,6 +43,7 @@ Compose binds the data plane to loopback. Docker does not publish these on the p
 | postgres      | `127.0.0.1:5432` |
 | litellm       | `127.0.0.1:4000` |
 | orchestrator  | `127.0.0.1:3100` |
+| eve-runner    | `127.0.0.1:3210` |
 | kit-harness   | `127.0.0.1:3200` |
 | laya          | `127.0.0.1:8000` |
 | caveman-proxy | `127.0.0.1:8787` |
@@ -53,7 +54,7 @@ Hetzner Cloud Firewall, inbound:
 
 - `22/tcp` from operator addresses only. Keep fail2ban on SSH.
 - `80/tcp` and `443/tcp` only after profile `edge` is enabled.
-- No inbound rule for `3200`, `4000`, `3100`, `5432`, `6379`, `8000`, or `8787`.
+- No inbound rule for `3200`, `3210`, `4000`, `3100`, `5432`, `6379`, `8000`, or `8787`.
 
 ## Install the unit
 
@@ -124,7 +125,7 @@ Ciphertext, the age key, and plaintext `.env` stay on the host. See [docs/secret
 - [ ] `CURSOR_API_KEY` is set when the Cursor adapter runs on the box.
 - [ ] `OPTIO_NEW_BACKUP_REPO` and `OPTIO_NEW_BACKUP_PASSWORD` are set before the Storage Box timer.
 - [ ] `OPTIO_NEW_HARNESS_URL` stays `http://127.0.0.1:3200`. kit-harness has no public name.
-- [ ] DNS: no public record for port `3200`, `4000`, `3100`, `5432`, or `6379`.
+- [ ] DNS: no public record for port `3200`, `3210`, `4000`, `3100`, `5432`, or `6379`.
 - [ ] DNS: `OPTIO_NEW_WEBHOOK_HOST` has an A/AAAA to this VPS only when profile `edge` is enabled.
 - [ ] Hetzner Cloud Firewall matches the inbound list above.
 - [ ] Plaintext `.env` is removed only after `check` and a healthy `compose up` (see the secrets runbook).
