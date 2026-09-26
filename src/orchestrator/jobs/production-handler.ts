@@ -8,6 +8,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import type { CodingAgent, CodingAgentInput } from "../../adapters/coding-agent.js";
+import { defaultPermissionForStep } from "../../kit-harness/permissions.js";
 import { createCodingAgent, resolveCodingBackend } from "../../adapters/select.js";
 import type { ModelAdapter } from "../../agent/adapter.js";
 import { createEnvModelAdapter } from "../../agent/env-adapter.js";
@@ -360,14 +361,14 @@ function codingInput(
   timeoutMs: number,
   maxTokens?: number,
 ): CodingAgentInput {
-  const review = ctx.step === "invoke_review";
+  const permission_tier = defaultPermissionForStep(ctx.step);
+  const readOnly = permission_tier === "read-only";
   return {
     worktree_path: handle.path,
     prompt: taskPrompt(ctx),
-    instructions: review
-      ? "Review the worktree diff. Do not edit files, push, open a pull request, or merge."
-      : "Implement the task in this worktree and commit on the current branch. Do not push, open a pull request, or merge.",
-    allowed_tools: review ? ["read"] : ["shell", "edit", "write"],
+    instructions: instructionsFor(ctx.step),
+    allowed_tools: readOnly ? ["read"] : ["shell", "edit", "write"],
+    permission_tier,
     budget:
       maxTokens === undefined
         ? { maxWallClockMs: timeoutMs }
@@ -380,6 +381,16 @@ function codingInput(
       agent_id: `agents/${ctx.stage}`,
     },
   };
+}
+
+function instructionsFor(step: string): string {
+  if (step === "invoke_review") {
+    return "Review the worktree diff. Do not edit files, push, open a pull request, or merge.";
+  }
+  if (step === "invoke_planner") {
+    return "Write the plan only. Do not edit files, commit, push, open a pull request, or merge.";
+  }
+  return "Implement the task in this worktree and commit on the current branch. Do not push, open a pull request, or merge.";
 }
 
 function taskPrompt(ctx: StageStepContext): string {

@@ -245,6 +245,14 @@ export type {
   CodingAgentUsage,
 } from "./adapters/coding-agent.js";
 export {
+  PERMISSION_TIERS,
+  WORKFLOW_STAGE_PERMISSION,
+  authorizeAgentRun,
+  authorizeToolAction,
+  defaultPermissionForStep,
+  type PermissionTier,
+} from "./kit-harness/permissions.js";
+export {
   buildCodexGatewayConfig,
   codexAdapter,
   codexOpenAiBaseUrl,

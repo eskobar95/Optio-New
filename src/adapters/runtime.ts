@@ -215,6 +215,25 @@ export function credentialsFailure(
   };
 }
 
+/** The CLI is not started. `logs` and `observation` are the same sentence for the agent. */
+export function permissionDeniedRun(
+  provider: string,
+  input: CodingAgentInput,
+  observation: string,
+): CodingAgentOutput {
+  return {
+    pr_ready: false,
+    status: "failed",
+    error_class: "permission_denied",
+    logs: observation,
+    observation,
+    usage: {
+      provider,
+      model_id: input.metadata.model_id,
+    },
+  };
+}
+
 interface RawUsage {
   input_tokens?: number;
   output_tokens?: number;

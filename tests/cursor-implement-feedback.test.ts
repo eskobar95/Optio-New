@@ -290,7 +290,7 @@ describe("Cursor implement prompt policy", () => {
     });
 
     await agent.run(input("invoke_implementation"));
-    await agent.run(input("invoke_review"));
+    await agent.run({ ...input("invoke_review"), allowed_tools: ["read"] });
 
     expect(calls[0]?.args.at(-1)).toBe(
       `follow the spec\n\nimplement the seam\n\n${CURSOR_IMPLEMENT_ACI_POLICY}`,

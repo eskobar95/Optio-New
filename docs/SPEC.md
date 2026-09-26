@@ -511,6 +511,7 @@ Thin interface implemented once per provider:
 - `worktree_path` — absolute path to the issue worktree (cwd for the run)
 - `prompt` / `instructions` — task brief + active skill excerpts already resolved by the harness
 - `allowed_tools` — harness policy (e.g. edit, shell, git, no network) mapped to provider capabilities
+- `permission_tier` — optional ceiling: `read-only`, `edit-worktree`, `git-push`, or `host-admin`. Omitted means the stage default (§13.8). `host-admin` is never implied
 - `budget` — max tokens, max wall-clock, max tool rounds, optional USD cap
 - `metadata` — `task_id`, `worktree_id`, `workflow_id`, `step_id`, `agent_id`, `model_id`
 
@@ -519,7 +520,8 @@ Thin interface implemented once per provider:
 - `branch` / remote ref used (usually the issue branch already checked out)
 - `diff_summary` — files changed, optional unified diff or commit SHAs
 - `pr_ready` — whether the adapter pushed / prepared a PR tip (orchestrator opens/updates PR)
-- `logs` — structured run log path or stream handle
+- `logs` — structured run log path or stream handle. On a permission deny this is the observation the agent reads
+- `observation` — present when the tier blocks the run (`error_class: permission_denied`). The CLI is not started
 - `usage` — `{ input_tokens, output_tokens, cached_tokens?, cost_usd?, model_id, provider }`
 - `status` — `succeeded` | `failed` | `cancelled` | `budget_exhausted` | `rate_limited`
 - `error_class` — optional fingerprint-friendly class for §10
@@ -597,6 +599,12 @@ The semaphore lives in `src/orchestrator/sessions` (`createSessionGate`). Caps: 
 ### 13.7 Relation to Eve
 
 Eve agents/specialists decide _what_ to do (plan, load skills, call specialists). When a step needs code mutation, the orchestrator calls `CodingAgent.run(...)` with the active worktree. Review/merge steps may use a coding backend for analysis-only (read tools) or skip the adapter and use harness tools only — configured per step.
+
+### 13.8 Permission tiers
+
+Shell, git, and host actions use four tiers: `read-only`, `edit-worktree`, `git-push`, `host-admin`. Defaults: planner and review are `read-only`; implementation is `edit-worktree`; ready and merge are `git-push`. Unknown steps are `read-only`. `host-admin` is explicit only.
+
+The CodingAgent adapter and the kit-harness tool gate both enforce the tier. A deny returns an `observation` and does not run the action. Sops keys, `/root`, and `docker.sock` stay blocked unless the tier is `host-admin`. Force-push, protected-branch push, `rm -rf`, and ordinary secret reads stay denied on every tier. See [permission-tiers.md](permission-tiers.md).
 
 ---
 

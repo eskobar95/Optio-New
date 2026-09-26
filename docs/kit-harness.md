@@ -18,7 +18,9 @@ Work lives on **`harness/staging`**. The pull request into `main` stays a draft 
 | loop-detect      | failure window from the caller | `loop_detected` plus `stop` or `replan`            |
 | split-or-proceed | size and signals               | `proceed` \| `split` with subtasks                 |
 
-Hard rules win. A closed quota, an empty budget, a secret path, a destructive command, an allow-list miss, and open blockers never flip because an advisor said otherwise. Missing Hop 1 evidence fails closed (`deny` / `undecided`).
+Hard rules win. A closed quota, an empty budget, a secret path, a destructive command, an allow-list miss, a permission-tier miss, and open blockers never flip because an advisor said otherwise. Missing Hop 1 evidence fails closed (`deny` / `undecided`).
+
+Permission tiers (`read-only`, `edit-worktree`, `git-push`, `host-admin`) cap shell, git, and host actions. The default with no `permission_tier` and no known `step_id` is `read-only`. `host-admin` is the only tier that may touch sops keys, `/root`, or `docker.sock`. A deny sets `reason` to `permission_denied` and `observation` to a sentence the agent can read. Stage defaults are in [permission-tiers.md](permission-tiers.md).
 
 Hop 1 default when **both** quotas are open: `cursor_subscription` (`rules_default_cursor`). A step `coding_backend` of `cursor` or `codex` overrides that. There is no Cursor RPC proxy here (SPEC §14.1).
 

@@ -2,6 +2,9 @@
  * kit-harness decision types (SPEC §9, §14.4 Hop 1).
  * New Bot stays intake. These calls do not enqueue BullMQ work.
  */
+import type { PermissionTier } from "./permissions.js";
+
+export type { PermissionTier };
 
 export type DecisionEngine = "rules" | "jev";
 
@@ -65,6 +68,11 @@ export interface ToolContext {
   path?: string;
   args?: Record<string, unknown>;
   allowed_tools?: string[];
+  /**
+   * Explicit ceiling. Omitted uses the stage default for `step_id`,
+   * or `read-only` when the step is unknown.
+   */
+  permission_tier?: PermissionTier;
 }
 
 export interface ToolAllowance {
@@ -79,6 +87,8 @@ export interface ToolGateDecision {
   reason: string;
   engine: DecisionEngine;
   allowance?: ToolAllowance;
+  /** Present on a permission deny. The agent reads this instead of a bare reason code. */
+  observation?: string;
 }
 
 export interface CompletionEvidence {

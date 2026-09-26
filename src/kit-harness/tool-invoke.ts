@@ -9,6 +9,8 @@ export interface ToolInvokeResult {
   status: "ok" | "cancel" | "deny";
   reason: string;
   tool: string;
+  /** Set when the gate denies for a permission tier. */
+  observation?: string;
 }
 
 export async function invokeGuardedTool(input: {
@@ -19,7 +21,12 @@ export async function invokeGuardedTool(input: {
 }): Promise<ToolInvokeResult> {
   const gate = await decideTool(input.tool, input.context ?? {});
   if (gate.decision === "deny") {
-    return { status: "deny", reason: gate.reason, tool: input.tool };
+    return {
+      status: "deny",
+      reason: gate.reason,
+      tool: input.tool,
+      ...(gate.observation ? { observation: gate.observation } : {}),
+    };
   }
 
   const controller = new AbortController();

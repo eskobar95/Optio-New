@@ -2,6 +2,13 @@
  * Tool allow / confirm / deny.
  * Hard deny (secrets, destructive ops, allow-list misses) never calls the advisor.
  */
+import {
+  actionText,
+  authorizeToolAction,
+  hostResource,
+  isReadOnlyShellCommand,
+  resolveGrantedTier,
+} from "./permissions.js";
 import { reserveToolAllowance } from "./allowance.js";
 import { recordDeniedTool } from "./audit.js";
 import { confidentChoice, consultAdvisor } from "./advisor.js";
@@ -49,20 +56,17 @@ const ALLOW_TOOLS = new Set([
   "list_dir",
 ]);
 
-const INSPECTED_ARG_KEYS = ["command", "cmd", "path", "file", "filename", "target", "url"];
-
 const SAFE_SHELL = /^(?:npm|pnpm|yarn)\s+(?:test|run\s+(?:test|typecheck|lint|ci))\b/;
 
 const PROTECTED_BRANCHES = new Set(["main", "master", "development"]);
 
 function inspectedText(tool: string, context: ToolContext): string {
-  const parts = [tool, context.command ?? "", context.path ?? ""];
-  const args = context.args ?? {};
-  for (const key of INSPECTED_ARG_KEYS) {
-    const value = args[key];
-    if (typeof value === "string") parts.push(value);
-  }
-  return parts.join("\n");
+  return actionText({
+    tool,
+    command: context.command,
+    path: context.path,
+    args: context.args,
+  });
 }
 
 function isSecret(text: string): boolean {
@@ -146,6 +150,10 @@ function ruled(
   return { decision, hard, reason, engine };
 }
 
+function permissionDeny(observation: string): ToolGateDecision {
+  return { ...ruled("deny", "permission_denied", true), observation };
+}
+
 async function evaluateTool(
   name: string,
   context: ToolContext,
@@ -153,14 +161,43 @@ async function evaluateTool(
 ): Promise<ToolGateDecision> {
   const text = inspectedText(name, context);
   if (HARD_DENY_TOOLS.has(name)) return ruled("deny", "hard_deny_tool", true);
-  if (isSecret(text)) return ruled("deny", "hard_deny_secret", true);
   if (isDestructive(text)) return ruled("deny", "hard_deny_destructive", true);
   if (isSelfConfigMutation(name, context)) return ruled("deny", "self_config_mutation", true);
+
+  const granted = resolveGrantedTier({
+    permissionTier: context.permission_tier,
+    stepId: context.step_id,
+  });
+  if (!granted.ok) return permissionDeny(granted.observation);
+
+  const host = hostResource(text);
+  if (host && granted.tier !== "host-admin") {
+    const auth = authorizeToolAction({
+      tier: granted.tier,
+      tool: name,
+      command: context.command,
+      path: context.path,
+      args: context.args,
+    });
+    if (!auth.ok) return permissionDeny(auth.observation);
+  }
+  if (!(host && granted.tier === "host-admin") && isSecret(text)) {
+    return ruled("deny", "hard_deny_secret", true);
+  }
 
   if (context.allowed_tools) {
     const allowed = new Set(context.allowed_tools.map(normalizeToken));
     if (!allowed.has(name)) return ruled("deny", "not_in_allowlist", true);
   }
+
+  const auth = authorizeToolAction({
+    tier: granted.tier,
+    tool: name,
+    command: context.command,
+    path: context.path,
+    args: context.args,
+  });
+  if (!auth.ok) return permissionDeny(auth.observation);
 
   const budget = reserveToolAllowance(context);
   if (budget?.exceeded) {
@@ -181,6 +218,9 @@ async function evaluateTool(
   const command = context.command ?? "";
   if ((name === "shell" || name === "bash") && SAFE_SHELL.test(command.trim())) {
     return stamp(ruled("allow", "safe_command", false));
+  }
+  if ((name === "shell" || name === "bash") && isReadOnlyShellCommand(command)) {
+    return stamp(ruled("allow", "read_only_command", false));
   }
   if (needsConfirm(name, text)) return stamp(ruled("confirm", "confirm_tool", false));
   if (ALLOW_TOOLS.has(name)) return stamp(ruled("allow", "allow_tool", false));

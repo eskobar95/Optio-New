@@ -21,12 +21,15 @@ describe("decideTool", () => {
     expect(path).toMatchObject({ decision: "deny", reason: "hard_deny_secret", hard: true });
 
     const command = await decideTool("shell", { command: "cat secrets/age.key" });
-    expect(command.reason).toBe("hard_deny_secret");
+    expect(command.reason).toBe("permission_denied");
+    expect(command.observation).toMatch(/was not executed/);
+    expect(command.observation).toMatch(/host-admin/);
   });
 
   it("does not treat file body text as a path", async () => {
     const decision = await decideTool("write_file", {
       path: "src/app.ts",
+      permission_tier: "edit-worktree",
       args: { content: "const note = '.env is gitignored';" },
     });
     expect(decision.decision).toBe("allow");
@@ -47,15 +50,24 @@ describe("decideTool", () => {
   });
 
   it("confirms an ordinary feature push", async () => {
-    const decision = await decideTool("git_push", { command: "git push origin feature/kit" });
+    const decision = await decideTool("git_push", {
+      command: "git push origin feature/kit",
+      permission_tier: "git-push",
+    });
     expect(decision).toMatchObject({ decision: "confirm", reason: "confirm_tool", hard: false });
   });
 
   it("allows a test command and confirms curl", async () => {
-    const tests = await decideTool("shell", { command: "npm test" });
+    const tests = await decideTool("shell", {
+      command: "npm test",
+      permission_tier: "edit-worktree",
+    });
     expect(tests).toMatchObject({ decision: "allow", reason: "safe_command" });
 
-    const curl = await decideTool("shell", { command: "curl https://example.com" });
+    const curl = await decideTool("shell", {
+      command: "curl https://example.com",
+      permission_tier: "edit-worktree",
+    });
     expect(curl.decision).toBe("confirm");
   });
 

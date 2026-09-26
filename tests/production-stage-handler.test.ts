@@ -167,7 +167,8 @@ describe("production stage handler", () => {
     expect(calls[0]?.metadata.step_id).toBe("invoke_planner");
     expect(calls[0]?.prompt).toContain("Open a PR");
     expect(calls[0]?.prompt).toContain("marker only");
-    expect(calls[0]?.allowed_tools).toEqual(["shell", "edit", "write"]);
+    expect(calls[0]?.allowed_tools).toEqual(["read"]);
+    expect(calls[0]?.permission_tier).toBe("read-only");
   });
 
   it("fails a missing Cursor CLI instead of acking the step", async () => {
@@ -232,6 +233,12 @@ describe("production stage handler", () => {
       "invoke_implementation",
       "invoke_review",
     ]);
+    expect(agentCalls.map((call) => call.permission_tier)).toEqual([
+      "read-only",
+      "edit-worktree",
+      "read-only",
+    ]);
+    expect(agentCalls[1]?.allowed_tools).toEqual(["shell", "edit", "write"]);
     expect(agentCalls[2]?.allowed_tools).toEqual(["read"]);
     expect(github.calls.some((call) => call.method === "POST" && call.url.endsWith("/pulls"))).toBe(
       true,

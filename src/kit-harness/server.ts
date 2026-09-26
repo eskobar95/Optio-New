@@ -10,6 +10,7 @@ import { runStubbedFlow } from "./flow.js";
 import { detectLoop } from "./loop-detect.js";
 import { routeModel } from "./model-routing.js";
 import { splitOrProceed } from "./split-or-proceed.js";
+import { PERMISSION_TIERS } from "./permissions.js";
 import { decideTool } from "./tool-gate.js";
 import { invokeGuardedTool } from "./tool-invoke.js";
 import type { DecisionAdvisor } from "./types.js";
@@ -44,6 +45,7 @@ const ToolGateBody = z
         max_tool_calls: z.number().int().positive().optional(),
         args: z.record(z.unknown()).optional(),
         allowed_tools: z.array(z.string()).optional(),
+        permission_tier: z.enum(PERMISSION_TIERS).optional(),
       })
       .strict()
       .optional(),
@@ -91,6 +93,8 @@ const InvokeBody = z
         path: z.string().optional(),
         command: z.string().optional(),
         agent_id: z.string().optional(),
+        step_id: z.string().optional(),
+        permission_tier: z.enum(PERMISSION_TIERS).optional(),
       })
       .strict()
       .optional(),
