@@ -11,7 +11,10 @@ import { executeCli } from "../src/eve/cli.js";
 import { startEveHttpServer } from "../src/eve/http.js";
 import { runEveStep } from "../src/eve/run-step.js";
 import { createWorktreeSandbox, SandboxEscapeError } from "../src/eve/sandbox.js";
-import { SkillBudgetDeniedError, createWorkflowSkillLoader } from "../src/eve/skill-loader.js";
+import {
+  SkillBudgetDeniedError,
+  createWorkflowSkillLoader,
+} from "../src/orchestrator/skills/loader.js";
 import { runEveStageStep } from "../src/orchestrator/jobs/stage-worker.js";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -236,7 +239,6 @@ describe("runner ownership", () => {
     const eveDir = path.join(repoRoot, "src", "eve");
     const files = [
       "contract.ts",
-      "skill-loader.ts",
       "sandbox.ts",
       "assemble.ts",
       "run-step.ts",

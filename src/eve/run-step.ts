@@ -31,6 +31,7 @@ import {
   createWorkflowSkillLoader,
   type WorkflowSkillLoader,
 } from "../orchestrator/skills/loader.js";
+import { createSkillStageHook } from "../orchestrator/worktrees/stage-hooks.js";
 import { createWorktreeSandbox } from "./sandbox.js";
 
 export interface EveRunOptions {
@@ -65,6 +66,7 @@ export async function runEveStep(
   const loader = options.skillLoader ?? createWorkflowSkillLoader({ repoRoot });
   const { loaded, denied } = await loadStepSkills(
     loader,
+    input.taskId,
     input.stepId,
     input.skillBudget,
     worktreePath,
@@ -138,6 +140,7 @@ export async function runEveStep(
 
 async function loadStepSkills(
   loader: WorkflowSkillLoader,
+  taskId: string,
   stepId: string,
   skillBudget: readonly string[],
   worktreePath: string,
@@ -161,7 +164,12 @@ async function loadStepSkills(
     if (allow.includes(id)) active.push(id);
     else denied.push({ id, reason: "outside_budget" });
   }
-  await loader.seed(worktreePath, active);
+  await createSkillStageHook(loader).onCreate({
+    taskId,
+    worktreePath,
+    stepId,
+    plannerSelection: skillBudget,
+  });
   const loaded: { id: string; path: string; body: string }[] = [];
   for (const id of active) {
     try {

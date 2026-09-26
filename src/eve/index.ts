@@ -17,7 +17,7 @@ export {
   createWorkflowSkillLoader,
   type WorkflowLoadedSkill,
   type WorkflowSkillLoader,
-} from "./skill-loader.js";
+} from "../orchestrator/skills/loader.js";
 export { createWorktreeSandbox, resolveInsideWorktree, SandboxEscapeError } from "./sandbox.js";
 export { readExitGates } from "./assemble.js";
 export { runEveStep, type EveRunOptions } from "./run-step.js";
