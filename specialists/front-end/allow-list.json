@@ -1,0 +1,5 @@
+{
+  "id": "specialists/front-end",
+  "tools": ["read_file", "grep", "glob", "edit_file", "write_file", "list_dir"],
+  "skills": ["skills/tdd", "skills/codebase-design"]
+}

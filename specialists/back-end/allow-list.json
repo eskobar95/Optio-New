@@ -1,0 +1,16 @@
+{
+  "id": "specialists/back-end",
+  "tools": [
+    "read_file",
+    "grep",
+    "glob",
+    "edit_file",
+    "write_file",
+    "list_dir",
+    "bash",
+    "run_tests",
+    "typecheck",
+    "lint"
+  ],
+  "skills": ["skills/tdd", "skills/diagnosing-bugs"]
+}

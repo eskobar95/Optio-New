@@ -1,0 +1,5 @@
+{
+  "id": "specialists/devops",
+  "tools": ["read_file", "grep", "glob", "edit_file", "write_file", "list_dir", "bash", "lint"],
+  "skills": ["skills/diagnosing-bugs"]
+}
