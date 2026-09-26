@@ -164,6 +164,10 @@ Runbook: [docs/ops/postgres-storagebox-backup.md](ops/postgres-storagebox-backup
 
 Infisical is still not installed on this host. A later swap keeps these key names and points the timer at `infisical run` instead of `secrets.sh run`. Do not commit the token.
 
+## Log and trace redaction
+
+Stage logs, exported spans, and agent dumps strip secret values before they are written. How to check that on the kit-harness host: [docs/ops/secret-redaction.md](ops/secret-redaction.md).
+
 ## CI
 
 GitHub Actions does not receive production env files and does not enable step debug. `bash scripts/secrets.sh audit` runs from `scripts/smoke-local.sh` and from Vitest. It checks gitignore rules and tracked paths, and it searches tracked files for private-key markers. Matches print the path only.

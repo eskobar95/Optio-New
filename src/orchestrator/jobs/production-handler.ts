@@ -26,6 +26,7 @@ import {
   type StageStepContext,
   type StageStepHandler,
 } from "./run-stage.js";
+import { logStageEvent } from "./stage-log.js";
 
 export class StageCredentialsError extends Error {
   readonly error_class = "missing_credentials";
@@ -176,15 +177,13 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
   async function recordGitSummary(ctx: StageStepContext): Promise<void> {
     const handle = await requireWorktree(ctx);
     const summary = await git(handle.path, ["status", "--short"], []);
-    console.log(
-      JSON.stringify({
-        msg: "git summary",
-        taskId: ctx.taskId,
-        stage: ctx.stage,
-        step: ctx.step,
-        summary,
-      }),
-    );
+    logStageEvent({
+      msg: "git summary",
+      taskId: ctx.taskId,
+      stage: ctx.stage,
+      step: ctx.step,
+      summary,
+    });
   }
 
   async function openPullRequest(ctx: StageStepContext): Promise<void> {
@@ -216,14 +215,12 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       }),
     );
     await writePullRecord(handle, { ...opened, head: handle.branch, base: baseBranch });
-    console.log(
-      JSON.stringify({
-        msg: "pull request opened",
-        taskId: ctx.taskId,
-        url: opened.url,
-        number: opened.number,
-      }),
-    );
+    logStageEvent({
+      msg: "pull request opened",
+      taskId: ctx.taskId,
+      url: opened.url,
+      number: opened.number,
+    });
   }
 
   async function waitForCi(ctx: StageStepContext): Promise<void> {
@@ -246,7 +243,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
 
   async function mergePullRequest(ctx: StageStepContext): Promise<void> {
     if (E2E_TASK.test(ctx.taskId)) {
-      console.log(JSON.stringify({ msg: "e2e pull request left unmerged", taskId: ctx.taskId }));
+      logStageEvent({ msg: "e2e pull request left unmerged", taskId: ctx.taskId });
       return;
     }
     const github = requireGithub();
@@ -261,9 +258,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
         fetchImpl,
       }),
     );
-    console.log(
-      JSON.stringify({ msg: "pull request merged", taskId: ctx.taskId, number: stored.number }),
-    );
+    logStageEvent({ msg: "pull request merged", taskId: ctx.taskId, number: stored.number });
   }
 
   async function writeE2eMarker(

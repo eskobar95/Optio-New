@@ -8,7 +8,7 @@ The worker does **not** rewrite production gates, `workflows/*.yaml`, skill file
 
 Migration: `state/migrations/002_learnings.sql` (`learnings`).
 
-Fingerprint = SHA-256 of workflow, step, sorted skill ids, sorted specialist ids, error class, and field tag. The same failure in another session increments the row. Excerpts are redacted (database URLs, bearer tokens, `sk-` / `ghp_` keys) before they are stored.
+Fingerprint = SHA-256 of workflow, step, sorted skill ids, sorted specialist ids, error class, and field tag. The same failure in another session increments the row. Excerpts go through the shared redactor (`src/security/redact.ts`) before they are stored. See [docs/ops/secret-redaction.md](ops/secret-redaction.md).
 
 Default threshold is **3 hits inside 14 days** (`OPTIO_LEARN_THRESHOLD`, `OPTIO_LEARN_WINDOW_DAYS`). `status` becomes `proposed`. `proposal_body` is the GitHub meta-issue template (`meta/self-improve`). `recommendation` is the budget proposal stored for the planner. Neither field changes review-gate pass/fail or skill allow-lists.
 

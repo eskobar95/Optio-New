@@ -19,6 +19,7 @@ import {
   type ReadableSpan,
   type SpanExporter,
 } from "@opentelemetry/sdk-trace-base";
+import { redactError, redactSecrets } from "../../security/redact.js";
 import {
   loadTelemetryExportConfig,
   resolveExporterTargets,
@@ -65,13 +66,13 @@ export interface StageTracerOptions {
 
 function attributesOf(fields: SpanFields): Record<string, string> {
   const attributes: Record<string, string> = {
-    task_id: fields.taskId,
-    worktree_id: fields.worktreeId ?? "",
+    task_id: redactSecrets(fields.taskId),
+    worktree_id: redactSecrets(fields.worktreeId ?? ""),
   };
   if (fields.attributes) {
     for (const [key, value] of Object.entries(fields.attributes)) {
       if (key === "task_id" || key === "worktree_id") continue;
-      attributes[key] = value;
+      attributes[key] = redactSecrets(value);
     }
   }
   return attributes;
@@ -80,9 +81,9 @@ function attributesOf(fields: SpanFields): Record<string, string> {
 function toFinished(span: ReadableSpan): FinishedSpan {
   const attributes: Record<string, string> = {};
   for (const [key, value] of Object.entries(span.attributes)) {
-    if (typeof value === "string") attributes[key] = value;
+    if (typeof value === "string") attributes[key] = redactSecrets(value);
     else if (typeof value === "number" || typeof value === "boolean")
-      attributes[key] = String(value);
+      attributes[key] = redactSecrets(String(value));
   }
   if (attributes.task_id === undefined) attributes.task_id = "";
   if (attributes.worktree_id === undefined) attributes.worktree_id = "";
@@ -129,14 +130,14 @@ export function createStageTracer(options: StageTracerOptions = {}): StageTracer
       let failMessage: string | undefined;
       const active: ActiveSpan = {
         setAttribute(key, value) {
-          span.setAttribute(key, value);
+          span.setAttribute(key, redactSecrets(value));
         },
         setName(next) {
           span.updateName(next);
         },
         fail(message) {
           failed = true;
-          failMessage = message;
+          failMessage = message ? redactSecrets(message) : message;
         },
       };
       try {
@@ -148,13 +149,14 @@ export function createStageTracer(options: StageTracerOptions = {}): StageTracer
         }
         return result;
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (error instanceof Error) {
-          span.setAttribute("error_class", error.name);
-          span.recordException(error);
+        const safe = redactError(error);
+        const message = safe instanceof Error ? safe.message : redactSecrets(String(error));
+        if (safe instanceof Error) {
+          span.setAttribute("error_class", safe.name);
+          span.recordException(safe);
         }
         span.setStatus({ code: SpanStatusCode.ERROR, message });
-        throw error;
+        throw safe;
       } finally {
         span.end();
       }

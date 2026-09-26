@@ -2,6 +2,7 @@
  * GitHub pull requests for the ready/open_pr step.
  * Token and repo come from the caller. This module does not read process.env.
  */
+import { redactSecrets } from "../../security/redact.js";
 export class GithubRequestError extends Error {
   readonly status: number;
 
@@ -194,7 +195,7 @@ function record(value: unknown): Record<string, unknown> | undefined {
 }
 
 export function redact(text: string, secrets: readonly string[]): string {
-  let out = text;
+  let out = redactSecrets(text);
   for (const secret of secrets) {
     if (!secret) continue;
     out = out.split(secret).join("[redacted]");

@@ -60,6 +60,15 @@ export {
   type TelemetryExportConfig,
 } from "./orchestrator/telemetry/index.js";
 export {
+  REDACTED,
+  SECRET_ENV_NAMES,
+  formatAgentDump,
+  formatStageLog,
+  redactError,
+  redactSecrets,
+  redactValue,
+} from "./security/redact.js";
+export {
   HELLO_WORLD_RESPONSE,
   processHelloWorld,
   readPlanStage,

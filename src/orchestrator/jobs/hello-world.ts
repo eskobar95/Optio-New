@@ -4,6 +4,7 @@
  * proof is scripts/hello-world-e2e.sh. runHelloWorldPlan is the in-process proof.
  */
 import type { FlowJob } from "bullmq";
+import { redactSecrets } from "../../security/redact.js";
 import { enqueueIntakePipeline } from "./enqueue-pipeline.js";
 import { InMemoryStepCursorStore, type StepCursorStatus, type StepCursorStore } from "./cursor.js";
 import { processStageJob } from "./run-stage.js";
@@ -45,7 +46,7 @@ export interface HelloWorldPlanProof {
 }
 
 export async function processHelloWorld(taskId: string): Promise<{ ok: true; taskId: string }> {
-  console.log(`[optio-new] hello-world ack taskId=${taskId}`);
+  console.log(redactSecrets(`[optio-new] hello-world ack taskId=${taskId}`));
   return { ok: true, taskId };
 }
 

@@ -13,6 +13,7 @@ import { createPgStepCursorStore } from "./jobs/cursor.js";
 import { createProductionStageHandler } from "./jobs/production-handler.js";
 import { createPgStageRunStore, createStageRunLog } from "./observability/run-log.js";
 import { bullmqStageWorkerFactory, startStageGraph } from "./jobs/workers.js";
+import { logStageEvent } from "./jobs/stage-log.js";
 import { readOrchestratorPort, redisConnectionOptions } from "./redis.js";
 import { getStageTracer } from "./telemetry/index.js";
 import { createWorktreeManagerFromEnv } from "./worktrees/config.js";
@@ -30,18 +31,16 @@ export async function startOrchestrator(): Promise<void> {
   const stageRuns = await createPgStageRunStore(databaseUrl);
   const runLog = createStageRunLog(stageRuns);
   const worktrees = createWorktreeManagerFromEnv(process.env, getStageTracer());
-  console.log(
-    JSON.stringify({
-      msg: "orchestrator stage handler",
-      cursorApiKey: Boolean(process.env.CURSOR_API_KEY?.trim()),
-      githubToken: Boolean(process.env.OPTIO_NEW_GITHUB_TOKEN?.trim()),
-      githubRepo: Boolean(process.env.OPTIO_NEW_GITHUB_REPO?.trim()),
-      modelApiKey: Boolean(process.env.MODEL_API_KEY?.trim()),
-      modelEndpoint: Boolean(process.env.MODEL_ENDPOINT?.trim()),
-      worktreeRoot: process.env.OPTIO_NEW_WORKTREE_ROOT?.trim() || "/var/lib/optio-new/worktrees",
-      retainOnFailure: process.env.OPTIO_NEW_WORKTREE_RETAIN_ON_FAILURE?.trim() !== "false",
-    }),
-  );
+  logStageEvent({
+    msg: "orchestrator stage handler",
+    cursorApiKey: Boolean(process.env.CURSOR_API_KEY?.trim()),
+    githubToken: Boolean(process.env.OPTIO_NEW_GITHUB_TOKEN?.trim()),
+    githubRepo: Boolean(process.env.OPTIO_NEW_GITHUB_REPO?.trim()),
+    modelApiKey: Boolean(process.env.MODEL_API_KEY?.trim()),
+    modelEndpoint: Boolean(process.env.MODEL_ENDPOINT?.trim()),
+    worktreeRoot: process.env.OPTIO_NEW_WORKTREE_ROOT?.trim() || "/var/lib/optio-new/worktrees",
+    retainOnFailure: process.env.OPTIO_NEW_WORKTREE_RETAIN_ON_FAILURE?.trim() !== "false",
+  });
   const workers = startStageGraph(
     {
       cursors,
@@ -54,7 +53,7 @@ export async function startOrchestrator(): Promise<void> {
 
   const flow = new FlowProducer({ connection });
   flow.on("error", (error: Error) => {
-    console.error(JSON.stringify({ msg: "flow error", error: error.message }));
+    logStageEvent({ msg: "flow error", error: error.message }, console.error);
   });
 
   const redis = new Redis(redisUrl, {
@@ -63,7 +62,7 @@ export async function startOrchestrator(): Promise<void> {
     enableOfflineQueue: false,
   });
   redis.on("error", (error: Error) => {
-    console.error(JSON.stringify({ msg: "redis health error", error: error.message }));
+    logStageEvent({ msg: "redis health error", error: error.message }, console.error);
   });
 
   const server = createIntakeServer({
@@ -87,13 +86,13 @@ export async function startOrchestrator(): Promise<void> {
     server.listen(port, "0.0.0.0", () => resolve());
   });
 
-  console.log(JSON.stringify({ msg: "orchestrator listening", port }));
+  logStageEvent({ msg: "orchestrator listening", port });
 
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.log(JSON.stringify({ msg: "orchestrator stopping", signal }));
+    logStageEvent({ msg: "orchestrator stopping", signal });
     server.close();
     await Promise.all(workers.map((worker) => worker.close()));
     await flow.close();
@@ -112,11 +111,12 @@ export async function startOrchestrator(): Promise<void> {
 }
 
 startOrchestrator().catch((error: unknown) => {
-  console.error(
-    JSON.stringify({
+  logStageEvent(
+    {
       msg: "orchestrator failed to start",
       error: error instanceof Error ? error.message : "unknown",
-    }),
+    },
+    console.error,
   );
   process.exit(1);
 });

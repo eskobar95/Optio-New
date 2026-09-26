@@ -21,9 +21,9 @@ v1 uses one OpenTelemetry path. Spans are always recorded in-process. Export is 
 
 ## Spans
 
-`processStageJob` emits `workflow.step` for plan → implement → review → ready → merge. Each span has `task_id` and `worktree_id` (`""` until a worktree exists). `agent.run` and `skill.load` nest under the stage. `enqueueIntakePipeline` emits `intake.webhook`. Kit-harness tool gates emit `gate.pass` or `gate.fail`. Cursor and Codex `run` emit `agent.run` around the CLI call; a non-succeeded status fails the span and still returns the adapter result. When the CLI JSON includes usage, that span also carries `provider`, `model_id`, `input_tokens`, `output_tokens`, `cached_tokens`, and `cost_usd`.
+`processStageJob` emits `workflow.step` for plan → implement → review → ready → merge. Each span has `task_id` and `worktree_id` (`""` until a worktree exists). `agent.run` and `skill.load` nest under the stage. `enqueueIntakePipeline` emits `intake.webhook`. Kit-harness tool gates emit `gate.pass` or `gate.fail`. Cursor and Codex `run` emit `agent.run` around the CLI call; a non-succeeded status fails the span and still returns the adapter result. When the CLI JSON includes usage, that span also carries `provider`, `model_id`, `input_tokens`, `output_tokens`, `cached_tokens`, and `cost_usd`. Span attributes, status messages, and exception events are redacted before export. See [docs/ops/secret-redaction.md](ops/secret-redaction.md).
 
-Stage start/end, failure reason, token or cost rows, and per-step agent actions are stored on `pipeline_stage_run` and returned by `GET /tasks/:taskId/actions`. How to read a failed run: `docs/ops/read-failed-run.md`.
+Stage start/end, failure reason, token or cost rows, and per-step agent actions are stored on `pipeline_stage_run` and returned by `GET /tasks/:taskId/actions`. Failure reasons and action text are redacted before they are stored. How to read a failed run: `docs/ops/read-failed-run.md`.
 
 `session.queue` stays on `SessionTelemetry` (`src/orchestrator/sessions`). The session gate does not require an exporter.
 

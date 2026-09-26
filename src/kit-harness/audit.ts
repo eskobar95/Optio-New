@@ -2,6 +2,7 @@
  * Process-local audit of denied tool calls.
  * Stdout gets one JSON line per deny. GET /v1/audit returns the same entries.
  */
+import { redactSecrets } from "../security/redact.js";
 import type { ToolVerdict } from "./types.js";
 
 const MAX_ENTRIES = 100;
@@ -40,10 +41,10 @@ export function recordDeniedTool(input: Omit<ToolAuditEntry, "ts" | "decision">)
     ts: new Date().toISOString(),
     tool: input.tool,
     decision: "deny",
-    reason: input.reason,
+    reason: redactSecrets(input.reason),
     hard: input.hard,
-    command: clip(input.command),
-    agent_id: clip(input.agent_id),
+    command: clip(input.command ? redactSecrets(input.command) : undefined),
+    agent_id: clip(input.agent_id ? redactSecrets(input.agent_id) : undefined),
   };
   entries.push(entry);
   if (entries.length > MAX_ENTRIES) entries.shift();
