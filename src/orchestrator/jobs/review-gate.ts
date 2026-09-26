@@ -25,6 +25,11 @@ export const DEFAULT_REVIEW_GATE_ATTEMPTS = 3;
 
 export type ReviewGateEvidence = CompletionEvidence & {
   review_notes?: string;
+  /** Field tag for the learning worker. The completion check does not read it. */
+  field?: string;
+  skill_ids?: readonly string[];
+  specialist_ids?: readonly string[];
+  workflow_id?: string;
 };
 
 export type ReviewGateVerdict = "pass" | "fail" | "retry";

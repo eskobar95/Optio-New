@@ -2,7 +2,15 @@
  * Idempotent stage processor. Completed steps stay on the cursor; a crash retries the unfinished step.
  */
 import type { ModelAdapter } from "../../agent/adapter.js";
-import { runAgentLoop } from "../../agent/loop.js";
+import { DEFAULT_SKILL_BUDGET, runAgentLoop, type SkillLoader } from "../../agent/loop.js";
+import {
+  formatPlannerLearnings,
+  observationFromHandlerFailure,
+  observationFromReviewGate,
+  skillAdjustmentFromLearnings,
+  type LearningRecord,
+} from "../learning/index.js";
+import type { LearningSink } from "../learning/observation.js";
 import {
   CANONICAL_SPAN,
   getStageTracer,
@@ -66,6 +74,18 @@ export interface StageRuntime {
   tracer?: StageTracer;
   /** Empty string on the span when omitted (no worktree yet). */
   worktreeId?: string;
+  /** When set, review-gate and implementation failures are fingerprinted. */
+  learning?: LearningSink;
+  learningContext?: {
+    workflowId?: string;
+    field?: string;
+    skillIds?: readonly string[];
+    specialistIds?: readonly string[];
+  };
+}
+
+export interface StageLearningReader {
+  listForPlan(ctx: StageStepContext): Promise<LearningRecord[]>;
 }
 
 export interface StageJobResult {
@@ -95,10 +115,24 @@ function freshCursor(payload: StageJobPayload): StepCursor {
   };
 }
 
-export function createAgentStageHandler(adapter: ModelAdapter): StageStepHandler {
+export function createAgentStageHandler(
+  adapter: ModelAdapter,
+  options?: { learnings?: StageLearningReader; skillLoader?: SkillLoader },
+): StageStepHandler {
   return {
     async run(ctx) {
       const tracer = ctx.tracer ?? getStageTracer();
+      let prompt = `${ctx.stage}:${ctx.step} task=${ctx.taskId}`;
+      let skillBudget = DEFAULT_SKILL_BUDGET;
+      if (ctx.stage === "plan" && ctx.step === "invoke_planner" && options?.learnings) {
+        const records = await options.learnings.listForPlan(ctx);
+        const block = formatPlannerLearnings(records);
+        if (block) prompt = `${prompt}\n\n${block}`;
+        const { deprioritizeIds } = skillAdjustmentFromLearnings(records);
+        if (deprioritizeIds.length > 0) {
+          skillBudget = { ...DEFAULT_SKILL_BUDGET, deprioritizeIds };
+        }
+      }
       await tracer.runStage(
         CANONICAL_SPAN.agentRun,
         {
@@ -114,17 +148,32 @@ export function createAgentStageHandler(adapter: ModelAdapter): StageStepHandler
         () =>
           runAgentLoop(
             {
-              prompt: `${ctx.stage}:${ctx.step} task=${ctx.taskId}`,
+              prompt,
+              skillBudget,
               taskId: ctx.taskId,
               worktreeId: ctx.worktreeId,
               stepId: ctx.step,
               tracer,
             },
             adapter,
+            options?.skillLoader,
           ),
       );
     },
   };
+}
+
+async function recordLearning(
+  sink: LearningSink | undefined,
+  observation: Parameters<LearningSink["record"]>[0],
+): Promise<void> {
+  if (!sink) return;
+  try {
+    await sink.record(observation);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "learning record failed";
+    console.error(`[optio.learn] ${message}`);
+  }
 }
 
 export async function processStageJob(input: unknown, deps: StageRuntime): Promise<StageJobResult> {
@@ -191,6 +240,20 @@ async function executeStageJob(
     });
     const decision = await evaluateReviewGate(evidence, deps.reviewGate.advisor);
     if (decision.verdict !== "pass") {
+      await recordLearning(
+        deps.learning,
+        observationFromReviewGate({
+          taskId: payload.taskId,
+          sessionId: payload.sessionId,
+          reason: decision.reason,
+          attempt: decision.attempt,
+          reviewNotes: decision.review_notes,
+          field: evidence?.field,
+          skillIds: evidence?.skill_ids,
+          specialistIds: evidence?.specialist_ids,
+          workflowId: evidence?.workflow_id,
+        }),
+      );
       throw new ReviewGateClosedError(decision);
     }
   }
@@ -207,15 +270,35 @@ async function executeStageJob(
     if (!step) {
       throw new Error(`missing step ${index} for ${payload.stage}`);
     }
-    await handler.run({
-      taskId: payload.taskId,
-      sessionId: payload.sessionId,
-      stage: payload.stage,
-      step,
-      stepIndex: index,
-      worktreeId: deps.worktreeId,
-      tracer,
-    });
+    try {
+      await handler.run({
+        taskId: payload.taskId,
+        sessionId: payload.sessionId,
+        stage: payload.stage,
+        step,
+        stepIndex: index,
+        worktreeId: deps.worktreeId,
+        tracer,
+      });
+    } catch (error) {
+      if (payload.stage === "implement" || payload.stage === "review") {
+        await recordLearning(
+          deps.learning,
+          observationFromHandlerFailure({
+            taskId: payload.taskId,
+            sessionId: payload.sessionId,
+            stage: payload.stage,
+            step,
+            error,
+            field: deps.learningContext?.field,
+            skillIds: deps.learningContext?.skillIds,
+            specialistIds: deps.learningContext?.specialistIds,
+            workflowId: deps.learningContext?.workflowId,
+          }),
+        );
+      }
+      throw error;
+    }
     const finished = index + 1 >= steps.length;
     cursor = {
       ...cursor,

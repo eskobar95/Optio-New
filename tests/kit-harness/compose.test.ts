@@ -19,6 +19,7 @@ describe("kit-harness compose profile", () => {
   it("installs production dependencies without lifecycle scripts", () => {
     const dockerfiles = [
       "Dockerfile.kit-harness",
+      "Dockerfile.learning-worker",
       "Dockerfile.orchestrator",
       "Dockerfile.eve-runner",
     ];

@@ -131,6 +131,8 @@ Codex CLI ──► LiteLLM :4000 ──► provider / cache
 
 Workers are not clients of the sidecar yet. Until they are, BullMQ and LiteLLM behave as they do on `main`. Codex still uses LiteLLM for Hop 2 (`gateway/jev-router/`). kit-harness only answers Hop 1 and the gate questions above.
 
+The learning worker is a separate Compose profile (`learn`), not part of this sidecar. It fingerprints failures into Postgres and can open GitHub meta-issues. See [learning-worker.md](learning-worker.md). `docker compose --profile learn up -d --build learning-worker` after redis and postgres are up.
+
 Keep port 3200 on loopback and on the Compose network. Do not put it behind Caddy.
 
 ## Still needed for a Hetzner deploy

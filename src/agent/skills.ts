@@ -33,6 +33,11 @@ export interface SkillResolveInput {
 export interface SkillBudget {
   /** When set, ids outside this list are not loaded. */
   allowedIds?: readonly string[];
+  /**
+   * Rank these ids below other matches. Pins stay. The allow-list is not edited.
+   * Learning proposals set this; they do not rewrite production gates.
+   */
+  deprioritizeIds?: readonly string[];
   maxSkills: number;
   /** Shared character cap for all excerpts this turn. */
   maxExcerptChars: number;
@@ -121,8 +126,11 @@ function selectEntries(
     .filter((row) => row.score > 0)
     .sort((a, b) => b.score - a.score || a.entry.id.localeCompare(b.entry.id));
 
+  const deprioritized = new Set(budget.deprioritizeIds ?? []);
+  const preferred = ranked.filter((row) => !deprioritized.has(row.entry.id));
+  const pool = preferred.length > 0 ? preferred : ranked;
   const room = Math.max(budget.maxSkills - pins.length, 0);
-  return [...pins, ...ranked.slice(0, room).map((row) => row.entry)].slice(0, budget.maxSkills);
+  return [...pins, ...pool.slice(0, room).map((row) => row.entry)].slice(0, budget.maxSkills);
 }
 
 function scoreEntry(entry: CatalogEntry, promptTokens: string[]): number {

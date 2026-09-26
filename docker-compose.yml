@@ -3,6 +3,7 @@
 # A bare `docker compose up` uses ${VAR:-changeme} defaults, not the host ciphertext.
 # Default `up` (no profile): redis, postgres, litellm.
 # orchestrator is profiles `full` and `orchestrator`. eve-runner is profile `full` (stub).
+# learning-worker is profile `learn` (queue optio.learn).
 # Host ports: OPTIO_NEW_REDIS_HOST_PORT, OPTIO_NEW_POSTGRES_HOST_PORT, OPTIO_NEW_LITELLM_HOST_PORT.
 name: optio-new
 
@@ -147,6 +148,33 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+  # Failure fingerprints → learnings table and optional GitHub meta-issues (SPEC §10).
+  learning-worker:
+    profiles: ["learn"]
+    build:
+      context: .
+      dockerfile: Dockerfile.learning-worker
+    restart: unless-stopped
+    init: true
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      OPTIO_NEW_REDIS_URL: redis://redis:6379
+      OPTIO_NEW_DATABASE_URL: postgres://${OPTIO_NEW_POSTGRES_USER:-optio}:${OPTIO_NEW_POSTGRES_PASSWORD:-changeme}@postgres:5432/${OPTIO_NEW_POSTGRES_DB:-optio_new}
+      OPTIO_LEARN_THRESHOLD: ${OPTIO_LEARN_THRESHOLD:-3}
+      OPTIO_LEARN_WINDOW_DAYS: ${OPTIO_LEARN_WINDOW_DAYS:-14}
+      OPTIO_LEARN_FILE_GITHUB: ${OPTIO_LEARN_FILE_GITHUB:-0}
+      OPTIO_LEARN_GITHUB_REPO: ${OPTIO_LEARN_GITHUB_REPO:-}
+      OPTIO_NEW_GITHUB_TOKEN: ${OPTIO_NEW_GITHUB_TOKEN:-}
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
 
   # Optional local Laya decision service (SPEC §14.3 / call req #10)
   laya:
