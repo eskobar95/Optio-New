@@ -204,7 +204,13 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
 
   async function recordGitSummary(ctx: StageStepContext): Promise<void> {
     const handle = await requireWorktree(ctx);
-    const summary = await git(handle.path, ["status", "--short"], []);
+    const dirty = await git(handle.path, ["status", "--short"], []);
+    // Agents often commit before record_diff; status --short is then empty even
+    // when the branch is ahead of base. Prefer the three-dot committed summary.
+    const committed = await git(handle.path, ["diff", "--stat", `${baseBranch}...HEAD`], []).catch(
+      () => "",
+    );
+    const summary = [committed.trim(), dirty.trim()].filter(Boolean).join("\n") || dirty;
     logStageEvent({
       msg: "git summary",
       taskId: ctx.taskId,

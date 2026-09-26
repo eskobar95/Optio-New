@@ -4,10 +4,14 @@
  * Tests, lint, and typecheck fail closed: a missing exit code is not a pass.
  * The diff review blocks secrets and destructive changes. Findings name the
  * path and the rule. They do not include secret bytes or command output.
- * Before npm checks, missing worktree deps are installed (`npm ci --include=dev`)
- * and live Redis/Postgres URLs are stripped so optional integration tests stay skipped.
+ * Before npm checks, sparse-excluded `.cursor/{skills,agents,commands,rules}`
+ * are symlinked from OPTIO_NEW_REPO_PATH, missing worktree deps are installed
+ * (`npm ci --include=dev`), and live Redis/Postgres URLs are stripped so optional
+ * integration tests stay skipped.
  */
 import { execFile } from "node:child_process";
+import { access, mkdir, symlink } from "node:fs/promises";
+import path from "node:path";
 import { promisify } from "node:util";
 import { UnrecoverableError } from "bullmq";
 
@@ -377,6 +381,43 @@ async function readDiff(
   return parts.join("\n");
 }
 
+/** Control-plane SoT trees sparse-excluded from task worktrees. */
+const CURSOR_SOT_DIRS = ["skills", "agents", "commands", "rules"] as const;
+
+/**
+ * Worktrees sparse-exclude `/.cursor/{skills,agents,commands,rules}`. Unit tests
+ * still read those paths from cwd. Symlink them read-only from OPTIO_NEW_REPO_PATH
+ * when missing. No-op when the env is unset or the source tree is absent.
+ */
+async function ensureCursorSoTLinks(cwd: string): Promise<void> {
+  const repo = process.env.OPTIO_NEW_REPO_PATH?.trim();
+  if (!repo) return;
+  const srcRoot = path.join(repo, ".cursor");
+  const destRoot = path.join(cwd, ".cursor");
+  try {
+    await access(srcRoot);
+  } catch {
+    return;
+  }
+  await mkdir(destRoot, { recursive: true });
+  for (const name of CURSOR_SOT_DIRS) {
+    const dest = path.join(destRoot, name);
+    const src = path.join(srcRoot, name);
+    try {
+      await access(dest);
+      continue;
+    } catch {
+      // missing in worktree
+    }
+    try {
+      await access(src);
+    } catch {
+      continue;
+    }
+    await symlink(src, dest);
+  }
+}
+
 /**
  * Worktrees from a bind-mounted host checkout have no node_modules. The
  * orchestrator image keeps prod deps under /app, so the gate installs into the
@@ -401,6 +442,7 @@ export async function collectPrSafetyInput(
   const diff = await readDiff(cwd, base, shell);
   if (diff === undefined) return {};
   if (reviewDiff(diff).length > 0) return { diff };
+  await ensureCursorSoTLinks(cwd);
   await ensureDevDependencies(cwd, shell);
   const checks: NonNullable<PrSafetyInput["checks"]> = {};
   for (const check of CHECK_COMMANDS) {
