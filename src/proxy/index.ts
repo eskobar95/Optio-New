@@ -1,4 +1,5 @@
 export {
+  litellmOrigin,
   loadCavemanProxyConfig,
   resolveCodexUpstreamBaseUrl,
   type CavemanMode,

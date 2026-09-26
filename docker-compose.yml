@@ -114,9 +114,10 @@ services:
       - optio_new_caddy_config:/config
     profiles: ["edge"]
 
-  # Optional local Caveman proxy host placeholder (profile: caveman).
-  # Prefer host CLI: npm i -g @caveman-ai/cli && caveman start
-  # Do not vendor BSL engine binaries into this repo.
+  # Placeholder only (profile: caveman). Does not install or run the BSL engine.
+  # Host enable path: caveman setup --install, then
+  #   CAVEMAN_MODE=compress CAVE_SSRF_ALLOWLIST=127.0.0.1 caveman start
+  # See gateway/caveman/caveman.yaml.example and src/proxy/README.md.
   caveman-proxy:
     profiles: ["caveman"]
     image: node:20-alpine

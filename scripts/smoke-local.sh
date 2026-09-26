@@ -42,4 +42,23 @@ else
   skip "docker not available on this host"
 fi
 
+# Optional Caveman loopback proxy. Default off. Never downloads the BSL binary.
+# Probe only when the operator exported CAVEMAN_PROXY_ENABLED=true.
+caveman_enabled="$(printf '%s' "${CAVEMAN_PROXY_ENABLED:-false}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+if [[ "$caveman_enabled" != "true" ]]; then
+  skip "caveman proxy (CAVEMAN_PROXY_ENABLED is not true)"
+elif ! command -v caveman >/dev/null 2>&1; then
+  skip "caveman CLI absent — npm i -g @caveman-ai/cli && caveman setup --install (binary not vendored)"
+elif ! command -v curl >/dev/null 2>&1; then
+  skip "curl absent; cannot probe caveman /health/live"
+else
+  caveman_url="${CAVEMAN_PROXY_URL:-http://127.0.0.1:8787}"
+  caveman_url="${caveman_url%/}"
+  if curl -fsS --max-time 3 "${caveman_url}/health/live" >/dev/null 2>&1; then
+    pass "caveman proxy /health/live at ${caveman_url}"
+  else
+    fail "CAVEMAN_PROXY_ENABLED=true but ${caveman_url}/health/live is down. Start: CAVEMAN_MODE=${CAVEMAN_MODE:-compress} CAVE_SSRF_ALLOWLIST=${CAVE_SSRF_ALLOWLIST:-127.0.0.1} caveman start"
+  fi
+fi
+
 pass "all smoke checks finished"

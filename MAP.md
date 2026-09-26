@@ -21,7 +21,9 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `tests/`                                              | —                 | Unit/smoke tests (`tsx --test`)                                           |
 | `AGENTS.md`                                           | —                 | Agent operating guide (New Bot, no Linear)                                |
 | `src/adapters/cursor/`                                | §13, §14.1        | Cursor CLI headless (subscription only)                                   |
-| `src/adapters/codex/`                                 | §13, §14.1–§14.2  | Codex CLI → LiteLLM                                                       |
+| `src/adapters/codex/`                                 | §13, §14.1–§14.2  | Codex CLI → LiteLLM, optional Caveman compat mount                        |
+| `src/proxy/`                                          | §14.2             | Optional local Caveman proxy (default off; no Platform/Cloud)             |
+| `gateway/caveman/`                                    | §14.2             | `caveman.yaml.example` LiteLLM compat snippet                             |
 | `src/adapters/coding-agent.ts`                        | §13.1             | Shared CodingAgent interface                                              |
 | `gateway/litellm/`                                    | §14.2             | `config.yaml.example` model_list                                          |
 | `gateway/jev-router/`                                 | §14.3–§14.4       | Plugins: jev, poorjev, laya, rules                                        |

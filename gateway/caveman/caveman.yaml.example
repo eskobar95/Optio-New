@@ -1,0 +1,18 @@
+# Optio-New — local Caveman proxy snippet (optional, default off).
+# Merge into ~/.caveman/caveman.yaml. Do not replace an existing file blindly.
+# Do not commit secrets. Caveman Platform / Cloud is not used.
+#
+# The BSL caveman-proxy binary is not vendored. Install the MIT CLI on the host:
+#   npm i -g @caveman-ai/cli
+#   caveman setup --install
+# Start the loopback listener (no account):
+#   CAVEMAN_MODE=compress CAVE_SSRF_ALLOWLIST=127.0.0.1 caveman start
+# Then set CAVEMAN_PROXY_ENABLED=true. See src/proxy/README.md.
+label: optio-new
+mode: compress
+listen: 127.0.0.1:8787
+compat:
+  litellm:
+    # LiteLLM origin (no /v1). Codex appends /v1 via the compat mount.
+    base_url: http://127.0.0.1:4000
+    api_key_env: LITELLM_MASTER_KEY

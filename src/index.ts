@@ -20,7 +20,9 @@ export { createEnvModelAdapter, readModelEnv, type ModelEnvConfig } from "./agen
 export { buildIntakeJob, IntakeTaskSchema, type IntakeTask } from "./orchestrator/intake/index.js";
 export { processHelloWorld } from "./orchestrator/jobs/hello-world.js";
 export type { CodingAgent, CodingAgentInput, CodingAgentOutput } from "./adapters/coding-agent.js";
+export { codexOpenAiBaseUrl } from "./adapters/codex/index.js";
 export {
+  litellmOrigin,
   loadCavemanProxyConfig,
   resolveCodexUpstreamBaseUrl,
   type CavemanMode,
