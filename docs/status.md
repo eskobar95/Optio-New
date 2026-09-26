@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 00:43 UTC
+Last refreshed: 2026-09-26 00:45 UTC
 
 ## Bootstrap progress
 
@@ -39,7 +39,7 @@ Gaps: LiteLLM tag `ghcr.io/berriai/litellm:main-latest` floats; profile `full` (
 
 ## Open issues
 
-Open: 15.
+Open: 13.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
@@ -54,9 +54,7 @@ Tracker: https://github.com/eskobar95/Optio-New/issues
 - #13 [P1] Observability: OTel spans + Langfuse/SigNoz wiring (P1, enhancement, infra)
 - #12 [P1] Parallel agent sessions: concurrency caps + isolated worktrees (P1, enhancement, orchestration)
 - #11 [P1] LiteLLM gateway + JevRouter plugins (jev / rules / laya) (P1, enhancement, harness, infra)
-- #9 [P1] CodingAgent adapters: Cursor CLI + Codex → LiteLLM (P1, enhancement, orchestration)
 - #6 [P0] Worktree manager: create / isolate / reap per task (P0, enhancement, orchestration, security)
-- #5 [P0] Review gate: Jev/rules completion + CI green before ready (P0, enhancement, harness, orchestration)
 - #4 [P1] Docker Compose full stack: redis, postgres, orchestrator, litellm, kit-harness (P1, enhancement, infra)
 
 ## Refresh
