@@ -1,4 +1,6 @@
 # Optio-New — practical v1 Compose stack (SPEC §12.6)
+# Load env via `bash scripts/secrets.sh compose` (sops+age). See docs/secrets.md.
+# A bare `docker compose up` uses ${VAR:-changeme} defaults, not the host ciphertext.
 name: optio-new
 
 services:

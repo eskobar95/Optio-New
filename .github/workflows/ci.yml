@@ -10,6 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Do not enable step debug and do not inject production env here.
+  # scripts/secrets.sh audit (via npm test and smoke) prints paths only.
   smoke:
     name: lint + typecheck + test
     runs-on: ubuntu-latest

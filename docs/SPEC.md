@@ -461,16 +461,16 @@ Recommended extra attributes (where applicable): `workflow_id`, `step_id`, `agen
 
 ### 12.5 VPS must-haves (durable deployment)
 
-| Concern             | Choice                                                                                                          |
-| ------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Process supervision | **Docker Compose** with `restart: unless-stopped`, plus **systemd** unit to ensure Compose stack starts on boot |
-| Public webhooks TLS | **Caddy** or **Traefik** terminating TLS for optional New Bot intake + GitHub webhook endpoints                 |
-| Secrets             | **sops + age** or **Infisical**; never commit plain `.env` to git                                               |
-| Database backups    | **restic** or **borg** of Postgres dumps to a **Hetzner Storage Box** (scheduled)                               |
-| Network hardening   | **Hetzner Cloud Firewall** + **fail2ban** on SSH                                                                |
-| Logging format      | Structured **JSON** logs on stdout (scraped to Loki/SigNoz); correlate with `trace_id`                          |
-| Worker health       | HTTP **health endpoints** for queue workers (liveness + optional queue lag)                                     |
-| Merge / CI signals  | **GitHub webhooks** (PR merged, check suite) in addition to New Bot status                                      |
+| Concern             | Choice                                                                                                                                                                     |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Process supervision | **Docker Compose** with `restart: unless-stopped`, plus **systemd** unit to ensure Compose stack starts on boot                                                            |
+| Public webhooks TLS | **Caddy** or **Traefik** terminating TLS for optional New Bot intake + GitHub webhook endpoints                                                                            |
+| Secrets             | **sops + age** on the Hetzner kit-harness (`/opt/optio-new`); Infisical is an optional later swap. Never commit plaintext or production ciphertext. See `docs/secrets.md`. |
+| Database backups    | **restic** or **borg** of Postgres dumps to a **Hetzner Storage Box** (scheduled)                                                                                          |
+| Network hardening   | **Hetzner Cloud Firewall** + **fail2ban** on SSH                                                                                                                           |
+| Logging format      | Structured **JSON** logs on stdout (scraped to Loki/SigNoz); correlate with `trace_id`                                                                                     |
+| Worker health       | HTTP **health endpoints** for queue workers (liveness + optional queue lag)                                                                                                |
+| Merge / CI signals  | **GitHub webhooks** (PR merged, check suite) in addition to New Bot status                                                                                                 |
 
 ### 12.6 Practical v1 Compose stack
 
@@ -679,11 +679,11 @@ Orchestrator / CodingAgent
 
 ### 14.5 Auth and header rewriting
 
-| Path                | Auth rule                                                                                                                                   |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Codex → gateway     | CLI sends **Bearer = local virtual key** (LiteLLM master/virtual key). Gateway **strips** it and injects **real upstream `Authorization`**. |
-| Cursor subscription | Native `CURSOR_API_KEY` → `api2.cursor.sh` only. No key rewrite in a local proxy.                                                           |
-| Secrets             | Real provider keys live in sops/Infisical / gateway env — **never in the git worktree**, never in issue branches.                           |
+| Path                | Auth rule                                                                                                                                                                              |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Codex → gateway     | CLI sends **Bearer = local virtual key** (LiteLLM master/virtual key). Gateway **strips** it and injects **real upstream `Authorization`**.                                            |
+| Cursor subscription | Native `CURSOR_API_KEY` → `api2.cursor.sh` only. No key rewrite in a local proxy.                                                                                                      |
+| Secrets             | Real provider keys live in host sops+age ciphertext (Infisical only if adopted later) and gateway env — **never in the git worktree**, never in issue branches. See `docs/secrets.md`. |
 
 ### 14.6 Cache hit and deny
 
