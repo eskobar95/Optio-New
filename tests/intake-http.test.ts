@@ -80,6 +80,7 @@ describe("POST /intake", () => {
       title: "Add intake",
       description: "Enqueue the plan stage",
       repoId: "default",
+      source: "http",
     });
   });
 

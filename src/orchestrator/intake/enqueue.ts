@@ -12,6 +12,7 @@ export const IntakeTaskSchema = z.object({
   repoId: z.string().min(1).optional(),
   source: z.enum(["http", "github", "slack", "linear"]).optional(),
   event: z.literal("bot.intake.created").optional(),
+  linearIssueId: z.string().min(1).optional(),
 });
 
 export type IntakeTask = z.infer<typeof IntakeTaskSchema>;

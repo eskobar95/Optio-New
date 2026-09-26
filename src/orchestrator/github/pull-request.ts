@@ -31,6 +31,8 @@ export interface OpenPullRequestInput {
   head: string;
   base: string;
   body: string;
+  /** When true, GitHub opens the pull request as a draft. */
+  draft?: boolean;
   fetchImpl?: typeof fetch;
 }
 
@@ -82,6 +84,7 @@ export async function openGithubPullRequest(input: OpenPullRequestInput): Promis
       head: input.head,
       base: input.base,
       body: input.body,
+      ...(input.draft ? { draft: true } : {}),
     }),
   });
   if (created.status === 422) {
@@ -132,6 +135,42 @@ export async function mergeGithubPullRequest(input: {
   if (record(payload)?.merged !== true) {
     throw new GithubRequestError(response.status, "github merge did not complete");
   }
+}
+
+export async function markGithubPullRequestReady(input: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  fetchImpl?: typeof fetch;
+}): Promise<void> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const endpoint = `${pullsUrl(input.owner, input.repo)}/${input.number}`;
+  const response = await githubFetch(fetchImpl, endpoint, input.token, {
+    method: "PATCH",
+    body: JSON.stringify({ draft: false }),
+  });
+  if (!response.ok) {
+    throw await requestError(response, input.token, "undraft");
+  }
+}
+
+export async function githubPullRequestApproved(input: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  fetchImpl?: typeof fetch;
+}): Promise<boolean> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const endpoint = `${pullsUrl(input.owner, input.repo)}/${input.number}/reviews`;
+  const response = await githubFetch(fetchImpl, endpoint, input.token, { method: "GET" });
+  if (!response.ok) {
+    throw await requestError(response, input.token, "reviews");
+  }
+  const payload = (await response.json()) as unknown;
+  if (!Array.isArray(payload)) return false;
+  return payload.some((item) => record(item)?.state === "APPROVED");
 }
 
 export async function findOpenGithubPullRequest(

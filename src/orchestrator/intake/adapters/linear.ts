@@ -198,6 +198,16 @@ export function handleLinearWebhook(input: {
     description,
     repoId,
     source: "linear",
+    linearIssueId: issueId,
   };
-  return { action: "enqueue", status: 200, intake, linearIssueId: issueId };
+  const toStatus = stringField(asRecord(data.state), "name").trim();
+  const fromStateId = stringField(asRecord(body.updatedFrom), "stateId").trim();
+  return {
+    action: "enqueue",
+    status: 200,
+    intake,
+    linearIssueId: issueId,
+    ...(toStatus ? { linearToStatus: toStatus } : {}),
+    ...(fromStateId ? { linearFromStateId: fromStateId } : {}),
+  };
 }

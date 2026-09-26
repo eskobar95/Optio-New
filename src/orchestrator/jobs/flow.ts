@@ -15,7 +15,13 @@ import {
 function stageNode(
   stage: PipelineStage,
   identity: PipelineIdentity,
-  brief: { title?: string; description?: string; repoId?: string },
+  brief: {
+    title?: string;
+    description?: string;
+    repoId?: string;
+    source?: "http" | "github" | "slack" | "linear";
+    linearIssueId?: string;
+  },
   child?: FlowChildJob,
 ): FlowChildJob {
   const data: {
@@ -25,10 +31,14 @@ function stageNode(
     title?: string;
     description?: string;
     repoId?: string;
+    source?: "http" | "github" | "slack" | "linear";
+    linearIssueId?: string;
   } = { taskId: identity.taskId, sessionId: identity.sessionId, stage };
   if (brief.title) data.title = brief.title;
   if (brief.description) data.description = brief.description;
   if (brief.repoId) data.repoId = brief.repoId;
+  if (brief.source) data.source = brief.source;
+  if (brief.linearIssueId) data.linearIssueId = brief.linearIssueId;
   const node: FlowChildJob = {
     name: stage,
     queueName: STAGE_QUEUES[stage],
@@ -51,12 +61,16 @@ export function buildPipelineFlow(input: {
   title?: string;
   description?: string;
   repoId?: string;
+  source?: "http" | "github" | "slack" | "linear";
+  linearIssueId?: string;
 }): FlowJob {
   const identity = PipelineIdentitySchema.parse(input);
   const brief = {
     title: input.title?.trim() || undefined,
     description: input.description?.trim() || undefined,
     repoId: input.repoId?.trim() || undefined,
+    source: input.source,
+    linearIssueId: input.linearIssueId?.trim() || undefined,
   };
   let node: FlowChildJob | undefined;
   for (const stage of PIPELINE_STAGES) {

@@ -19,13 +19,31 @@ import { createEnvModelAdapter } from "../../agent/env-adapter.js";
 import {
   GithubRequestError,
   findOpenGithubPullRequest,
+  githubPullRequestApproved,
   mergeGithubPullRequest,
   githubRepoFromCloneUrl,
+  markGithubPullRequestReady,
   openGithubPullRequest,
   readCommitStatus,
   redact,
   type PullRequestRef,
 } from "../github/pull-request.js";
+import { applyWorkflowEffects, type WorkflowPorts } from "../linear/apply.js";
+import {
+  commentOnIssue,
+  escalationTargetStatus,
+  updateLinearIssueStatus,
+} from "../linear/status.js";
+import {
+  LINEAR_PULL_REQUEST_BASE,
+  decideAgentAdvance,
+  mapCommitStatus,
+  noteAgentStatusWrite,
+  readBlindAlley,
+  readCiFailEscalateAfter,
+  type WorkflowDecision,
+} from "../linear/workflow.js";
+import { CANONICAL_SPAN } from "../telemetry/spans.js";
 import { loadRepoCatalog, resolveRepo, type RepoCatalog } from "../repos/catalog.js";
 import { worktreeKey, type WorktreeHandle, type WorktreeLifecycle } from "../worktrees/manager.js";
 import {
@@ -115,6 +133,9 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
         case "invoke_review":
           return runCoding(ctx);
         case "record_diff":
+          await recordGitSummary(ctx);
+          if (isLinearTask(ctx)) await runLinear(ctx, { action: "start" });
+          return { usage: ZERO_USAGE };
         case "record_verdict":
           await recordGitSummary(ctx);
           return { usage: ZERO_USAGE };
@@ -180,6 +201,10 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
         costUsd: output.usage.cost_usd,
       });
     }
+    const blind = readBlindAlley(`${output.logs ?? ""}\n${output.diff_summary ?? ""}`);
+    if (blind && isLinearTask(ctx)) {
+      await runLinear(ctx, { action: "blind_alley", blindAlley: blind });
+    }
     if (output.status === "succeeded") {
       if (ctx.step !== "invoke_planner") return { usage };
       const summary = (output.diff_summary ?? output.logs ?? "").trim().slice(0, 4000);
@@ -226,7 +251,10 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     });
   }
 
-  async function openPullRequest(ctx: StageStepContext): Promise<StageStepResult> {
+  async function openPullRequest(
+    ctx: StageStepContext,
+    options?: { draft?: boolean; base?: string },
+  ): Promise<StageStepResult> {
     const handle = await requireWorktree(ctx);
     const github = requireGithub(ctx);
     const stored = await readPullRecordOptional(handle);
@@ -240,7 +268,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       return { prUrl: stored.url };
     }
     const token = github.token;
-    const baseBranch = github.baseBranch;
+    const baseBranch = options?.base ?? github.baseBranch;
     const ahead = await commitCount(handle.path, token, baseBranch);
     if (ahead === 0) {
       if (!E2E_TASK.test(ctx.taskId)) {
@@ -289,6 +317,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
         head: handle.branch,
         base: baseBranch,
         body: pullBody(ctx, baseBranch),
+        draft: options?.draft,
         fetchImpl,
       }),
     );
@@ -315,6 +344,10 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
         fetchImpl,
       }),
     );
+    if (isLinearTask(ctx)) {
+      await runLinear(ctx, { action: "review", ci: mapCommitStatus(state) });
+      return;
+    }
     if (state !== "success") {
       throw new Error(`ci ${state} for ${ctx.taskId}`);
     }
@@ -325,6 +358,10 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     await assertPrSafety(handle.path, taskBase(ctx));
     if (E2E_TASK.test(ctx.taskId)) {
       logStageEvent({ msg: "e2e pull request left unmerged", taskId: ctx.taskId });
+      return;
+    }
+    if (isLinearTask(ctx)) {
+      await runLinear(ctx, { action: "merge" });
       return;
     }
     const github = requireGithub(ctx);
@@ -452,6 +489,158 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       throw error;
     }
   }
+
+  function isLinearTask(ctx: StageStepContext): boolean {
+    return ctx.source === "linear" && Boolean(ctx.linearIssueId?.trim());
+  }
+
+  async function runLinear(
+    ctx: StageStepContext,
+    input: {
+      action: "start" | "review" | "merge" | "blind_alley";
+      ci?: ReturnType<typeof mapCommitStatus>;
+      blindAlley?: { why: string; tried: string; failed: string };
+    },
+  ): Promise<void> {
+    const issueId = ctx.linearIssueId?.trim() ?? "";
+    const handle = await requireWorktree(ctx);
+    const humanApproved = input.action === "merge" ? await linearPullApproved(ctx, handle) : false;
+    const decision = decideAgentAdvance({
+      action: input.action,
+      ci: input.ci,
+      ciFailureCount: await readCiCount(handle),
+      escalateAfter: readCiFailEscalateAfter(env),
+      humanApproved,
+      whenIso: new Date().toISOString(),
+      blindAlley: input.blindAlley,
+    });
+    if (decision.effects.length > 0) {
+      await applyWorkflowEffects(decision, linearPorts(ctx, handle, issueId));
+    }
+    await writeCiCount(handle, decision.ciFailureCount);
+    await traceLinear(ctx, decision);
+    if (decision.halt) throw new Error(`linear workflow escalated: ${decision.reason}`);
+    if (!decision.ok) throw new Error(`linear workflow ${decision.reason} for ${ctx.taskId}`);
+  }
+
+  function linearPorts(
+    ctx: StageStepContext,
+    handle: WorktreeHandle,
+    issueId: string,
+  ): WorkflowPorts {
+    const apiKey = env.OPTIO_NEW_LINEAR_API_KEY?.trim() ?? "";
+    if (!apiKey) {
+      throw new StageCredentialsError(
+        "OPTIO_NEW_LINEAR_API_KEY is required to move a Linear issue",
+      );
+    }
+    return {
+      openDraft: async () => {
+        await openPullRequest(ctx, { draft: true, base: LINEAR_PULL_REQUEST_BASE });
+      },
+      markReady: async () => {
+        const github = requireGithub(ctx);
+        const stored = await readPullRecord(handle);
+        await mapGithub(() =>
+          markGithubPullRequestReady({
+            token: github.token,
+            owner: github.owner,
+            repo: github.repo,
+            number: stored.number,
+            fetchImpl,
+          }),
+        );
+      },
+      merge: async () => {
+        const github = requireGithub(ctx);
+        const stored = await readPullRecord(handle);
+        await mapGithub(() =>
+          mergeGithubPullRequest({
+            token: github.token,
+            owner: github.owner,
+            repo: github.repo,
+            number: stored.number,
+            fetchImpl,
+          }),
+        );
+        logStageEvent({ msg: "pull request merged", taskId: ctx.taskId, number: stored.number });
+      },
+      setStatus: async (status) => {
+        noteAgentStatusWrite(issueId, status, Date.now());
+        await updateLinearIssueStatus({
+          apiKey,
+          issueId,
+          statusName: status,
+          fetchImpl,
+        });
+      },
+      comment: async (body) => {
+        await commentOnIssue({ apiKey, issueId, body, fetchImpl });
+      },
+      revert: async () => {
+        throw new Error("stage handler does not revert Linear status");
+      },
+      escalationStatus: () => escalationTargetStatus({ apiKey, issueId, fetchImpl }),
+    };
+  }
+
+  async function linearPullApproved(
+    ctx: StageStepContext,
+    handle: WorktreeHandle,
+  ): Promise<boolean> {
+    const github = requireGithub(ctx);
+    const stored = await readPullRecord(handle);
+    return mapGithub(() =>
+      githubPullRequestApproved({
+        token: github.token,
+        owner: github.owner,
+        repo: github.repo,
+        number: stored.number,
+        fetchImpl,
+      }),
+    );
+  }
+
+  async function traceLinear(ctx: StageStepContext, decision: WorkflowDecision): Promise<void> {
+    if (!ctx.tracer) return;
+    const name = decision.ok && !decision.halt ? CANONICAL_SPAN.gatePass : CANONICAL_SPAN.gateFail;
+    await ctx.tracer.runStage(
+      name,
+      {
+        taskId: ctx.taskId,
+        worktreeId: ctx.worktreeId,
+        attributes: { gate: "linear.workflow", reason: decision.reason },
+      },
+      async (span) => {
+        if (name === CANONICAL_SPAN.gateFail) span.fail(decision.reason);
+      },
+    );
+  }
+}
+
+function isLinearCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function ciCountPath(handle: WorktreeHandle): string {
+  return path.join(path.dirname(handle.path), ".prs", `${worktreeKey(handle.taskId)}.linear.json`);
+}
+
+async function readCiCount(handle: WorktreeHandle): Promise<number> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(ciCountPath(handle), "utf8"));
+    if (!parsed || typeof parsed !== "object") return 0;
+    const count = (parsed as { ciFailureCount?: unknown }).ciFailureCount;
+    return isLinearCount(count) ? count : 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function writeCiCount(handle: WorktreeHandle, count: number): Promise<void> {
+  const file = ciCountPath(handle);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify({ ciFailureCount: count })}\n`, "utf8");
 }
 
 function usageFromCoding(usage: CodingAgentUsage): StageStepUsage {

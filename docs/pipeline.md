@@ -98,18 +98,19 @@ The Compose `orchestrator` service (profiles `full` and `orchestrator`) runs `sr
 
 Compose interpolates these names from the env file into `orchestrator` and `eve-runner` (`${VAR:-}`, empty when unset):
 
-| Name                               | Role                                                                                            |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `CURSOR_API_KEY`                   | Cursor coding agent (`resolveCodingBackend` defaults to `cursor`, then `createCursorAdapter`)   |
-| `OPTIO_NEW_GITHUB_TOKEN`           | Push the task branch and call the GitHub pull request API                                       |
-| `OPTIO_NEW_GITHUB_REPO`            | `owner/repo` when `OPTIO_NEW_REPOS` is empty. A catalog task uses that `repoId`'s clone URL     |
-| `OPTIO_NEW_LINEAR_API_KEY`         | Linear `commentCreate` (`queued`) after FIN status-change intake                                |
-| `OPTIO_NEW_LINEAR_WEBHOOK_SECRET`  | HMAC for `POST /webhooks/linear`                                                                |
-| `OPTIO_NEW_LINEAR_DEFAULT_REPO_ID` | Catalog `repoId` for that intake (`findjobabroad` on kit-harness)                               |
-| `MODEL_API_KEY`, `MODEL_ENDPOINT`  | Planner fallback only. The env adapter performs no HTTP                                         |
-| `OPTIO_NEW_BASE_BRANCH`            | Base branch for the synthetic catalog. A `OPTIO_NEW_REPOS` binding uses its own `defaultBranch` |
+| Name                                     | Role                                                                                            |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `CURSOR_API_KEY`                         | Cursor coding agent (`resolveCodingBackend` defaults to `cursor`, then `createCursorAdapter`)   |
+| `OPTIO_NEW_GITHUB_TOKEN`                 | Push the task branch and call the GitHub pull request API                                       |
+| `OPTIO_NEW_GITHUB_REPO`                  | `owner/repo` when `OPTIO_NEW_REPOS` is empty. A catalog task uses that `repoId`'s clone URL     |
+| `OPTIO_NEW_LINEAR_API_KEY`               | Linear `commentCreate` (`queued`) after FIN status-change intake                                |
+| `OPTIO_NEW_LINEAR_WEBHOOK_SECRET`        | HMAC for `POST /webhooks/linear`                                                                |
+| `OPTIO_NEW_LINEAR_DEFAULT_REPO_ID`       | Catalog `repoId` for that intake (`findjobabroad` on kit-harness)                               |
+| `LINEAR_WORKFLOW_CI_FAIL_ESCALATE_AFTER` | Failed CI/Review attempts before a Linear escape hatch. Default `3`                             |
+| `MODEL_API_KEY`, `MODEL_ENDPOINT`        | Planner fallback only. The env adapter performs no HTTP                                         |
+| `OPTIO_NEW_BASE_BRANCH`                  | Base branch for the synthetic catalog. A `OPTIO_NEW_REPOS` binding uses its own `defaultBranch` |
 
-`OPTIO_NEW_LINEAR_API_KEY`, `OPTIO_NEW_LINEAR_WEBHOOK_SECRET`, and `OPTIO_NEW_LINEAR_DEFAULT_REPO_ID` are passed only to the `orchestrator` service.
+`OPTIO_NEW_LINEAR_API_KEY`, `OPTIO_NEW_LINEAR_WEBHOOK_SECRET`, `OPTIO_NEW_LINEAR_DEFAULT_REPO_ID`, and `LINEAR_WORKFLOW_CI_FAIL_ESCALATE_AFTER` are passed only to the `orchestrator` service.
 
 Inside the container, `OPTIO_NEW_REPO_PATH` is `/opt/optio-new` and `OPTIO_NEW_WORKTREE_ROOT` is `/var/lib/optio-new/worktrees` (volume `optio_new_worktrees`). The host side of the checkout mount is `${OPTIO_NEW_REPO_PATH:-/opt/optio-new}`. `OPTIO_NEW_WORKTREE_RETAIN_ON_FAILURE` defaults to `true`; `false` removes the named `wt-<task>` directory when merge fails.
 

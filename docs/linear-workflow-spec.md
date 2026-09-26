@@ -1,8 +1,8 @@
 # Linear workflow
 
-Product decision from 2026-09-26. This is the Kanban contract for Optio issues on Linear. It records who may move an issue, when, and what that move does on GitHub. It does not change the factory.
+Product decision from 2026-09-26. This is the Kanban contract for Optio issues on Linear. It records who may move an issue, when, and what that move does on GitHub.
 
-Phase 1 intake is already live and is the base this workflow extends. The status machine below is the contract for later status writes. The Phase 1 handler does not create pull requests and does not call `issueUpdate`.
+Phase 1 intake is the base. It still enqueues `bot.intake.created` and comments `queued`, and it does not itself open a pull request. Status writes and GitHub draft, undraft, and merge run in `src/orchestrator/linear/` for tasks whose intake `source` is `linear`.
 
 Linear status names are not BullMQ stage names. The factory graph stays plan → implement → review → ready → merge ([pipeline.md](pipeline.md)).
 
@@ -10,17 +10,17 @@ Linear status names are not BullMQ stage names. The factory graph stays plan →
 
 Six statuses carry in-flight work. **Done** is the finished state. **Canceled** and **Duplicate** are Linear system statuses that cannot be removed and are not part of the agent flow.
 
-| Status | Board role | Meaning |
-| --- | --- | --- |
-| Triage | Active | The agent places an unclear or problematic issue here instead of guessing. This is not the waiting queue. |
-| Backlog | Active | Queue of tasks that are waiting. |
-| Todo | Active. Linear system status; cannot be deleted. | Start point. The agent picks the issue up from here. |
-| In Progress | Active | Work is underway. Entering this status opens a **draft** pull request on GitHub. |
-| Review | Active | Hard gate. Only the agent may move an issue here, and only when every CI check on the pull request is green. Entering this status marks the pull request ready for review (undraft). |
-| Merge | Active | The agent merges that pull request into `main`. |
-| Done | Finished | The task is finished. The Linear name is **Done**. **Completed** is an alias only when a board already uses that label. |
-| Canceled | System. Cannot be removed. | Kept on the board. The agent flow does not enter or leave it. |
-| Duplicate | System. Cannot be removed. | Same as Canceled. |
+| Status      | Board role                                       | Meaning                                                                                                                                                                              |
+| ----------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Triage      | Active                                           | The agent places an unclear or problematic issue here instead of guessing. This is not the waiting queue.                                                                            |
+| Backlog     | Active                                           | Queue of tasks that are waiting.                                                                                                                                                     |
+| Todo        | Active. Linear system status; cannot be deleted. | Start point. The agent picks the issue up from here.                                                                                                                                 |
+| In Progress | Active                                           | Work is underway. Entering this status opens a **draft** pull request on GitHub.                                                                                                     |
+| Review      | Active                                           | Hard gate. Only the agent may move an issue here, and only when every CI check on the pull request is green. Entering this status marks the pull request ready for review (undraft). |
+| Merge       | Active                                           | The agent merges that pull request into `main`.                                                                                                                                      |
+| Done        | Finished                                         | The task is finished. The Linear name is **Done**. **Completed** is an alias only when a board already uses that label.                                                              |
+| Canceled    | System. Cannot be removed.                       | Kept on the board. The agent flow does not enter or leave it.                                                                                                                        |
+| Duplicate   | System. Cannot be removed.                       | Same as Canceled.                                                                                                                                                                    |
 
 **Todo**, **Canceled**, and **Duplicate** stay because Linear will not delete them. The active path does not use **Canceled** or **Duplicate**.
 
@@ -28,18 +28,18 @@ Six statuses carry in-flight work. **Done** is the finished state. **Canceled** 
 
 Humans may order **Triage**, **Backlog**, and **Todo**. From **In Progress** through **Merge**, the agent is the only actor that advances the issue. A human may read and approve the GitHub pull request while the issue sits in **Review**. A human may not drag the issue to **Review** to bypass CI.
 
-| From | To | Actor | When | GitHub |
-| --- | --- | --- | --- | --- |
-| Backlog, Todo, or In Progress | Triage | Agent | The task is unclear or problematic. The agent does not guess a fix and does not force **Review**. | No new pull request. A draft that already exists stays a draft. No merge. |
-| Triage | Backlog | Human | The task is clear enough to wait. | None. |
-| Backlog | Todo | Human | The task is selected as the start point. | None. |
-| Todo | In Progress | Agent | The agent starts the task. This is the start of agent ownership. | Open a draft pull request on the catalog repo for this issue. |
-| In Progress | Review | Agent only | Every CI check on that pull request is green: tests, lint, and GitHub Actions. A red or pending check blocks the move. There is no manual override. | Mark the pull request ready for review (undraft). |
-| Review | Merge | Agent | A human has read and approved the pull request. The agent performs the status move. | Merge the pull request into `main`. |
-| Merge | Done | Agent | The merge has landed on `main`. | None. The pull request is already merged. |
-| In Progress or Review | Needs Human | Agent | Escape hatch. CI on this gate has failed `LINEAR_WORKFLOW_CI_FAIL_ESCALATE_AFTER` times (default 3), or the agent is in a blind alley. Preferred target when that column exists. | Do not merge. This move does not undraft and does not count as entering **Review**. |
-| In Progress or Review | In Progress | Agent | Same escape hatch, while the board has no **Needs Human** column. If the issue is already **In Progress**, the status stays put. | Same. The Linear comment is the signal. |
-| any | Canceled or Duplicate | — | Not a transition in this flow. | None. |
+| From                          | To                    | Actor      | When                                                                                                                                                                             | GitHub                                                                              |
+| ----------------------------- | --------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Backlog, Todo, or In Progress | Triage                | Agent      | The task is unclear or problematic. The agent does not guess a fix and does not force **Review**.                                                                                | No new pull request. A draft that already exists stays a draft. No merge.           |
+| Triage                        | Backlog               | Human      | The task is clear enough to wait.                                                                                                                                                | None.                                                                               |
+| Backlog                       | Todo                  | Human      | The task is selected as the start point.                                                                                                                                         | None.                                                                               |
+| Todo                          | In Progress           | Agent      | The agent starts the task. This is the start of agent ownership.                                                                                                                 | Open a draft pull request on the catalog repo for this issue.                       |
+| In Progress                   | Review                | Agent only | Every CI check on that pull request is green: tests, lint, and GitHub Actions. A red or pending check blocks the move. There is no manual override.                              | Mark the pull request ready for review (undraft).                                   |
+| Review                        | Merge                 | Agent      | A human has read and approved the pull request. The agent performs the status move.                                                                                              | Merge the pull request into `main`.                                                 |
+| Merge                         | Done                  | Agent      | The merge has landed on `main`.                                                                                                                                                  | None. The pull request is already merged.                                           |
+| In Progress or Review         | Needs Human           | Agent      | Escape hatch. CI on this gate has failed `LINEAR_WORKFLOW_CI_FAIL_ESCALATE_AFTER` times (default 3), or the agent is in a blind alley. Preferred target when that column exists. | Do not merge. This move does not undraft and does not count as entering **Review**. |
+| In Progress or Review         | In Progress           | Agent      | Same escape hatch, while the board has no **Needs Human** column. If the issue is already **In Progress**, the status stays put.                                                 | Same. The Linear comment is the signal.                                             |
+| any                           | Canceled or Duplicate | —          | Not a transition in this flow.                                                                                                                                                   | None.                                                                               |
 
 A human move into **Review** is not a pass. The integration must not treat it as the gate opening, and it must not undraft the pull request because of that move.
 
@@ -78,11 +78,19 @@ Escalate when this task has failed the **In Progress → Review** gate, or has s
 
 One failure is one red evaluation: an attempt to enter **Review** whose CI is red (tests, lint, or Actions), or a check that fails while the issue is already in **Review**. A pending check is not a failure. The count is per task.
 
-The threshold is configurable. The knob is `LINEAR_WORKFLOW_CI_FAIL_ESCALATE_AFTER`. Unset uses **3**. A default of 5 was considered; **3** is the chosen default. The third failure escalates. The current orchestrator does not read this knob yet. This document only sets the contract.
+The threshold is configurable. The knob is `LINEAR_WORKFLOW_CI_FAIL_ESCALATE_AFTER`. Unset, blank, or a value that is not a positive integer uses **3**. A default of 5 was considered; **3** is the chosen default. The third failure escalates. The orchestrator reads the knob when a Linear-sourced task evaluates the gate. The count is stored beside the worktree (`.prs/<task>.linear.json`) and resets to 0 when the gate passes.
 
 ### Blind alley
 
 Escalate when the agent cannot productively continue: another attempt would not move the solution forward. Do not spend the remaining CI attempts to postpone that judgment. This hatch does not wait for the count above.
+
+The implementation and review agents signal it with one line in their output:
+
+```text
+LINEAR_BLIND_ALLEY why: <why> | tried: <what was tried> | failed: <what failed>
+```
+
+`readBlindAlley` accepts that line from the coding-agent logs or diff summary. The stage then escalates and stops. A partial line is ignored.
 
 ### What escalation does
 
@@ -94,7 +102,7 @@ It leaves three traces:
 - **What was tried, and what failed.** Enough for a person to continue. Not a dump of logs or secrets.
 - **Where the issue sits.** Move it to **Needs Human** when that column exists. That is the preferred target. Until the column exists, move it back to **In Progress** (leave it there if it never left). **Needs Human** is not one of the six in-flight statuses until the board has the column.
 
-Post that context as a Linear `commentCreate`. The body is this rationale, not the Phase 1 ack `queued`. The status move, when it changes `stateId`, is the reserved `issueUpdate`. Phase 1 still posts only `queued` and does not call `issueUpdate`. The pull request stays unmerged. Escalation does not undraft it and does not open the **Review** gate.
+Post that context as a Linear `commentCreate`. The body is this rationale, not the Phase 1 ack `queued`. The status move is `issueUpdate` of `stateId` only. `applyWorkflowEffects` resolves **Needs Human** from the issue's team states and falls back to **In Progress** when that name is missing. The code does not create the column (`boardSetupPlan().createColumns` is false). The pull request stays unmerged. Escalation does not undraft it and does not open the **Review** gate.
 
 The rest of the flow stays autonomous. Outside these hatches, humans still intervene only by reading and approving the pull request at **Review**.
 
@@ -119,37 +127,43 @@ Team **FIN** (“Find Job Abroad”) and team **Engineering** (**ENG**) may both
 
 `OPTIO_NEW_LINEAR_API_KEY` is limited by `src/orchestrator/linear/policy.ts`:
 
-| Allowed | Rule |
-| --- | --- |
-| `commentCreate` | Live write. Phase 1 posts `queued`. |
-| `issueUpdate` | May set `stateId` only. Reserved for the status moves in this document. The Phase 1 client does not call it. |
+| Allowed         | Rule                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| `commentCreate` | Live write. Phase 1 posts `queued`.                                                              |
+| `issueUpdate`   | May set `stateId` only. The workflow module calls it for status moves. The Phase 1 ack does not. |
 
 `issueCreate`, `issueDelete`, and `issueArchive` are rejected. Agent Sessions stay out of scope. The key must not gain create, delete, or archive in order to run this board.
 
 ### Observability
 
-SigNoz is served at `https://optio.eskobar.dev/signoz/`. Intake and runs use the spans in [observability.md](observability.md): `enqueueIntakePipeline` emits `intake.webhook`, and `processStageJob` emits `workflow.step` for plan → implement → review → ready → merge. Export still follows `OPTIO_OTEL_SIGNOZ`. Do not put API keys, webhook secrets, or signature headers in span attributes or in this file.
+SigNoz is served at `https://optio.eskobar.dev/signoz/`. Intake and runs use the spans in [observability.md](observability.md): `enqueueIntakePipeline` emits `intake.webhook`, and `processStageJob` emits `workflow.step` for plan → implement → review → ready → merge. A Linear transition also emits `gate.pass` or `gate.fail` with `gate=linear.workflow` and `reason`. Export still follows `OPTIO_OTEL_SIGNOZ`. Do not put API keys, webhook secrets, or signature headers in span attributes or in this file.
 
 ### Catalog and pull requests
 
 The multi-repo catalog holds `optio-new` and `findjobabroad` ([ops/multi-repo-cx33.md](ops/multi-repo-cx33.md)). `open_pr` resolves the task `repoId` to that binding and opens the GitHub pull request on the owner/repo parsed from the binding's `cloneUrl`. It does not fall back to `OPTIO_NEW_GITHUB_REPO` when `OPTIO_NEW_REPOS` is set. A FIN intake task therefore opens its pull request on `findjobabroad`. A task whose `repoId` is `optio-new` opens its pull request on that repo.
 
-Today `open_pr` runs at the ready stage, after the review gate, and does not set `draft`. The base branch is the catalog binding's `defaultBranch`. The draft-on-**In Progress**, undraft-on-**Review**, and merge-into-`main` effects in the table above are the board contract. They are not what the Phase 1 webhook does.
+For a task whose intake `source` is `linear`, the production handler drives the board:
+
+- `record_diff` opens a **draft** pull request on the catalog repo for that `repoId`, with base `main`, then sets **In Progress**.
+- `record_ci_wait` moves to **Review** and undrafts only when commit status is `success`. A red status counts toward the escape hatch. Pending does not. The webhook does not undraft.
+- `merge_branch` merges that pull request only after a GitHub review with state `APPROVED`, then sets **Merge** and **Done** (or **Completed** when that is the only finished name on the team).
+- A human move into **Review**, **Merge**, or **Done** is reverted to `updatedFrom.stateId` after the Phase 1 `queued` comment. The agent's own `issueUpdate` is marked for 60 seconds so that webhook does not revert it.
+
+`open_pr` still runs at ready for every task. On a Linear task it reuses the draft already opened and does not undraft it. Other intake sources keep the catalog `defaultBranch` and a non-draft pull request. Phase 1 intake does not itself open or merge a pull request.
 
 ## 7. Out of scope
 
-- Implementing this file. No adapter, policy, or workflow change ships with it.
+- Creating or renaming Linear columns. The board must already contain the names this workflow sets. **Needs Human** is optional; escalation falls back to **In Progress**.
 - Adding **Triage**, **Review**, and **Merge** on a board that still has Linear's classic six columns. Those columns are a later board edit.
-- Adding a **Needs Human** column. Until it exists, an escape hatch falls back to **In Progress** and a Linear comment.
 - Teaching `POST /webhooks/linear` to accept team `ENG`.
-- Calling `issueUpdate` from the Phase 1 path.
+- Calling `issueUpdate` from the Phase 1 ack. That path still posts only `queued`. Status writes belong to the workflow module.
 - Using these status names as BullMQ queues or as factory stage ids.
 - Linear Agent Sessions, OAuth agent scopes, Agent Activities, backlog polling, and any create, delete, or archive of issues.
 - Retuning the HITL pause, the review gate, or `open_pr`.
 
 ## 8. Open questions
 
-- The board contract merges into `main`. `open_pr` and `merge_branch` still use the catalog `defaultBranch` (the synthetic catalog default is `development` via `OPTIO_NEW_BASE_BRANCH`). Pointing the Linear merge at `main` is a later change.
+- Linear-sourced pull requests use base `main`. Other sources still use the catalog `defaultBranch`. A task branch that was not cut from `main` can fail the draft open.
 - A later `issueUpdate` of `stateId` on a FIN issue will hit the Phase 1 webhook again. That delivery must keep the existing task id and must not start a second pipeline. The `queued` comment on a reused job id is the current ack.
 - [hitl.md](hitl.md) still pauses `ready` before `open_pr` (default `always`). This board treats human approval as a review of the GitHub pull request. Wiring or skipping that pause for Linear-sourced tasks is undecided.
 

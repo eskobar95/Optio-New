@@ -1,7 +1,7 @@
 /**
  * Write policy for OPTIO_NEW_LINEAR_API_KEY.
- * Team scope is FIN. The live client calls commentCreate only.
- * issueUpdate is reserved for a later status write and may set stateId only.
+ * Team scope is FIN. Phase 1 calls commentCreate (`queued`).
+ * The workflow calls commentCreate for escalation and issueUpdate of stateId only.
  * issueCreate, issueDelete, and issueArchive stay forbidden.
  * Agent Sessions stay out of scope.
  */

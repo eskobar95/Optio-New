@@ -18,6 +18,8 @@ export const BotIntakeCreatedSchema = z.object({
   description: z.string().default(""),
   repoId: z.string().min(1),
   source: IntakeSourceSchema,
+  /** Linear issue UUID. Set by the Linear adapter so later stages can write status. */
+  linearIssueId: z.string().min(1).optional(),
 });
 
 export type BotIntakeCreated = z.infer<typeof BotIntakeCreatedSchema>;
