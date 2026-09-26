@@ -2,7 +2,7 @@
 # Load env via `bash scripts/secrets.sh compose` (sops+age). See docs/secrets.md.
 # A bare `docker compose up` uses ${VAR:-changeme} defaults, not the host ciphertext.
 # Default `up` (no profile): redis, postgres, litellm.
-# orchestrator is profiles `full` and `orchestrator`. eve-runner is profile `full` (stub).
+# orchestrator is profiles `full` and `orchestrator`. eve-runner is profiles `full` and `eve` on 127.0.0.1:3210.
 # learning-worker is profile `learn` (queue optio.learn).
 # `--profile harness` adds kit-harness on 127.0.0.1:3200.
 # Factory data plane: docker compose --profile full --profile harness up -d
@@ -99,16 +99,16 @@ services:
     environment:
       OPTIO_NEW_REDIS_URL: redis://redis:6379
       EVE_RUNNER_HOST: 0.0.0.0
-      EVE_RUNNER_PORT: "3200"
+      EVE_RUNNER_PORT: "3210"
     ports:
-      - "127.0.0.1:3200:3200"
+      - "127.0.0.1:3210:3210"
     healthcheck:
       test:
         [
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:3200/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+          "fetch('http://127.0.0.1:3210/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 30s
       timeout: 5s

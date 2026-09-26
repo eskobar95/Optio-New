@@ -45,7 +45,7 @@ cp .env.example .env   # edit locally; never commit real secrets
 bash scripts/smoke-local.sh
 ```
 
-Factory data plane (Docker required). Default services are redis, postgres, and litellm. `--profile full` adds the orchestrator and eve-runner. `--profile harness` adds kit-harness on `127.0.0.1:3200`:
+Factory data plane (Docker required). Default services are redis, postgres, and litellm. `--profile full` adds the orchestrator and eve-runner (`127.0.0.1:3210`). `--profile harness` adds kit-harness on `127.0.0.1:3200`:
 
 ```bash
 docker compose up -d redis postgres litellm
@@ -61,7 +61,7 @@ Local intake is loopback HTTP on `127.0.0.1:3100`. Profile `edge` is optional TL
 docker compose --profile edge up -d caddy
 ```
 
-Orchestrator image (profiles `full` and `orchestrator`) serves intake and the BullMQ stage workers. Eve-runner in profile `full` is still an intentional stub: `agents/*` have no process entrypoint.
+Orchestrator image (profiles `full` and `orchestrator`) serves intake and the BullMQ stage workers. Eve-runner (profiles `full` and `eve`) serves `GET /health` on `127.0.0.1:3210`. kit-harness keeps `127.0.0.1:3200`.
 
 ```bash
 docker compose --profile full --profile harness up -d --build orchestrator

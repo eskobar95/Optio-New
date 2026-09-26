@@ -25,7 +25,7 @@ export async function executeCli(
     const { command, flags } = parseArgs(argv);
     if (command === "serve") {
       const host = flagString(flags, "host") ?? env.EVE_RUNNER_HOST ?? "0.0.0.0";
-      const port = Number(flagString(flags, "port") ?? env.EVE_RUNNER_PORT ?? 3200);
+      const port = Number(flagString(flags, "port") ?? env.EVE_RUNNER_PORT ?? 3210);
       const started = await startEveHttpServer({
         host,
         port,
@@ -46,7 +46,7 @@ export async function executeCli(
     }
     if (command === "health") {
       const url =
-        flagString(flags, "url") ?? `http://127.0.0.1:${env.EVE_RUNNER_PORT ?? 3200}/health`;
+        flagString(flags, "url") ?? `http://127.0.0.1:${env.EVE_RUNNER_PORT ?? 3210}/health`;
       const response = await fetch(url);
       const text = await response.text();
       return {
