@@ -61,6 +61,7 @@ On the VPS, from `/opt/optio-new`, after [docs/secrets.md](../docs/secrets.md) s
 export COMPOSE_PROFILES=harness,orchestrator
 bash scripts/secrets.sh compose up -d --build
 curl -fsS http://127.0.0.1:3200/health
+curl -fsS http://127.0.0.1:3100/health
 sudo cp deploy/systemd/optio-new-compose.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now optio-new-compose.service

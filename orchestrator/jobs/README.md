@@ -10,6 +10,6 @@ BullMQ workers backed by Redis. Durable job steps for the default pipeline. Runn
 
 `optio.plan` → `optio.implement` → `optio.review` → `optio.ready` → `optio.merge`
 
-`buildPipelineFlow` builds the BullMQ flow (plan is the child that runs first). Job ids are `${sessionId}__${stage}` because BullMQ rejects `:`. `processStageJob` is the idempotent handler and emits a `workflow.step` span. `startStageGraph` registers one worker per queue. Pass `worktrees` on the stage runtime to create a checkout on implement and reap it on merge (`src/orchestrator/worktrees/`).
+`buildPipelineFlow` builds the BullMQ flow (plan is the child that runs first). Job ids are `${sessionId}__${stage}` because BullMQ rejects `:`. `processStageJob` is the idempotent handler and emits a `workflow.step` span. `startStageGraph` registers one worker per queue. The Compose entrypoint `src/orchestrator/main.ts` starts that graph against Redis and the Postgres cursor. Pass `worktrees` on the stage runtime to create a checkout on implement and reap it on merge (`src/orchestrator/worktrees/`). The image does not set `worktrees`; the container has no git checkout to attach.
 
 Unit tests use `InMemoryStepCursorStore` or `createSqlStepCursorStore`. Pass `OPTIO_NEW_REDIS_URL` / `OPTIO_NEW_DATABASE_URL` only when you want the optional integration tests.

@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 # Optio-New local/CI smoke — fast checks; Docker optional.
+#
+# Docker-optional (this script, CI): node, typecheck, vitest, and `docker compose config`
+# when the docker CLI exists. Compose is not started unless SMOKE_COMPOSE_UP=1, and that
+# path only brings up redis + postgres.
+#
+# Docker-required (not run here): `docker compose --profile full up -d --build` for the
+# orchestrator image. Verify with curl http://127.0.0.1:3100/health and POST /intake.
+# See README.md. Eve-runner in that profile is still an intentional stub.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

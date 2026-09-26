@@ -10,7 +10,7 @@
 
 ## HTTP
 
-`createIntakeServer` (`src/orchestrator/intake/http.ts`) serves `POST /intake`.
+`createIntakeServer` (`src/orchestrator/intake/http.ts`) serves `POST /intake`. The process entry is `src/orchestrator/main.ts` (image `Dockerfile.orchestrator`, `ORCHESTRATOR_PORT`, default 3100). `GET /health` is 200 when Redis answers `PING`.
 
 ```json
 {

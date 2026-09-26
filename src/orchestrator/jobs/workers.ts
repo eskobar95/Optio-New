@@ -33,6 +33,11 @@ export function bullmqStageWorkerFactory(connection: ConnectionOptions): StageWo
   return {
     create(queueName, processor) {
       const worker = new Worker(queueName, async (job) => processor(job.data), { connection });
+      worker.on("error", (error: Error) => {
+        console.error(
+          JSON.stringify({ msg: "worker error", queue: queueName, error: error.message }),
+        );
+      });
       return {
         async close() {
           await worker.close();

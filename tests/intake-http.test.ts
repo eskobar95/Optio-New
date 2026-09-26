@@ -173,6 +173,26 @@ describe("POST /intake", () => {
     });
   });
 
+  it("reports redis on GET /health when a checker is provided", async () => {
+    const up = createIntakeServer({
+      enqueuer: { async add() {} },
+      checkRedis: async () => true,
+    });
+    const down = createIntakeServer({
+      enqueuer: { async add() {} },
+      checkRedis: async () => false,
+    });
+    servers.push(up, down);
+
+    const upResponse = await fetch(`${await listen(up)}/health`);
+    expect(upResponse.status).toBe(200);
+    expect(await upResponse.json()).toEqual({ ok: true, redis: "up" });
+
+    const downResponse = await fetch(`${await listen(down)}/health`);
+    expect(downResponse.status).toBe(503);
+    expect(await downResponse.json()).toEqual({ ok: false, redis: "down" });
+  });
+
   it("does not reference the Linear SDK", async () => {
     const source = await readFile(
       new URL("../src/orchestrator/intake/http.ts", import.meta.url),

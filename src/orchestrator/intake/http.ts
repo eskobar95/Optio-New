@@ -27,8 +27,15 @@ export const IntakeHttpSchema = z.object({
 
 export type IntakeHttpRequest = z.infer<typeof IntakeHttpSchema>;
 
+export interface IntakeHealthReport {
+  ok: boolean;
+  redis: "up" | "down";
+}
+
 export interface IntakeServerOptions {
   enqueuer: FlowEnqueuer;
+  /** When set, GET /health pings Redis. Omitted means the route stays 404. */
+  checkRedis?: () => Promise<boolean>;
 }
 
 export interface IntakeAccepted {
@@ -105,6 +112,20 @@ export async function handleIntakeRequest(
 ): Promise<void> {
   try {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    if (url.pathname === "/health" && options.checkRedis) {
+      if (req.method !== "GET") {
+        res.setHeader("allow", "GET");
+        sendJson(res, 405, {
+          error: "method_not_allowed",
+          message: "Use GET /health",
+        });
+        return;
+      }
+      const redisUp = await options.checkRedis();
+      const body: IntakeHealthReport = { ok: redisUp, redis: redisUp ? "up" : "down" };
+      sendJson(res, redisUp ? 200 : 503, body);
+      return;
+    }
     if (url.pathname !== "/intake") {
       sendJson(res, 404, {
         error: "not_found",

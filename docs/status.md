@@ -4,16 +4,16 @@ Last refreshed: 2026-09-26 01:01 UTC
 
 ## Bootstrap progress
 
-| Area                                                                     | Status                                                   |
-| ------------------------------------------------------------------------ | -------------------------------------------------------- |
-| In-repo `.cursor/skills` + `.cursor/agents` SoT                          | Done                                                     |
-| Linear stripped → New Bot intake + BullMQ                                | Done                                                     |
-| TypeScript `src/` + `tests/` + tooling (ESLint, Prettier, Vitest, Husky) | Done                                                     |
-| Public GitHub + CI on push/PR                                            | Live                                                     |
-| Good first issue: `src/agent/loop.ts`                                    | See open issues                                          |
-| BullMQ stage graph (plan → merge) + Postgres step cursor                 | Skeleton (`docs/pipeline.md`)                            |
-| Real model providers / GPU / Vercel key                                  | Pending (secrets local only)                             |
-| kit-harness decision sidecar                                             | Compose profile `harness` (rules engine; Jev not called) |
+| Area                                                                     | Status                                                        |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| In-repo `.cursor/skills` + `.cursor/agents` SoT                          | Done                                                          |
+| Linear stripped → New Bot intake + BullMQ                                | Done                                                          |
+| TypeScript `src/` + `tests/` + tooling (ESLint, Prettier, Vitest, Husky) | Done                                                          |
+| Public GitHub + CI on push/PR                                            | Live                                                          |
+| Good first issue: `src/agent/loop.ts`                                    | See open issues                                               |
+| BullMQ stage graph (plan → merge) + Postgres step cursor                 | Orchestrator image: `POST /intake` and `GET /health` on :3100 |
+| Real model providers / GPU / Vercel key                                  | Pending (secrets local only)                                  |
+| kit-harness decision sidecar                                             | Compose profile `harness` (rules engine; Jev not called)      |
 
 ## CI
 
@@ -36,6 +36,18 @@ Issue [#23](https://github.com/eskobar95/Optio-New/issues/23). Runbook: [mac-com
 Verified: kit-harness (Linux, Docker Compose) full `bash scripts/smoke-compose-mac.sh` PASSED on 2026-09-26 against `7aa4b2e` (redis PING, postgres pg_isready, litellm `/health/liveliness`, `down -v`). Project `optio-new` on 6379/5432/4000 stayed up. Config-only PASSED.
 
 Gaps: LiteLLM tag `ghcr.io/berriai/litellm:main-latest` floats; profile `full` (orchestrator, eve-runner) stays out of this smoke; provider keys stay empty; the check is `/health/liveliness`, which does not call a model.
+
+Orchestrator verify (profiles `full` and `orchestrator`; eve-runner is still a stub):
+
+```bash
+docker compose --profile full up -d --build orchestrator
+curl -fsS http://127.0.0.1:3100/health
+curl -fsS -X POST http://127.0.0.1:3100/intake \
+  -H 'content-type: application/json' \
+  -d '{"brief":{"title":"hello","description":"smoke"},"metadata":{"taskId":"t-1"}}'
+```
+
+`GET /health` is 200 when Redis answers. `POST /intake` returns 202 and enqueues `optio.plan`.
 
 ## Open issues
 

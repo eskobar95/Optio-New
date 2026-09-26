@@ -2,7 +2,7 @@
 # Load env via `bash scripts/secrets.sh compose` (sops+age). See docs/secrets.md.
 # A bare `docker compose up` uses ${VAR:-changeme} defaults, not the host ciphertext.
 # Default `up` (no profile): redis, postgres, litellm.
-# orchestrator and eve-runner are profile `full`.
+# orchestrator is profiles `full` and `orchestrator`. eve-runner is profile `full` (stub).
 # Host ports: OPTIO_NEW_REDIS_HOST_PORT, OPTIO_NEW_POSTGRES_HOST_PORT, OPTIO_NEW_LITELLM_HOST_PORT.
 name: optio-new
 
@@ -14,6 +14,11 @@ services:
       - "127.0.0.1:${OPTIO_NEW_REDIS_HOST_PORT:-6379}:6379"
     volumes:
       - optio_new_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   postgres:
     image: postgres:16-alpine
@@ -26,8 +31,17 @@ services:
       - "127.0.0.1:${OPTIO_NEW_POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - optio_new_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${OPTIO_NEW_POSTGRES_USER:-optio} -d ${OPTIO_NEW_POSTGRES_DB:-optio_new}",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
-  # BullMQ / orchestrator worker stub.
+  # Intake HTTP (:3100) + BullMQ stage workers.
   # Profile full keeps `docker compose --profile full` working.
   # Profile orchestrator is the Hetzner boot set (see deploy/README.md).
   orchestrator:
@@ -37,9 +51,12 @@ services:
     profiles: ["full", "orchestrator"]
     restart: unless-stopped
     depends_on:
-      - redis
-      - postgres
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     environment:
+      ORCHESTRATOR_PORT: "3100"
       OPTIO_NEW_REDIS_URL: redis://redis:6379
       OPTIO_NEW_DATABASE_URL: postgres://${OPTIO_NEW_POSTGRES_USER:-optio}:${OPTIO_NEW_POSTGRES_PASSWORD:-changeme}@postgres:5432/${OPTIO_NEW_POSTGRES_DB:-optio_new}
       JEV_BASE_URL: ${JEV_BASE_URL:-https://ai-gateway.vercel.sh}
@@ -50,8 +67,21 @@ services:
       LANGFUSE_HOST: ${LANGFUSE_HOST:-http://127.0.0.1:3000}
     ports:
       - "127.0.0.1:3100:3100"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3100/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
-  # Eve / agent runner stub
+  # Eve runner stays a stub: agents/* are contracts with no process entrypoint.
+  # See Dockerfile.eve-runner.
   eve-runner:
     build:
       context: .
