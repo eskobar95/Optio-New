@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 01:27 UTC
+Last refreshed: 2026-09-26 01:31 UTC
 
 ## Bootstrap progress
 
@@ -19,7 +19,7 @@ Last refreshed: 2026-09-26 01:27 UTC
 
 [![CI](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml/badge.svg)](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml)
 
-Latest conclusion: **success**
+Latest conclusion: **cancelled**
 
 Actions: https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml
 
@@ -48,14 +48,12 @@ HELLO_WORLD_E2E=1 bash scripts/hello-world-e2e.sh
 
 ## Open issues
 
-Open: 4.
+Open: 2.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
-- #60 [EVE-3] Local eve-runner invoked by BullMQ stage (P0, enhancement, orchestration)
 - #22 [P2] Caddy TLS edge for optional intake webhook (P2, deploy, infra, security)
 - #21 [P2] Eve phase agents: planner / implementation / review / ready / merge contracts (P2, enhancement, orchestration)
-- #14 [P2] Optional Laya CPU decision service Compose profile (P2, harness, infra)
 
 ## Refresh
 
