@@ -11,7 +11,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV KIT_HARNESS_PORT=3200
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+# prepare runs husky (devDependency). Ignore scripts so prod install works without it.
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=build /app/dist ./dist
 USER node
 EXPOSE 3200

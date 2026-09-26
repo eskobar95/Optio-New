@@ -15,4 +15,27 @@ describe("kit-harness compose profile", () => {
     expect(block).toContain("/health");
     expect(readFileSync("Dockerfile.kit-harness", "utf8")).toContain("src/kit-harness");
   });
+
+  it("installs production dependencies without lifecycle scripts", () => {
+    const dockerfiles = [
+      "Dockerfile.kit-harness",
+      "Dockerfile.orchestrator",
+      "Dockerfile.eve-runner",
+    ];
+    for (const name of dockerfiles) {
+      const lines = readFileSync(name, "utf8").split("\n");
+      for (const line of lines) {
+        if (line.includes("npm ci") && line.includes("--omit=dev")) {
+          expect(line, name).toContain("--ignore-scripts");
+        }
+      }
+    }
+
+    const dockerfile = readFileSync("Dockerfile.kit-harness", "utf8");
+    const stages = dockerfile.split(/^FROM /m).slice(1);
+    const build = stages.find((stage) => stage.includes("AS build")) ?? "";
+    const runtime = stages.find((stage) => !stage.includes("AS build")) ?? "";
+    expect(build).toMatch(/\nRUN npm ci\n/);
+    expect(runtime).toContain("RUN npm ci --omit=dev --ignore-scripts");
+  });
 });
