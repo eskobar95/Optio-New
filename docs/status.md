@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 01:39 UTC
+Last refreshed: 2026-09-26 01:40 UTC
 
 ## Bootstrap progress
 
@@ -19,7 +19,7 @@ Last refreshed: 2026-09-26 01:39 UTC
 
 [![CI](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml/badge.svg)](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml)
 
-Latest conclusion: **cancelled**
+Latest conclusion: **success**
 
 Actions: https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml
 
@@ -48,11 +48,11 @@ HELLO_WORLD_E2E=1 bash scripts/hello-world-e2e.sh
 
 ## Open issues
 
-Open: 0.
+Open: 1.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
-- (no open issues)
+- #77 [overnight] eve-runner host port 3200 clashes with kit-harness (P0, bug, infra)
 
 ## Refresh
 
