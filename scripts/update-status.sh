@@ -146,7 +146,7 @@ trap cleanup EXIT
   echo
   echo "Gaps: LiteLLM tag \`ghcr.io/berriai/litellm:main-latest\` floats; profile \`full\` (orchestrator, eve-runner) stays out of this smoke; provider keys stay empty; the check is \`/health/liveliness\`, which does not call a model."
   echo
-  echo "Orchestrator verify (profiles \`full\` and \`orchestrator\`; eve-runner is still a stub):"
+  echo "Orchestrator verify (profiles \`full\` and \`harness\`; orchestrator \`127.0.0.1:3100\`, kit-harness \`127.0.0.1:3200\`, eve-runner \`127.0.0.1:3210\`):"
   echo
   echo '```bash'
   echo "docker compose --profile full --profile harness up -d --build orchestrator"
@@ -154,6 +154,8 @@ trap cleanup EXIT
   echo '```'
   echo
   echo "\`GET /hello\` is the demo card. The script posts intake and polls \`GET /hello/plan\` until the plan cursor is \`completed\`. \`GET /health\` is 200 when Redis answers. Without a listener the script skips; \`HELLO_WORLD_E2E=1\` fails closed."
+  echo
+  echo "Host health after [#76](https://github.com/${REPO}/pull/76): Compose profiles \`harness\`, \`full\`, and \`learn\`. \`GET /health\` confirmed on :3100 (orchestrator), :3200 (kit-harness), and :3210 (eve-runner). Hello-world e2e PASS (\`POST /intake\` → plan \`completed\`). No open issues after #77 closed. Overnight summary: [STATUS.md](../STATUS.md)."
   echo
   echo "## Open issues"
   echo

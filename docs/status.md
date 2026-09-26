@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 01:49 UTC
+Last refreshed: 2026-09-26 02:01 UTC
 
 ## Bootstrap progress
 
@@ -37,7 +37,7 @@ Verified: kit-harness (Linux, Docker Compose) full `bash scripts/smoke-compose-m
 
 Gaps: LiteLLM tag `ghcr.io/berriai/litellm:main-latest` floats; profile `full` (orchestrator, eve-runner) stays out of this smoke; provider keys stay empty; the check is `/health/liveliness`, which does not call a model.
 
-Orchestrator verify (profiles `full` and `orchestrator`; eve-runner is still a stub):
+Orchestrator verify (profiles `full` and `harness`; orchestrator `127.0.0.1:3100`, kit-harness `127.0.0.1:3200`, eve-runner `127.0.0.1:3210`):
 
 ```bash
 docker compose --profile full --profile harness up -d --build orchestrator
@@ -45,6 +45,8 @@ HELLO_WORLD_E2E=1 bash scripts/hello-world-e2e.sh
 ```
 
 `GET /hello` is the demo card. The script posts intake and polls `GET /hello/plan` until the plan cursor is `completed`. `GET /health` is 200 when Redis answers. Without a listener the script skips; `HELLO_WORLD_E2E=1` fails closed.
+
+Host health after [#76](https://github.com/eskobar95/Optio-New/pull/76): Compose profiles `harness`, `full`, and `learn`. `GET /health` confirmed on :3100 (orchestrator), :3200 (kit-harness), and :3210 (eve-runner). Hello-world e2e PASS (`POST /intake` → plan `completed`). No open issues after #77 closed. Overnight summary: [STATUS.md](../STATUS.md).
 
 ## Open issues
 
