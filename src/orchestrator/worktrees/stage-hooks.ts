@@ -18,6 +18,8 @@ export interface WorktreeStageStep {
   /** Workflow step whose skill budget is seeded into the new worktree. */
   workflowStepId?: string;
   plannerSelection?: readonly string[];
+  /** Filled from `create` before the implement step handler runs. */
+  worktreeId?: string;
 }
 
 export interface WorktreeStageStepRunner<T extends WorktreeStageStep = WorktreeStageStep> {
@@ -35,10 +37,11 @@ export function createWorktreeStageHandler<T extends WorktreeStageStep>(
   return {
     async run(ctx) {
       if (ctx.stage === "implement" && ctx.step === IMPLEMENT_CREATE_STEP) {
-        await worktrees.create(ctx.taskId, {
+        const handle = await worktrees.create(ctx.taskId, {
           stepId: ctx.workflowStepId,
           plannerSelection: ctx.plannerSelection,
         });
+        if (!ctx.worktreeId) ctx.worktreeId = handle.worktreeId;
       }
       try {
         await inner.run(ctx);

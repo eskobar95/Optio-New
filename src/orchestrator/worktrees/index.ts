@@ -1,4 +1,9 @@
 export {
+  createWorktreeManagerFromEnv,
+  loadWorktreeRuntimeConfig,
+  type WorktreeRuntimeConfig,
+} from "./config.js";
+export {
   WorktreeIsolationError,
   WorktreeManager,
   worktreeKey,

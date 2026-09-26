@@ -8,7 +8,12 @@ Create / status / remove git worktrees keyed by **task id**. Runnable TypeScript
 - One path per task. A second task whose id sanitizes to the same key is rejected. `writeFile` cannot leave that task's directory.
 - Sparse-checkout omits `.cursor/skills`, `.cursor/agents`, `.cursor/commands`, and `.cursor/rules` (§6.5).
 - `reap(taskId, { merged: true })` removes the worktree and local branch. `{ merged: false }` keeps it while `retainOnFailure` is true.
+- With a `tracer`, a new checkout emits `worktree.create` and a real delete emits `worktree.remove`. Both spans carry `task_id` and `worktree_id`. A second `create` for the same task does not emit again. A retained failure does not emit `worktree.remove`.
 
-BullMQ: pass the manager as `StageRuntime.worktrees`. Implement calls `create` before `invoke_implementation`. Merge calls `reap({ merged: false })` when `merge_branch` throws, and `reap({ merged: true })` after `record_cleanup`.
+`createWorktreeManagerFromEnv` reads `OPTIO_NEW_WORKTREE_ROOT`, `OPTIO_NEW_REPO_PATH`, `OPTIO_NEW_BASE_BRANCH`, and `OPTIO_NEW_WORKTREE_RETAIN_ON_FAILURE` (`true` or `false`, default `true`). The orchestrator process passes `getStageTracer()`.
+
+BullMQ: pass the manager as `StageRuntime.worktrees`. Implement calls `create` before `invoke_implementation` and stores `worktreeId` on the step context. Merge calls `reap({ merged: false })` when `merge_branch` throws, and `reap({ merged: true })` after `record_cleanup`.
+
+CX33 disk budget and why v1 does not use a container per task: `docs/ops/worktree-isolation.md`.
 
 Session concurrency (SPEC §13.5, `src/orchestrator/sessions`) does not create or reap git worktrees. It claims a cwd through `SessionWorkspacePort`. Adapt this manager with `workspacePortFromWorktreeManager`. Releasing a session drops that claim only. Reap stays on merge success.

@@ -113,7 +113,7 @@ If `up --build` fails before containers are replaced, the previous containers ke
 
 ## Intake to a pull request
 
-`orchestrator` and `eve-runner` receive `CURSOR_API_KEY`, `OPTIO_NEW_GITHUB_TOKEN`, `MODEL_API_KEY`, and `MODEL_ENDPOINT` from the sops env file. `OPTIO_NEW_GITHUB_REPO` is `owner/repo`. The orchestrator mounts the checkout at `/opt/optio-new` and keeps worktrees on the `optio_new_worktrees` volume. Both services run as root so git can register worktrees on that checkout.
+`orchestrator` and `eve-runner` receive `CURSOR_API_KEY`, `OPTIO_NEW_GITHUB_TOKEN`, `MODEL_API_KEY`, and `MODEL_ENDPOINT` from the sops env file. `OPTIO_NEW_GITHUB_REPO` is `owner/repo`. The orchestrator mounts the checkout at `/opt/optio-new` and keeps worktrees on the `optio_new_worktrees` volume. Both services run as root so git can register worktrees on that checkout. Isolation is one git worktree per task (`OPTIO_NEW_WORKTREE_ROOT`), not a container per task. Disk budget for the CX33 host: [docs/ops/worktree-isolation.md](../docs/ops/worktree-isolation.md).
 
 Planner steps run the Cursor coding agent when `CURSOR_API_KEY` is set. `createEnvModelAdapter` performs no HTTP. With the Cursor key absent, planner throws `StageCredentialsError` when `MODEL_API_KEY` or `MODEL_ENDPOINT` is empty, and also when both are set, because that adapter has no HTTP client.
 

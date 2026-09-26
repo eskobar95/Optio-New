@@ -173,22 +173,31 @@ async function recordLearning(
   }
 }
 
+async function lookupWorktreeId(taskId: string, deps: StageRuntime): Promise<string> {
+  if (deps.worktreeId) return deps.worktreeId;
+  if (!taskId || !deps.worktrees?.status) return "";
+  const handle = await deps.worktrees.status(taskId);
+  return handle?.worktreeId ?? "";
+}
+
 export async function processStageJob(input: unknown, deps: StageRuntime): Promise<StageJobResult> {
   const tracer = deps.tracer ?? getStageTracer();
   const stage = readStringField(input, "stage");
   const sessionId = readStringField(input, "sessionId");
+  const taskId = readStringField(input, "taskId");
+  const worktreeId = await lookupWorktreeId(taskId, deps);
   return tracer.runStage(
     CANONICAL_SPAN.workflowStep,
     {
-      taskId: readStringField(input, "taskId"),
-      worktreeId: deps.worktreeId,
+      taskId,
+      worktreeId,
       attributes: {
         workflow_id: "default-task",
         ...(stage ? { step_id: stage } : {}),
         ...(sessionId ? { session_id: sessionId } : {}),
       },
     },
-    () => executeStageJob(input, deps, tracer),
+    () => executeStageJob(input, deps, tracer, worktreeId),
   );
 }
 
@@ -196,6 +205,7 @@ async function executeStageJob(
   input: unknown,
   deps: StageRuntime,
   tracer: StageTracer,
+  worktreeId: string,
 ): Promise<StageJobResult> {
   const payload = StageJobPayloadSchema.parse(input);
   const blockedBy = previousStage(payload.stage);
@@ -262,23 +272,25 @@ async function executeStageJob(
     ? createWorktreeStageHandler(deps.worktrees, deps.handler)
     : deps.handler;
 
+  let activeWorktreeId = worktreeId;
   for (let index = cursor.nextStepIndex; index < steps.length; index += 1) {
     const step = steps[index];
     if (!step) {
       throw new Error(`missing step ${index} for ${payload.stage}`);
     }
+    const ctx: StageStepContext = {
+      taskId: payload.taskId,
+      sessionId: payload.sessionId,
+      stage: payload.stage,
+      step,
+      stepIndex: index,
+      worktreeId: activeWorktreeId || undefined,
+      tracer,
+      title: payload.title,
+      description: payload.description,
+    };
     try {
-      await handler.run({
-        taskId: payload.taskId,
-        sessionId: payload.sessionId,
-        stage: payload.stage,
-        step,
-        stepIndex: index,
-        worktreeId: deps.worktreeId,
-        tracer,
-        title: payload.title,
-        description: payload.description,
-      });
+      await handler.run(ctx);
     } catch (error) {
       if (payload.stage === "implement" || payload.stage === "review") {
         await recordLearning(
@@ -298,6 +310,7 @@ async function executeStageJob(
       }
       throw error;
     }
+    if (ctx.worktreeId) activeWorktreeId = ctx.worktreeId;
     const finished = index + 1 >= steps.length;
     cursor = {
       ...cursor,

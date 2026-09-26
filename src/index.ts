@@ -118,7 +118,9 @@ export {
   WorktreeIsolationError,
   WorktreeManager,
   createSkillStageHook,
+  createWorktreeManagerFromEnv,
   createWorktreeStageHandler,
+  loadWorktreeRuntimeConfig,
   worktreeKey,
   type CreateWorktreeOptions,
   type ReapResult,
@@ -126,6 +128,7 @@ export {
   type WorktreeLifecycle,
   type WorktreeManagerOptions,
   type WorktreeReapOutcome,
+  type WorktreeRuntimeConfig,
   type WorktreeSkillStageHook,
 } from "./orchestrator/worktrees/index.js";
 export {

@@ -1,14 +1,19 @@
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import type { CodingAgentInput } from "../src/adapters/coding-agent.js";
 import {
   InMemoryStepCursorStore,
   WorktreeIsolationError,
   WorktreeManager,
+  createProductionStageHandler,
+  createStageTracer,
   createWorktreeStageHandler,
+  loadWorktreeRuntimeConfig,
+  processStageJob,
   runPipeline,
 } from "../src/index.js";
 
@@ -33,8 +38,14 @@ async function initFixture(): Promise<{ repoPath: string; root: string }> {
   await git(repoPath, ["config", "user.name", "Optio New"]);
   await git(repoPath, ["config", "commit.gpgsign", "false"]);
   await mkdir(path.join(repoPath, ".cursor", "skills"), { recursive: true });
+  await mkdir(path.join(repoPath, ".cursor", "agents"), { recursive: true });
+  await mkdir(path.join(repoPath, ".cursor", "commands"), { recursive: true });
+  await mkdir(path.join(repoPath, ".cursor", "rules"), { recursive: true });
   await mkdir(path.join(repoPath, "src"), { recursive: true });
   await writeFile(path.join(repoPath, ".cursor", "skills", "secret.md"), "secret\n");
+  await writeFile(path.join(repoPath, ".cursor", "agents", "backend.md"), "agent\n");
+  await writeFile(path.join(repoPath, ".cursor", "commands", "implement.md"), "command\n");
+  await writeFile(path.join(repoPath, ".cursor", "rules", "always.md"), "rule\n");
   await writeFile(path.join(repoPath, "src", "keep.txt"), "keep\n");
   await git(repoPath, ["add", "."]);
   await git(repoPath, ["commit", "-m", "init"]);
@@ -63,6 +74,13 @@ describe("worktree manager", () => {
       "keep\n",
     );
     await expect(access(path.join(first.path, ".cursor", "skills", "secret.md"))).rejects.toThrow();
+    await expect(
+      access(path.join(first.path, ".cursor", "agents", "backend.md")),
+    ).rejects.toThrow();
+    await expect(
+      access(path.join(first.path, ".cursor", "commands", "implement.md")),
+    ).rejects.toThrow();
+    await expect(access(path.join(first.path, ".cursor", "rules", "always.md"))).rejects.toThrow();
     await expect(manager.status("task-a")).resolves.toMatchObject({
       taskId: "task-a",
       path: first.path,
@@ -168,6 +186,7 @@ describe("BullMQ worktree hooks", () => {
       },
     };
 
+    const seenIds: string[] = [];
     await runPipeline(
       { taskId: "t-1", sessionId: "s-1" },
       {
@@ -176,11 +195,14 @@ describe("BullMQ worktree hooks", () => {
         handler: {
           async run(ctx) {
             log.push(`${ctx.stage}:${ctx.step}`);
+            if (ctx.step === "invoke_implementation" && ctx.worktreeId)
+              seenIds.push(ctx.worktreeId);
           },
         },
       },
     );
 
+    expect(seenIds).toEqual(["wt-t-1"]);
     expect(log.indexOf("create:t-1")).toBe(log.indexOf("implement:invoke_implementation") - 1);
     expect(log.indexOf("reap:t-1:true")).toBe(log.indexOf("merge:record_cleanup") + 1);
     expect(log.filter((entry) => entry.startsWith("reap:"))).toEqual(["reap:t-1:true"]);
@@ -212,5 +234,161 @@ describe("BullMQ worktree hooks", () => {
       }),
     ).rejects.toThrow(/merge rejected/);
     expect(failureLog).toEqual(["merge:merge_branch", "reap:t-2:false"]);
+  });
+});
+
+describe("worktree runtime config", () => {
+  it("reads OPTIO_NEW_WORKTREE_ROOT, repo path, and retain-on-failure", () => {
+    expect(loadWorktreeRuntimeConfig({})).toEqual({
+      root: "/var/lib/optio-new/worktrees",
+      repoPath: "/opt/optio-new",
+      baseBranch: "development",
+      retainOnFailure: true,
+    });
+    expect(
+      loadWorktreeRuntimeConfig({
+        OPTIO_NEW_WORKTREE_ROOT: "/data/wt",
+        OPTIO_NEW_REPO_PATH: "/data/repo",
+        OPTIO_NEW_BASE_BRANCH: "origin/development",
+        OPTIO_NEW_WORKTREE_RETAIN_ON_FAILURE: "false",
+      }),
+    ).toEqual({
+      root: "/data/wt",
+      repoPath: "/data/repo",
+      baseBranch: "origin/development",
+      retainOnFailure: false,
+    });
+    expect(() =>
+      loadWorktreeRuntimeConfig({ OPTIO_NEW_WORKTREE_RETAIN_ON_FAILURE: "yes" }),
+    ).toThrow(/true or false/);
+  });
+});
+
+describe("implement stage isolation", () => {
+  it("runs coding cwd in distinct worktrees and emits create and remove spans", async () => {
+    const { repoPath, root } = await initFixture();
+    const tracer = createStageTracer();
+    const manager = new WorktreeManager({
+      root,
+      repoPath,
+      baseBranch: "development",
+      tracer,
+    });
+    const calls: CodingAgentInput[] = [];
+    const handler = createProductionStageHandler({
+      env: { CURSOR_API_KEY: "cursor-test" },
+      worktrees: manager,
+      codingAgent: {
+        id: "cursor",
+        async run(input) {
+          calls.push(input);
+          return { pr_ready: false, status: "succeeded", usage: { provider: "cursor" } };
+        },
+      },
+    });
+    const cursors = new InMemoryStepCursorStore();
+    const updatedAt = "2026-09-26T12:00:00.000Z";
+    for (const taskId of ["alpha", "beta"]) {
+      await cursors.save({
+        taskId,
+        sessionId: taskId,
+        stage: "plan",
+        nextStepIndex: 2,
+        status: "completed",
+        updatedAt,
+      });
+    }
+
+    await Promise.all(
+      ["alpha", "beta"].map((taskId) =>
+        processStageJob(
+          { taskId, sessionId: taskId, stage: "implement" },
+          { cursors, handler, worktrees: manager, tracer },
+        ),
+      ),
+    );
+
+    expect(calls).toHaveLength(2);
+    const byTask = new Map(calls.map((call) => [call.metadata.task_id, call]));
+    const alpha = byTask.get("alpha");
+    const beta = byTask.get("beta");
+    expect(alpha?.worktree_path).not.toBe(beta?.worktree_path);
+    expect(alpha?.metadata.worktree_id).toBe("wt-alpha");
+    expect(beta?.metadata.worktree_id).toBe("wt-beta");
+    expect(alpha?.worktree_path.endsWith(`${path.sep}wt-alpha`)).toBe(true);
+    expect(beta?.worktree_path.endsWith(`${path.sep}wt-beta`)).toBe(true);
+    await expect(
+      access(path.join(alpha?.worktree_path ?? "", ".cursor", "skills", "secret.md")),
+    ).rejects.toThrow();
+
+    const creates = tracer.finished().filter((span) => span.name === "worktree.create");
+    expect(creates.map((span) => span.attributes.task_id).sort()).toEqual(["alpha", "beta"]);
+    expect(creates.map((span) => span.attributes.worktree_id).sort()).toEqual([
+      "wt-alpha",
+      "wt-beta",
+    ]);
+
+    await manager.create("alpha");
+    expect(tracer.finished().filter((span) => span.name === "worktree.create")).toHaveLength(2);
+
+    await expect(manager.reap("alpha", { merged: false })).resolves.toMatchObject({
+      action: "retained",
+    });
+    expect(tracer.finished().filter((span) => span.name === "worktree.remove")).toHaveLength(0);
+    await expect(access(path.join(root, "wt-alpha"))).resolves.toBeUndefined();
+
+    await expect(manager.reap("beta", { merged: true })).resolves.toMatchObject({
+      action: "reaped",
+      reason: "merged",
+    });
+    const removes = tracer.finished().filter((span) => span.name === "worktree.remove");
+    expect(removes).toHaveLength(1);
+    expect(removes[0]?.attributes.task_id).toBe("beta");
+    expect(removes[0]?.attributes.worktree_id).toBe("wt-beta");
+    await expect(access(path.join(root, "wt-beta"))).rejects.toThrow();
+
+    const names = await readdir(root);
+    expect(names.filter((name) => name.startsWith("wt-"))).toEqual(["wt-alpha"]);
+    expect(names.every((name) => name === "wt-alpha" || name.startsWith("."))).toBe(true);
+  });
+
+  it("tags a later stage with the worktree id from status", async () => {
+    const tracer = createStageTracer();
+    const cursors = new InMemoryStepCursorStore();
+    await cursors.save({
+      taskId: "t-1",
+      sessionId: "s-1",
+      stage: "implement",
+      nextStepIndex: 2,
+      status: "completed",
+      updatedAt: "2026-09-26T12:00:00.000Z",
+    });
+    await processStageJob(
+      { taskId: "t-1", sessionId: "s-1", stage: "review" },
+      {
+        cursors,
+        tracer,
+        handler: { async run() {} },
+        worktrees: {
+          async create() {
+            throw new Error("review must not create");
+          },
+          async reap() {
+            throw new Error("review must not reap");
+          },
+          async status() {
+            return {
+              taskId: "t-1",
+              worktreeId: "wt-t-1",
+              path: "/tmp/wt-t-1",
+              branch: "task/t-1",
+            };
+          },
+        },
+      },
+    );
+    const span = tracer.finished().find((item) => item.name === "workflow.step");
+    expect(span?.attributes.task_id).toBe("t-1");
+    expect(span?.attributes.worktree_id).toBe("wt-t-1");
   });
 });

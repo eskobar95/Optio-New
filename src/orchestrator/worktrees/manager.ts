@@ -6,6 +6,7 @@
 import { execFile } from "node:child_process";
 import { access, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { CANONICAL_SPAN, type StageTracer } from "../telemetry/index.js";
 
 /** Cursor-native skill / subagent / command / rule trees stay on the control-plane checkout. */
 const SOT_EXCLUDES = [
@@ -57,6 +58,13 @@ export interface WorktreeManagerOptions {
    * Omitted: worktree lifecycle is unchanged.
    */
   skillStageHook?: WorktreeSkillStageHook;
+  /**
+   * When set, a newly added checkout emits `worktree.create` and a real delete
+   * emits `worktree.remove`. Both spans carry `task_id` and `worktree_id`.
+   * An existing checkout does not emit a second create. A retained failure
+   * does not emit remove.
+   */
+  tracer?: StageTracer;
 }
 
 export interface CreateWorktreeOptions {
@@ -87,6 +95,8 @@ export interface ReapResult {
 export interface WorktreeLifecycle {
   create(taskId: string, options?: CreateWorktreeOptions): Promise<WorktreeHandle>;
   reap(taskId: string, outcome: WorktreeReapOutcome): Promise<ReapResult>;
+  /** Present on {@link WorktreeManager}. Stage runtime uses it to tag later spans. */
+  status?(taskId: string): Promise<WorktreeHandle | undefined>;
 }
 
 interface LockRecord {
@@ -203,6 +213,7 @@ export class WorktreeManager implements WorktreeLifecycle {
   private readonly baseBranch: string;
   private readonly retainOnFailure: boolean;
   private readonly skillStageHook: WorktreeSkillStageHook | undefined;
+  private readonly tracer: StageTracer | undefined;
 
   constructor(options: WorktreeManagerOptions) {
     if (!options.root.trim()) throw new Error("worktree root is required");
@@ -212,11 +223,12 @@ export class WorktreeManager implements WorktreeLifecycle {
     this.baseBranch = options.baseBranch?.trim() || "development";
     this.retainOnFailure = options.retainOnFailure ?? true;
     this.skillStageHook = options.skillStageHook;
+    this.tracer = options.tracer;
   }
 
   async create(taskId: string, options?: CreateWorktreeOptions): Promise<WorktreeHandle> {
     const layout = this.layout(taskId, options?.slug);
-    return withRepoLock(this.repoPath, async () => {
+    const result = await withRepoLock(this.repoPath, async () => {
       const existing = await readLock(layout.lockPath);
       if (existing && existing.taskId !== taskId) {
         throw new WorktreeIsolationError(
@@ -228,10 +240,13 @@ export class WorktreeManager implements WorktreeLifecycle {
       if (existing && (await exists(layout.path))) {
         await this.seedSkills(taskId, layout.path, options);
         return {
-          taskId,
-          path: layout.path,
-          branch: existing.branch,
-          worktreeId: existing.worktreeId,
+          fresh: false,
+          handle: {
+            taskId,
+            path: layout.path,
+            branch: existing.branch,
+            worktreeId: existing.worktreeId,
+          },
         };
       }
       if (await exists(layout.path)) {
@@ -265,12 +280,23 @@ export class WorktreeManager implements WorktreeLifecycle {
       await mkdir(path.dirname(layout.lockPath), { recursive: true });
       await writeFile(layout.lockPath, `${JSON.stringify(record)}\n`, "utf8");
       return {
-        taskId,
-        path: layout.path,
-        branch,
-        worktreeId: layout.worktreeId,
+        fresh: true,
+        handle: {
+          taskId,
+          path: layout.path,
+          branch,
+          worktreeId: layout.worktreeId,
+        },
       };
     });
+    if (result.fresh) {
+      await this.emitSpan(
+        CANONICAL_SPAN.worktreeCreate,
+        result.handle.taskId,
+        result.handle.worktreeId,
+      );
+    }
+    return result.handle;
   }
 
   async status(taskId: string): Promise<WorktreeHandle | undefined> {
@@ -305,7 +331,7 @@ export class WorktreeManager implements WorktreeLifecycle {
 
   async reap(taskId: string, outcome: WorktreeReapOutcome): Promise<ReapResult> {
     const layout = this.layout(taskId);
-    return withRepoLock(this.repoPath, async () => {
+    const result = await withRepoLock(this.repoPath, async () => {
       const existing = await readLock(layout.lockPath);
       if (existing && existing.taskId !== taskId) {
         throw new WorktreeIsolationError(
@@ -316,7 +342,15 @@ export class WorktreeManager implements WorktreeLifecycle {
       }
       const present = await exists(layout.path);
       if (!outcome.merged && this.retainOnFailure && present) {
-        return { taskId, action: "retained", path: layout.path, reason: "failure" };
+        return {
+          removed: false,
+          reap: {
+            taskId,
+            action: "retained" as const,
+            path: layout.path,
+            reason: "failure" as const,
+          },
+        };
       }
       if (present) {
         await this.skillStageHook?.onDelete({ taskId, worktreePath: layout.path });
@@ -325,12 +359,24 @@ export class WorktreeManager implements WorktreeLifecycle {
       }
       await rm(layout.lockPath, { force: true });
       return {
-        taskId,
-        action: "reaped",
-        path: layout.path,
-        reason: outcome.merged ? "merged" : "failure",
+        removed: present,
+        reap: {
+          taskId,
+          action: "reaped" as const,
+          path: layout.path,
+          reason: outcome.merged ? ("merged" as const) : ("failure" as const),
+        },
       };
     });
+    if (result.removed) {
+      await this.emitSpan(CANONICAL_SPAN.worktreeRemove, taskId, layout.worktreeId);
+    }
+    return result.reap;
+  }
+
+  private async emitSpan(name: string, taskId: string, worktreeId: string): Promise<void> {
+    if (!this.tracer) return;
+    await this.tracer.runStage(name, { taskId, worktreeId }, async () => undefined);
   }
 
   private async seedSkills(
