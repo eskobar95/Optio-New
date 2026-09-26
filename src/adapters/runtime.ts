@@ -242,6 +242,12 @@ interface RawUsage {
   cached_input_tokens?: number;
   cost_usd?: number;
   model_id?: string;
+  /** Cursor agent CLI 2026.09+ print --output-format json */
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  costUsd?: number;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -355,10 +361,16 @@ export function mapCliToOutput(args: {
   const usage: CodingAgentUsage = { provider: args.provider };
   const modelId = raw?.model_id ?? args.input.metadata.model_id;
   if (modelId) usage.model_id = modelId;
-  const inputTokens = num(raw?.input_tokens);
-  const outputTokens = num(raw?.output_tokens);
-  const cachedTokens = num(raw?.cached_tokens) ?? num(raw?.cached_input_tokens);
-  const costUsd = num(raw?.cost_usd);
+  // Cursor agent CLI reports camelCase token fields and often omits USD on the
+  // subscription path. Accept both shapes so budget accounting is not usage_unreported.
+  const inputTokens = num(raw?.input_tokens) ?? num(raw?.inputTokens);
+  const outputTokens = num(raw?.output_tokens) ?? num(raw?.outputTokens);
+  const cachedTokens =
+    num(raw?.cached_tokens) ?? num(raw?.cached_input_tokens) ?? num(raw?.cacheReadTokens);
+  let costUsd = num(raw?.cost_usd) ?? num(raw?.costUsd);
+  if (costUsd === undefined && (inputTokens !== undefined || outputTokens !== undefined)) {
+    costUsd = 0;
+  }
   if (inputTokens !== undefined) usage.input_tokens = inputTokens;
   if (outputTokens !== undefined) usage.output_tokens = outputTokens;
   if (cachedTokens !== undefined) usage.cached_tokens = cachedTokens;

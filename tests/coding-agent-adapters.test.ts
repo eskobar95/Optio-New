@@ -132,6 +132,37 @@ describe("Cursor CodingAgent", () => {
     expect(call?.env.PATH).toBe("/usr/bin");
   });
 
+  it("maps Cursor camelCase usage and fills missing cost_usd as 0", async () => {
+    const { runner } = fakeRunner({
+      stdout: JSON.stringify({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "pong",
+        usage: {
+          inputTokens: 100,
+          outputTokens: 7,
+          cacheReadTokens: 12,
+          cacheWriteTokens: 0,
+        },
+      }),
+    });
+    const agent = createCodingAgent("cursor", {
+      runner,
+      env: { CURSOR_API_KEY: CURSOR_KEY },
+    });
+    const output = await agent.run(sampleInput());
+    expect(output.status).toBe("succeeded");
+    expect(output.usage).toEqual({
+      provider: "cursor",
+      model_id: "gpt-4o",
+      input_tokens: 100,
+      output_tokens: 7,
+      cached_tokens: 12,
+      cost_usd: 0,
+    });
+  });
+
   it("returns usage and status from the CLI json", async () => {
     const { runner } = fakeRunner({
       stdout: JSON.stringify({
@@ -301,6 +332,7 @@ describe("Codex CodingAgent", () => {
       input_tokens: 100,
       output_tokens: 7,
       cached_tokens: 40,
+      cost_usd: 0,
     });
 
     const configPath = "/tmp/optio-codex-home/config.toml";
