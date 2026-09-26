@@ -53,7 +53,8 @@ report_disk "docker_data_root" "$docker_root"
 
 mem=0
 if [[ -r /proc/meminfo ]]; then
-  mem="$(awk '/^MemAvailable:/ { print $2 * 1024 }' /proc/meminfo)"
+  # BusyBox/mawk may print scientific notation for large products; force integer.
+  mem="$(awk '/^MemAvailable:/ { printf "%d\n", $2 * 1024 }' /proc/meminfo)"
 fi
 if [[ ! "$mem" =~ ^[0-9]+$ ]]; then
   mem=0
