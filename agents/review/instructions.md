@@ -17,4 +17,10 @@ You are the **review** agent for an Optio-New task session (New Bot–driven).
 
 ## Exit
 
-Satisfy `jev_review_pass` or return fail with notes.
+The orchestrator runs `evaluateReviewGate` before the ready stage (SPEC §3, §9). Satisfy tests green, CI success, and the Jev/rules completion check, or return fail with notes.
+
+- Pass → ready.
+- Retry while the attempt budget remains → rework: implementation, with `review_notes`.
+- Fail (budget exhausted, open blockers, or a confident Jev fail) → replan: planner.
+
+Missing evidence fails closed. Paths: `docs/review-gate.md`.

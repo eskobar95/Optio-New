@@ -38,6 +38,8 @@ steps:
   - id: ready
     agent: agents/ready
     skills_allowed: [skills/land, skills/sync-development]
+    # review_pass = evaluateReviewGate: tests green + CI success + Jev/rules completion.
+    # Closed gate: rework (implementation) or replan (planner). See docs/review-gate.md.
     entry_gates: [review_pass]
     exit_gates: [pr_open, ci_pending_or_green]
     on_fail: escalate_bot

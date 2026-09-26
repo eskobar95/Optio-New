@@ -5,6 +5,11 @@ import type { ModelAdapter } from "../../agent/adapter.js";
 import { runAgentLoop } from "../../agent/loop.js";
 import type { StepCursor, StepCursorStore } from "./cursor.js";
 import {
+  ReviewGateClosedError,
+  evaluateReviewGate,
+  type ReviewGateBinding,
+} from "./review-gate.js";
+import {
   PIPELINE_STAGES,
   STAGE_STEPS,
   StageJobPayloadSchema,
@@ -40,6 +45,11 @@ export interface StageStepHandler {
 export interface StageRuntime {
   cursors: StepCursorStore;
   handler: StageStepHandler;
+  /**
+   * When set, ready starts only after the review gate passes.
+   * A closed gate throws {@link ReviewGateClosedError} and does not write the ready cursor.
+   */
+  reviewGate?: ReviewGateBinding;
 }
 
 export interface StageJobResult {
@@ -109,6 +119,17 @@ export async function processStageJob(input: unknown, deps: StageRuntime): Promi
       status: "completed",
       nextStepIndex: steps.length,
     };
+  }
+
+  if (payload.stage === "ready" && deps.reviewGate) {
+    const evidence = await deps.reviewGate.loadEvidence({
+      taskId: payload.taskId,
+      sessionId: payload.sessionId,
+    });
+    const decision = await evaluateReviewGate(evidence, deps.reviewGate.advisor);
+    if (decision.verdict !== "pass") {
+      throw new ReviewGateClosedError(decision);
+    }
   }
 
   cursor = { ...cursor, status: "running", updatedAt: nowIso() };

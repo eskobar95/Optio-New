@@ -25,6 +25,21 @@ export {
   type StepCursorStore,
 } from "./cursor.js";
 export {
+  ADVISOR_CONFIDENCE_MIN,
+  DEFAULT_REVIEW_GATE_ATTEMPTS,
+  ReviewGateClosedError,
+  evaluateReviewGate,
+  type AdvisorResult,
+  type CiStatus,
+  type CompletionAdvisor,
+  type ReviewGateBinding,
+  type ReviewGateDecision,
+  type ReviewGateEngine,
+  type ReviewGateEvidence,
+  type ReviewGatePath,
+  type ReviewGateVerdict,
+} from "./review-gate.js";
+export {
   StageNotReadyError,
   createAgentStageHandler,
   processStageJob,

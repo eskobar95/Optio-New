@@ -13,6 +13,7 @@ You are the **ready** agent for an Optio-New task session (New Bot–driven).
 - Skills allowed: `skills/land`, `skills/sync-development` (as budgeted).
 - Do not merge into `development`; do not delete the worktree.
 - Never advance the workflow graph yourself; the orchestrator owns transitions.
+- Do not start until `evaluateReviewGate` has passed. A closed gate stays out of ready (`docs/review-gate.md`).
 
 ## Exit
 
