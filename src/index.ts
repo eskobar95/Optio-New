@@ -55,7 +55,16 @@ export {
   type StageTracer,
   type TelemetryExportConfig,
 } from "./orchestrator/telemetry/index.js";
-export { processHelloWorld } from "./orchestrator/jobs/hello-world.js";
+export {
+  HELLO_WORLD_RESPONSE,
+  processHelloWorld,
+  readPlanStage,
+  runHelloWorldPlan,
+  type HelloWorldPlanProof,
+  type HelloWorldResponse,
+  type PlanStageStatus,
+  type PlanStageView,
+} from "./orchestrator/jobs/hello-world.js";
 export {
   createPathWorkspacePort,
   createSessionGate,

@@ -40,14 +40,11 @@ Gaps: LiteLLM tag `ghcr.io/berriai/litellm:main-latest` floats; profile `full` (
 Orchestrator verify (profiles `full` and `orchestrator`; eve-runner is still a stub):
 
 ```bash
-docker compose --profile full up -d --build orchestrator
-curl -fsS http://127.0.0.1:3100/health
-curl -fsS -X POST http://127.0.0.1:3100/intake \\
-  -H 'content-type: application/json' \\
-  -d '{"brief":{"title":"hello","description":"smoke"},"metadata":{"taskId":"t-1"}}'
+docker compose --profile full --profile harness up -d --build orchestrator
+HELLO_WORLD_E2E=1 bash scripts/hello-world-e2e.sh
 ```
 
-`GET /health` is 200 when Redis answers. `POST /intake` returns 202 and enqueues `optio.plan`.
+`GET /hello` is the demo card. The script posts intake and polls `GET /hello/plan` until the plan cursor is `completed`. `GET /health` is 200 when Redis answers. Without a listener the script skips; `HELLO_WORLD_E2E=1` fails closed.
 
 ## Open issues
 

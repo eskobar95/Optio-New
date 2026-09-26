@@ -112,6 +112,17 @@ When Docker is present, smoke also checks that `kit-harness` is absent from the 
 npm run smoke
 ```
 
+## Hello-world: intake → plan
+
+kit-harness does not enqueue pipeline jobs. The orchestrator does. On the kit-harness host, profile `full` starts that process on `127.0.0.1:3100`. The eve-runner container in the same profile is still a stub. This check does not open another port.
+
+```bash
+docker compose --profile full --profile harness up -d --build orchestrator
+HELLO_WORLD_E2E=1 bash scripts/hello-world-e2e.sh
+```
+
+The script requires `GET /health`, then checks `GET /hello`, posts `POST /intake`, and polls `GET /hello/plan` until `progressed` is true and the plan cursor is `completed`. `npm run smoke` runs the same script and skips when nothing is listening. `HELLO_WORLD_E2E=1` turns that skip into a failure. The script talks to the orchestrator on `:3100`. kit-harness on `:3200` stays a sidecar.
+
 ## Beside LiteLLM and BullMQ on Hetzner
 
 On the VPS the practical stack is already Redis, Postgres, the BullMQ orchestrator, and LiteLLM (SPEC §12.6, §14.2). kit-harness sits in the same Compose project and does not replace either neighbor.

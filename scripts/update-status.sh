@@ -149,14 +149,11 @@ trap cleanup EXIT
   echo "Orchestrator verify (profiles \`full\` and \`orchestrator\`; eve-runner is still a stub):"
   echo
   echo '```bash'
-  echo "docker compose --profile full up -d --build orchestrator"
-  echo "curl -fsS http://127.0.0.1:3100/health"
-  echo "curl -fsS -X POST http://127.0.0.1:3100/intake \\\\"
-  echo "  -H 'content-type: application/json' \\\\"
-  echo "  -d '{\"brief\":{\"title\":\"hello\",\"description\":\"smoke\"},\"metadata\":{\"taskId\":\"t-1\"}}'"
+  echo "docker compose --profile full --profile harness up -d --build orchestrator"
+  echo "HELLO_WORLD_E2E=1 bash scripts/hello-world-e2e.sh"
   echo '```'
   echo
-  echo "\`GET /health\` is 200 when Redis answers. \`POST /intake\` returns 202 and enqueues \`optio.plan\`."
+  echo "\`GET /hello\` is the demo card. The script posts intake and polls \`GET /hello/plan\` until the plan cursor is \`completed\`. \`GET /health\` is 200 when Redis answers. Without a listener the script skips; \`HELLO_WORLD_E2E=1\` fails closed."
   echo
   echo "## Open issues"
   echo
