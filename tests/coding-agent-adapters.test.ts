@@ -7,11 +7,13 @@ import {
   resolveCodingBackend,
 } from "../src/adapters/select.js";
 import { CURSOR_NATIVE_API_ENDPOINT } from "../src/adapters/cursor/index.js";
+import { CURSOR_IMPLEMENT_ACI_POLICY } from "../src/adapters/cursor/implement-feedback.js";
 import { spawnCli, type CliRunRequest, type CliRunResult } from "../src/adapters/runtime.js";
 
 const PROMPT = "implement the seam";
 const INSTRUCTIONS = "follow the spec";
 const EXPECTED_PROMPT = `${INSTRUCTIONS}\n\n${PROMPT}`;
+const CURSOR_IMPLEMENT_PROMPT = `${EXPECTED_PROMPT}\n\n${CURSOR_IMPLEMENT_ACI_POLICY}`;
 const LITELLM_URL = "http://127.0.0.1:4000/v1";
 const CAVEMAN_URL = "http://127.0.0.1:8787/compat/litellm/v1";
 const CURSOR_KEY = "cursor-key-secret";
@@ -118,7 +120,7 @@ describe("Cursor CodingAgent", () => {
     ]);
     expect(call?.args).toContain("--force");
     expect(call?.args).toContain("--model");
-    expect(call?.args.at(-1)).toBe(EXPECTED_PROMPT);
+    expect(call?.args.at(-1)).toBe(CURSOR_IMPLEMENT_PROMPT);
     expect(call?.args.join(" ")).not.toContain(CURSOR_KEY);
     expect(call?.args.join(" ")).not.toContain("127.0.0.1");
     expect(call?.env.OPENAI_BASE_URL).toBeUndefined();
@@ -361,7 +363,7 @@ describe("Codex CodingAgent", () => {
 });
 
 describe("flip coding_backend", () => {
-  it("sends the same prompt to Cursor or Codex by changing config only", async () => {
+  it("keeps the task prompt and adds Cursor implement feedback only on Cursor", async () => {
     const cursorRun = fakeRunner({
       stdout: JSON.stringify({ type: "result", subtype: "success", is_error: false }),
     });
@@ -388,7 +390,7 @@ describe("flip coding_backend", () => {
 
     expect(cursorOutput.status).toBe("succeeded");
     expect(codexOutput.status).toBe("succeeded");
-    expect(cursorRun.calls[0]?.args.at(-1)).toBe(EXPECTED_PROMPT);
+    expect(cursorRun.calls[0]?.args.at(-1)).toBe(CURSOR_IMPLEMENT_PROMPT);
     expect(codexRun.calls[0]?.args.at(-1)).toBe(EXPECTED_PROMPT);
     expect(cursorRun.calls[0]?.command).toBe("agent");
     expect(codexRun.calls[0]?.command).toBe("codex");

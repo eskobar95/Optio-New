@@ -7,7 +7,6 @@
 import type { CodingAgent, CodingAgentInput, CodingAgentOutput } from "../coding-agent.js";
 import {
   allowsMutation,
-  buildAgentPrompt,
   childEnv,
   credentialsFailure,
   invokeCli,
@@ -17,6 +16,7 @@ import {
   type CliRunRequest,
   type CodingAgentDeps,
 } from "../runtime.js";
+import { cursorImplementPrompt } from "./implement-feedback.js";
 
 /** Native Cursor API host. Not a local LiteLLM or Caveman URL. */
 export const CURSOR_NATIVE_API_ENDPOINT = "https://api2.cursor.sh";
@@ -47,7 +47,7 @@ function cursorRequest(input: CodingAgentInput, env: NodeJS.ProcessEnv): CliRunR
   else args.push("--sandbox", "enabled");
   const model = input.metadata.model_id?.trim();
   if (model) args.push("--model", model);
-  args.push(buildAgentPrompt(input));
+  args.push(cursorImplementPrompt(input));
 
   return {
     command,

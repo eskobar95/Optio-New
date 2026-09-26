@@ -33,6 +33,9 @@ Steps, in order:
 
 - plan: `ack_session`, `invoke_planner`
 - implement: `invoke_implementation`, `record_diff`
+
+`invoke_implementation` on the Cursor adapter appends the implement feedback policy (syntax-checked edits, truncated search and list summaries, empty-command observations). See [cursor-implement-feedback.md](cursor-implement-feedback.md).
+
 - review: `invoke_review`, `record_verdict`
 - ready: `open_pr`, `record_ci_wait`
 - merge: `merge_branch`, `record_cleanup`
