@@ -39,6 +39,12 @@ The handler runs, then the cursor advances. If the process dies or the cursor wr
 
 `createAgentStageHandler(adapter)` calls `runAgentLoop` once per step (`${stage}:${step} task=${taskId}`). The adapter is injected. `createEnvModelAdapter` still does not perform HTTP.
 
+Optional `StageRuntime.worktrees` (`WorktreeManager`) hooks the implement and merge stages:
+
+- `implement` / `invoke_implementation` calls `create(taskId)` before the step handler.
+- `merge` / `merge_branch` failure calls `reap(taskId, { merged: false })`. The manager keeps the directory when `retainOnFailure` is true (the default) and removes it when that flag is false.
+- `merge` / `record_cleanup` calls `reap(taskId, { merged: true })` after the step handler returns.
+
 ## Workers
 
 Symbols are exported from `src/index.ts`.
@@ -48,8 +54,15 @@ const cursors = process.env.OPTIO_NEW_DATABASE_URL
   ? await createPgStepCursorStore(process.env.OPTIO_NEW_DATABASE_URL)
   : new InMemoryStepCursorStore();
 
+const worktrees = new WorktreeManager({
+  root: "/var/lib/optio-new/worktrees",
+  repoPath: "/opt/optio-new",
+  baseBranch: "development",
+  retainOnFailure: true,
+});
+
 const workers = startStageGraph(
-  { cursors, handler: createAgentStageHandler(adapter) },
+  { cursors, handler: createAgentStageHandler(adapter), worktrees },
   bullmqStageWorkerFactory({
     url: process.env.OPTIO_NEW_REDIS_URL,
     maxRetriesPerRequest: null,

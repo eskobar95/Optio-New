@@ -3,6 +3,8 @@
  */
 import type { ModelAdapter } from "../../agent/adapter.js";
 import { runAgentLoop } from "../../agent/loop.js";
+import type { WorktreeLifecycle } from "../worktrees/manager.js";
+import { createWorktreeStageHandler } from "../worktrees/stage-hooks.js";
 import type { StepCursor, StepCursorStore } from "./cursor.js";
 import {
   ReviewGateClosedError,
@@ -50,6 +52,8 @@ export interface StageRuntime {
    * A closed gate throws {@link ReviewGateClosedError} and does not write the ready cursor.
    */
   reviewGate?: ReviewGateBinding;
+  /** When set, implement creates the task worktree and merge reaps it. */
+  worktrees?: WorktreeLifecycle;
 }
 
 export interface StageJobResult {
@@ -135,12 +139,16 @@ export async function processStageJob(input: unknown, deps: StageRuntime): Promi
   cursor = { ...cursor, status: "running", updatedAt: nowIso() };
   await deps.cursors.save(cursor);
 
+  const handler: StageStepHandler = deps.worktrees
+    ? createWorktreeStageHandler(deps.worktrees, deps.handler)
+    : deps.handler;
+
   for (let index = cursor.nextStepIndex; index < steps.length; index += 1) {
     const step = steps[index];
     if (!step) {
       throw new Error(`missing step ${index} for ${payload.stage}`);
     }
-    await deps.handler.run({
+    await handler.run({
       taskId: payload.taskId,
       sessionId: payload.sessionId,
       stage: payload.stage,

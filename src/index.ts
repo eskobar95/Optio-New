@@ -71,6 +71,18 @@ export {
   type WorktreeManagerLike,
 } from "./orchestrator/sessions/index.js";
 export {
+  WorktreeIsolationError,
+  WorktreeManager,
+  createWorktreeStageHandler,
+  worktreeKey,
+  type CreateWorktreeOptions,
+  type ReapResult,
+  type WorktreeHandle,
+  type WorktreeLifecycle,
+  type WorktreeManagerOptions,
+  type WorktreeReapOutcome,
+} from "./orchestrator/worktrees/index.js";
+export {
   PIPELINE_JOB_ATTEMPTS,
   PIPELINE_STAGES,
   STAGE_QUEUES,
