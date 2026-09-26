@@ -352,6 +352,7 @@ describe("production stage handler", () => {
       worktrees,
       git: git.git,
       fetchImpl: github.fetchImpl,
+      loadPrSafety: passingSafety,
     });
     await handler.run(step("ready", "open_pr", taskId));
     const posts = github.calls.filter((call) => call.method === "POST").length;
@@ -374,6 +375,7 @@ describe("production stage handler", () => {
       env: handlerEnv(),
       worktrees,
       git: git.git,
+      loadPrSafety: passingSafety,
       fetchImpl: async (input, init) => {
         const url = String(input);
         const method = init?.method ?? "GET";
@@ -399,6 +401,7 @@ describe("production stage handler", () => {
       worktrees,
       git: git.git,
       fetchImpl: again.fetchImpl,
+      loadPrSafety: passingSafety,
     });
     await second.run(step("ready", "open_pr", taskId));
     expect(again.calls.filter((call) => call.method === "POST")).toEqual([]);
