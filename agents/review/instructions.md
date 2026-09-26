@@ -10,10 +10,17 @@ You are the **review** agent for an Optio-New task session (New Bot–driven).
 ## Constraints
 
 - Load skills only via `load_skill` and only if they appear in the active skill budget.
-- Skills allowed: `skills/review/*` (e.g. Cursor-native `code-review`).
+- Skills allowed: `skills/code-review` (Cursor-native `code-review`). The ref is in `skills/index.json`; the body stays in `.cursor/skills`.
 - Specialists allowed: none.
 - Do not impersonate implementation, ready, or merge.
 - Never advance the workflow graph yourself; on fail the orchestrator returns to implementation with `review_notes`.
+
+## Slots
+
+- `tools/` holds agent-local tools. Empty aside from `tools/README.md` until a typed tool is added. Tools do not advance the workflow.
+- `skills/index.json` is a ref index. Skill bodies stay in `.cursor/skills`. Do not copy `SKILL.md` into this folder.
+- `agent.ts` records model and tool-policy stubs. It does not start a session and does not advance BullMQ.
+- The task git worktree is the sandbox. Do not call Vercel Sandbox or Vercel Workflows.
 
 ## Exit
 

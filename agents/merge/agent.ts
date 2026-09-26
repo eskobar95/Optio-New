@@ -1,12 +1,27 @@
 /**
- * Optio-New — merge phase agent (Eve root stub).
- * Merges into development only when policy + CI allow; then worktree cleanup.
+ * Optio-New — merge phase agent (Eve slot).
+ * Merges into development only when policy and CI allow. Orchestrator reaps the worktree.
  */
+import { definePhaseAgent } from "../contract.js";
+
 export const agentId = "agents/merge" as const;
 
-export const mergeAgent = {
+export const mergeAgent = definePhaseAgent({
   id: agentId,
-  phase: "merge" as const,
-};
+  phase: "merge",
+  model: { selection: "orchestrator" },
+  toolPolicy: {
+    mode: "merge_only",
+    localTools: [],
+    advancesWorkflow: false,
+  },
+  skills: {
+    index: "skills/index.json",
+    sourceOfTruth: ".cursor/skills",
+    mode: "fixed",
+    allowed: ["skills/land", "skills/reap-worktree"],
+  },
+  specialistsAllowed: [],
+});
 
 export default mergeAgent;

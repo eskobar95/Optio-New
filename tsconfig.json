@@ -19,6 +19,7 @@
   "include": [
     "src/**/*.ts",
     "agents/**/*.ts",
+    "specialists/**/*.ts",
     "gateway/**/*.ts",
     "tests/**/*.ts",
     "vitest.config.ts"

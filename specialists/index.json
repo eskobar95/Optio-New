@@ -1,27 +1,31 @@
 {
-  "$schema_comment": "In-repo SoT: specialist role stubs live under .cursor/agents/.",
+  "$schema_comment": "In-repo SoT: specialist prompt bodies live under .cursor/agents. slot_dir is the Eve subagent mirror (instructions + optional tools); do not copy prompt bodies into those slots.",
   "source_of_truth_root": ".cursor/agents",
   "specialists": [
     {
       "id": "specialists/front-end",
+      "slot_dir": "specialists/front-end",
       "cursor_native_path": ".cursor/agents/frontend.md",
       "cursor_native_id": "frontend",
       "responsibility": "UI, components, client state, a11y, styling"
     },
     {
       "id": "specialists/back-end",
+      "slot_dir": "specialists/back-end",
       "cursor_native_path": ".cursor/agents/backend.md",
       "cursor_native_id": "backend",
       "responsibility": "APIs, services, auth, server business logic"
     },
     {
       "id": "specialists/devops",
+      "slot_dir": "specialists/devops",
       "cursor_native_path": ".cursor/agents/devops.md",
       "cursor_native_id": "devops",
       "responsibility": "CI, Docker, deploy manifests, observability wiring"
     },
     {
       "id": "specialists/database",
+      "slot_dir": "specialists/database",
       "cursor_native_path": ".cursor/agents/database.md",
       "cursor_native_id": "database",
       "responsibility": "schema, migrations, queries, indexes"

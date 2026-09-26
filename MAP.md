@@ -4,10 +4,12 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 
 | Path                                                  | SPEC section(s)   | Notes                                                                     |
 | ----------------------------------------------------- | ----------------- | ------------------------------------------------------------------------- |
-| `agents/{planner,implementation,review,ready,merge}/` | §2, §3, §4        | Eve phase agents; `agent.ts` + `instructions.md` contracts                |
+| `agents/{planner,implementation,review,ready,merge}/` | §2, §3, §4        | Eve slots: `agent.ts`, `instructions.md`, `tools/`, `skills/` refs        |
 | `.cursor/agents/`                                     | §2, §5, §6.5      | In-repo specialist role stubs (SoT)                                       |
 | `.cursor/skills/`                                     | §2, §6, §6.5      | In-repo skill bodies (SoT); `bot-session` replaces Linear `issue-session` |
-| `specialists/index.json`                              | §2, §5, §6.5      | Index → `.cursor/agents`                                                  |
+| `specialists/{front-end,back-end,devops,database}/`   | §2, §5            | Eve subagent slots; prompt SoT remains `.cursor/agents`                   |
+| `specialists/index.json`                              | §2, §5, §6.5      | Index → `.cursor/agents` (`slot_dir` names the mirror)                    |
+| `docs/eve-patterns.md`                                | §2, §4, §14.0     | Eve-compatible filesystem vs Optio-owned BullMQ graph and worktrees       |
 | `skills/index.json`                                   | §2, §6, §6.5      | Index → `.cursor/skills`                                                  |
 | `workflows/default-task.yaml`                         | §3.1, §3.2        | Default New Bot–driven task step graph                                    |
 | `orchestrator/intake/`                                | §8, §11           | New Bot chat/API intake → BullMQ enqueue (no Linear)                      |

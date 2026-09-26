@@ -1,7 +1,8 @@
 # Optio-New Eve runner — intentional stub.
 #
-# agents/{planner,implementation,review,ready,merge}/agent.ts are phase contracts
-# (id + instructions.md). Nothing in this repo starts an Eve session as a process.
+# agents/{planner,implementation,review,ready,merge}/ are Eve slots
+# (agent.ts policy stub, instructions.md, tools/, skills/ refs).
+# Nothing in this repo starts an Eve session as a process.
 # Intake HTTP and the BullMQ stage graph run in the orchestrator image
 # (Dockerfile.orchestrator). Do not point this service at that server: Compose
 # keeps eve-runner separate, and a second listener on :3100 would collide.
