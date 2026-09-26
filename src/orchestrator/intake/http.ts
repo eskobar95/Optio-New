@@ -7,6 +7,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { ZodError, z } from "zod";
 import { enqueueIntakePipeline, type FlowEnqueuer } from "../jobs/enqueue-pipeline.js";
 import { HELLO_WORLD_RESPONSE, type PlanStageView } from "../jobs/hello-world.js";
+import type { TaskRunView } from "../observability/run-log.js";
 import { PipelineIdentitySchema, STAGE_QUEUES } from "../jobs/stages.js";
 import {
   authorizeIntakeWebhook,
@@ -52,6 +53,11 @@ export interface IntakeServerOptions {
    * Omitted means that route stays 404. GET /hello does not need it.
    */
   readPlanStage?: (taskId: string, sessionId: string) => Promise<PlanStageView>;
+  /**
+   * When set, GET /tasks/:taskId/actions returns stage timing, usage, and agent actions.
+   * Omitted means that route stays 404.
+   */
+  readTaskActions?: (taskId: string) => Promise<TaskRunView>;
   /**
    * HMAC secret for POST /webhooks/intake. Blank or omitted fails that route closed (503).
    * POST /intake does not read this value.
@@ -121,6 +127,26 @@ function parseJsonBody(raw: Buffer): unknown {
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   return parseJsonBody(await readRawBody(req));
+}
+
+function taskActionsId(pathname: string): string | undefined {
+  const prefix = "/tasks/";
+  const suffix = "/actions";
+  if (
+    !pathname.startsWith(prefix) ||
+    !pathname.endsWith(suffix) ||
+    pathname.length <= prefix.length + suffix.length
+  ) {
+    return undefined;
+  }
+  let taskId: string;
+  try {
+    taskId = decodeURIComponent(pathname.slice(prefix.length, -suffix.length));
+  } catch {
+    return undefined;
+  }
+  if (!taskId || taskId.includes("/")) return undefined;
+  return taskId;
 }
 
 async function acceptIntake(
@@ -217,6 +243,30 @@ export async function handleIntakeRequest(
       sendJson(res, 200, view);
       return;
     }
+    const taskId = taskActionsId(url.pathname);
+    if (taskId !== undefined) {
+      if (req.method !== "GET") {
+        res.setHeader("allow", "GET");
+        sendJson(res, 405, {
+          error: "method_not_allowed",
+          message: "Use GET /tasks/:taskId/actions",
+        });
+        return;
+      }
+      if (!options.readTaskActions) {
+        sendJson(res, 404, {
+          error: "not_found",
+          message: "Task actions are unavailable",
+        });
+        return;
+      }
+      const parsedId = PipelineIdSchema.safeParse(taskId);
+      if (!parsedId.success) {
+        throw parsedId.error;
+      }
+      sendJson(res, 200, await options.readTaskActions(parsedId.data));
+      return;
+    }
     if (url.pathname === INTAKE_WEBHOOK_PATH) {
       if (req.method !== "POST") {
         res.setHeader("allow", "POST");
@@ -243,7 +293,7 @@ export async function handleIntakeRequest(
       sendJson(res, 404, {
         error: "not_found",
         message:
-          "Known routes: GET /health, GET /hello, GET /hello/plan, POST /intake, POST /webhooks/intake",
+          "Known routes: GET /health, GET /hello, GET /hello/plan, GET /tasks/:taskId/actions, POST /intake, POST /webhooks/intake",
       });
       return;
     }

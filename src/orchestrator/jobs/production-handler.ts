@@ -144,6 +144,17 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     const handle = await ensureWorktree(ctx.taskId);
     const agent = options.codingAgent ?? createCodingAgent(backend, { env });
     const output = await agent.run(codingInput(ctx, handle, timeoutMs, options.maxTokens));
+    if (ctx.recordUsage) {
+      await ctx.recordUsage({
+        agentId: `agents/${ctx.stage}`,
+        provider: output.usage.provider,
+        modelId: output.usage.model_id,
+        inputTokens: output.usage.input_tokens,
+        outputTokens: output.usage.output_tokens,
+        cachedTokens: output.usage.cached_tokens,
+        costUsd: output.usage.cost_usd,
+      });
+    }
     if (output.status === "succeeded") return;
     if (output.error_class === "missing_credentials") {
       throw new StageCredentialsError(

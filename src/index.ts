@@ -20,6 +20,7 @@ export {
   type ModelRequest,
   type ModelResponse,
   type ModelToolCall,
+  type ModelUsage,
   type SidecarAdvice,
   type SkillBudget,
   type SkillLoader,
@@ -200,6 +201,20 @@ export {
   type StepCursor,
   type StepCursorStore,
 } from "./orchestrator/jobs/index.js";
+export {
+  InMemoryStageRunStore,
+  createPgStageRunStore,
+  createSqlStageRunStore,
+  createStageRunLog,
+  loadPipelineStageRunDdl,
+  type AgentActionEntry,
+  type StageRunLog,
+  type StageRunRecord,
+  type StageRunView,
+  type StageUsageEntry,
+  type StageUsageReport,
+  type TaskRunView,
+} from "./orchestrator/observability/index.js";
 export {
   LEARNING_QUEUE,
   InMemoryLearningStore,

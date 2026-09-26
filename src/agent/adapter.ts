@@ -14,10 +14,22 @@ export interface ModelRequest {
   skills?: LoadedSkill[];
 }
 
+/** Token or cost figures a model adapter chose to report. Absent fields are not estimated. */
+export interface ModelUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  cached_tokens?: number;
+  cost_usd?: number;
+  model_id?: string;
+  provider?: string;
+}
+
 export interface ModelResponse {
   text: string;
   /** Proposed effects. The loop runs hard gates before executing any of them. */
   toolCalls?: readonly ModelToolCall[];
+  /** Present only when the adapter exposes usage. The loop does not invent tokens. */
+  usage?: ModelUsage;
 }
 
 export interface ModelAdapter {

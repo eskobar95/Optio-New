@@ -11,6 +11,7 @@ import { readPlanStage } from "./jobs/hello-world.js";
 import { createIntakeServer } from "./intake/http.js";
 import { createPgStepCursorStore } from "./jobs/cursor.js";
 import { createProductionStageHandler } from "./jobs/production-handler.js";
+import { createPgStageRunStore, createStageRunLog } from "./observability/run-log.js";
 import { bullmqStageWorkerFactory, startStageGraph } from "./jobs/workers.js";
 import { readOrchestratorPort, redisConnectionOptions } from "./redis.js";
 import { getStageTracer } from "./telemetry/index.js";
@@ -26,6 +27,8 @@ export async function startOrchestrator(): Promise<void> {
 
   const connection = redisConnectionOptions(redisUrl);
   const cursors = await createPgStepCursorStore(databaseUrl);
+  const stageRuns = await createPgStageRunStore(databaseUrl);
+  const runLog = createStageRunLog(stageRuns);
   const worktrees = createWorktreeManagerFromEnv(process.env, getStageTracer());
   console.log(
     JSON.stringify({
@@ -44,6 +47,7 @@ export async function startOrchestrator(): Promise<void> {
       cursors,
       worktrees,
       handler: createProductionStageHandler({ env: process.env, worktrees }),
+      runLog,
     },
     bullmqStageWorkerFactory(connection),
   );
@@ -67,6 +71,7 @@ export async function startOrchestrator(): Promise<void> {
       add: (job) => flow.add(job),
     },
     readPlanStage: (taskId, sessionId) => readPlanStage(cursors, taskId, sessionId),
+    readTaskActions: (taskId) => runLog.inspect(taskId),
     webhookSecret: process.env.OPTIO_NEW_INTAKE_WEBHOOK_SECRET,
     checkRedis: async () => {
       try {
@@ -93,6 +98,7 @@ export async function startOrchestrator(): Promise<void> {
     await Promise.all(workers.map((worker) => worker.close()));
     await flow.close();
     await cursors.close();
+    await stageRuns.close();
     redis.disconnect();
     process.exit(0);
   };
