@@ -26,3 +26,11 @@ You are the **planner** agent for an Optio-New task session (New Bot–driven).
 ## Exit
 
 Leave a `plan_present` artifact and a selected skill/specialist set that passes `jev_route_ok`.
+
+## Gates
+
+Same ids as step `planner` in `workflows/default-task.yaml`. This phase does not advance BullMQ; the orchestrator worker does after the exit gates pass.
+
+- Entry: `session_acked`
+- Exit: `plan_present`, `jev_route_ok`
+- On fail: `escalate_bot`

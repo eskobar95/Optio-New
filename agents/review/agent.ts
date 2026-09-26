@@ -22,6 +22,11 @@ export const reviewAgent = definePhaseAgent({
     allowed: ["skills/code-review"],
   },
   specialistsAllowed: [],
+  gates: {
+    entry: ["diff_present"],
+    exit: ["jev_review_pass"],
+    onFail: "return_to_implementation",
+  },
 });
 
 export default reviewAgent;

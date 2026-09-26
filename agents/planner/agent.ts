@@ -22,6 +22,11 @@ export const plannerAgent = definePhaseAgent({
     allowed: ["skills/_shared", "skills/bot-session"],
   },
   specialistsAllowed: [],
+  gates: {
+    entry: ["session_acked"],
+    exit: ["plan_present", "jev_route_ok"],
+    onFail: "escalate_bot",
+  },
 });
 
 export default plannerAgent;

@@ -37,6 +37,16 @@ export interface SkillsSlot {
   allowed: readonly string[];
 }
 
+/** Entry and exit gates copied from the matching step in `workflows/default-task.yaml`. */
+export interface PhaseGates {
+  entry: readonly string[];
+  exit: readonly string[];
+  /** Present when the workflow step sets `on_fail`. */
+  onFail?: string;
+  /** Present when the workflow step sets `on_success`. */
+  onSuccess?: string;
+}
+
 export interface PhaseAgentDefinition {
   id: `agents/${PhaseId}`;
   phase: PhaseId;
@@ -44,6 +54,11 @@ export interface PhaseAgentDefinition {
   toolPolicy: ToolPolicyStub;
   skills: SkillsSlot;
   specialistsAllowed: readonly string[];
+  /**
+   * Workflow gates. `toolPolicy.advancesWorkflow` stays false: the orchestrator
+   * advances BullMQ after `exit` passes.
+   */
+  gates: PhaseGates;
 }
 
 export interface SpecialistDefinition {
