@@ -72,7 +72,13 @@ describe("POST /intake", () => {
     const plan = planJob(added[0] as FlowJob);
     expect(plan.queueName).toBe("optio.plan");
     expect(plan.opts?.jobId).toBe("s-1__plan");
-    expect(plan.data).toEqual({ taskId: "t-1", sessionId: "s-1", stage: "plan" });
+    expect(plan.data).toEqual({
+      taskId: "t-1",
+      sessionId: "s-1",
+      stage: "plan",
+      title: "Add intake",
+      description: "Enqueue the plan stage",
+    });
   });
 
   it("rejects a malformed brief with a field error and does not enqueue", async () => {

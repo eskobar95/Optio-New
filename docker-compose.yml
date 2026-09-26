@@ -1,6 +1,8 @@
 # Optio-New — practical v1 Compose stack (SPEC §12.6)
 # Load env via `bash scripts/secrets.sh compose` (sops+age). See docs/secrets.md.
 # A bare `docker compose up` uses ${VAR:-changeme} defaults, not the host ciphertext.
+# orchestrator and eve-runner interpolate CURSOR_API_KEY, OPTIO_NEW_GITHUB_TOKEN,
+# MODEL_API_KEY, and MODEL_ENDPOINT from that env file. Values stay out of git.
 # Default `up` (no profile): redis, postgres, litellm.
 # orchestrator is profiles `full` and `orchestrator`. eve-runner is profiles `full` and `eve` on 127.0.0.1:3210.
 # learning-worker is profile `learn` (queue optio.learn).
@@ -60,17 +62,31 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+    # Root so git worktree can register branches on the host checkout (often root-owned).
+    user: "0:0"
     environment:
       ORCHESTRATOR_PORT: "3100"
       OPTIO_NEW_INTAKE_WEBHOOK_SECRET: ${OPTIO_NEW_INTAKE_WEBHOOK_SECRET:-}
       OPTIO_NEW_REDIS_URL: redis://redis:6379
       OPTIO_NEW_DATABASE_URL: postgres://${OPTIO_NEW_POSTGRES_USER:-optio}:${OPTIO_NEW_POSTGRES_PASSWORD:-changeme}@postgres:5432/${OPTIO_NEW_POSTGRES_DB:-optio_new}
+      OPTIO_NEW_REPO_PATH: /opt/optio-new
+      OPTIO_NEW_WORKTREE_ROOT: /var/lib/optio-new/worktrees
+      OPTIO_NEW_BASE_BRANCH: ${OPTIO_NEW_BASE_BRANCH:-development}
+      OPTIO_NEW_GITHUB_REPO: ${OPTIO_NEW_GITHUB_REPO:-}
+      OPTIO_NEW_GITHUB_TOKEN: ${OPTIO_NEW_GITHUB_TOKEN:-}
+      CURSOR_API_KEY: ${CURSOR_API_KEY:-}
+      CURSOR_AGENT_BIN: ${CURSOR_AGENT_BIN:-}
+      MODEL_API_KEY: ${MODEL_API_KEY:-}
+      MODEL_ENDPOINT: ${MODEL_ENDPOINT:-}
       JEV_BASE_URL: ${JEV_BASE_URL:-https://ai-gateway.vercel.sh}
       VERCEL_AI_GATEWAY_URL: ${VERCEL_AI_GATEWAY_URL:-https://ai-gateway.vercel.sh}
       OPTIO_OTEL_LANGFUSE: ${OPTIO_OTEL_LANGFUSE:-false}
       OPTIO_OTEL_SIGNOZ: ${OPTIO_OTEL_SIGNOZ:-false}
       OPTIO_SIGNOZ_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
       LANGFUSE_HOST: ${LANGFUSE_HOST:-http://127.0.0.1:3000}
+    volumes:
+      - ${OPTIO_NEW_REPO_PATH:-/opt/optio-new}:/opt/optio-new
+      - optio_new_worktrees:/var/lib/optio-new/worktrees
     ports:
       - "127.0.0.1:3100:3100"
     healthcheck:
@@ -96,10 +112,24 @@ services:
     depends_on:
       - redis
       - postgres
+    # Root so a CodingAgent can write the host checkout. Same secret names as orchestrator.
+    user: "0:0"
     environment:
       OPTIO_NEW_REDIS_URL: redis://redis:6379
       EVE_RUNNER_HOST: 0.0.0.0
       EVE_RUNNER_PORT: "3210"
+      OPTIO_NEW_REPO_PATH: /opt/optio-new
+      OPTIO_NEW_REPO_ROOT: /opt/optio-new
+      OPTIO_NEW_WORKTREE_ROOT: /var/lib/optio-new/worktrees
+      OPTIO_NEW_GITHUB_REPO: ${OPTIO_NEW_GITHUB_REPO:-}
+      OPTIO_NEW_GITHUB_TOKEN: ${OPTIO_NEW_GITHUB_TOKEN:-}
+      CURSOR_API_KEY: ${CURSOR_API_KEY:-}
+      CURSOR_AGENT_BIN: ${CURSOR_AGENT_BIN:-}
+      MODEL_API_KEY: ${MODEL_API_KEY:-}
+      MODEL_ENDPOINT: ${MODEL_ENDPOINT:-}
+    volumes:
+      - ${OPTIO_NEW_REPO_PATH:-/opt/optio-new}:/opt/optio-new
+      - optio_new_worktrees:/var/lib/optio-new/worktrees
     ports:
       - "127.0.0.1:3210:3210"
     healthcheck:
@@ -292,5 +322,6 @@ services:
 volumes:
   optio_new_redis:
   optio_new_postgres:
+  optio_new_worktrees:
   optio_new_caddy_data:
   optio_new_caddy_config:

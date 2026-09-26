@@ -15,12 +15,22 @@ import {
 function stageNode(
   stage: PipelineStage,
   identity: PipelineIdentity,
+  brief: { title?: string; description?: string },
   child?: FlowChildJob,
 ): FlowChildJob {
+  const data: {
+    taskId: string;
+    sessionId: string;
+    stage: PipelineStage;
+    title?: string;
+    description?: string;
+  } = { taskId: identity.taskId, sessionId: identity.sessionId, stage };
+  if (brief.title) data.title = brief.title;
+  if (brief.description) data.description = brief.description;
   const node: FlowChildJob = {
     name: stage,
     queueName: STAGE_QUEUES[stage],
-    data: { taskId: identity.taskId, sessionId: identity.sessionId, stage },
+    data,
     opts: {
       jobId: `${identity.sessionId}__${stage}`,
       attempts: PIPELINE_JOB_ATTEMPTS,
@@ -33,11 +43,20 @@ function stageNode(
   return node;
 }
 
-export function buildPipelineFlow(input: { taskId: string; sessionId: string }): FlowJob {
+export function buildPipelineFlow(input: {
+  taskId: string;
+  sessionId: string;
+  title?: string;
+  description?: string;
+}): FlowJob {
   const identity = PipelineIdentitySchema.parse(input);
+  const brief = {
+    title: input.title?.trim() || undefined,
+    description: input.description?.trim() || undefined,
+  };
   let node: FlowChildJob | undefined;
   for (const stage of PIPELINE_STAGES) {
-    node = stageNode(stage, identity, node);
+    node = stageNode(stage, identity, brief, node);
   }
   if (!node) {
     throw new Error("pipeline has no stages");

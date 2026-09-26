@@ -1,17 +1,19 @@
 /**
  * Orchestrator process: POST /intake, GET /hello, and one BullMQ worker per stage queue.
  * Postgres (OPTIO_NEW_DATABASE_URL) stores the step cursor. Redis is the queue.
- * Stage steps are acked here. createEnvModelAdapter does not perform HTTP yet,
- * so this process does not call it. Eve agents stay contracts without a process.
+ * Stage steps run createProductionStageHandler (Cursor coding agent, worktrees, GitHub PRs).
+ * createEnvModelAdapter performs no HTTP. Planner steps require CURSOR_API_KEY, or they
+ * fail with StageCredentialsError when MODEL_API_KEY / MODEL_ENDPOINT are missing or unused.
  */
 import { FlowProducer } from "bullmq";
 import { Redis } from "ioredis";
 import { readPlanStage } from "./jobs/hello-world.js";
 import { createIntakeServer } from "./intake/http.js";
 import { createPgStepCursorStore } from "./jobs/cursor.js";
-import type { StageStepContext } from "./jobs/run-stage.js";
+import { createProductionStageHandler } from "./jobs/production-handler.js";
 import { bullmqStageWorkerFactory, startStageGraph } from "./jobs/workers.js";
 import { readOrchestratorPort, redisConnectionOptions } from "./redis.js";
+import { WorktreeManager } from "./worktrees/manager.js";
 
 export async function startOrchestrator(): Promise<void> {
   const port = readOrchestratorPort(process.env.ORCHESTRATOR_PORT);
@@ -23,22 +25,26 @@ export async function startOrchestrator(): Promise<void> {
 
   const connection = redisConnectionOptions(redisUrl);
   const cursors = await createPgStepCursorStore(databaseUrl);
+  const worktrees = new WorktreeManager({
+    root: process.env.OPTIO_NEW_WORKTREE_ROOT?.trim() || "/var/lib/optio-new/worktrees",
+    repoPath: process.env.OPTIO_NEW_REPO_PATH?.trim() || "/opt/optio-new",
+    baseBranch: process.env.OPTIO_NEW_BASE_BRANCH?.trim() || "development",
+  });
+  console.log(
+    JSON.stringify({
+      msg: "orchestrator stage handler",
+      cursorApiKey: Boolean(process.env.CURSOR_API_KEY?.trim()),
+      githubToken: Boolean(process.env.OPTIO_NEW_GITHUB_TOKEN?.trim()),
+      githubRepo: Boolean(process.env.OPTIO_NEW_GITHUB_REPO?.trim()),
+      modelApiKey: Boolean(process.env.MODEL_API_KEY?.trim()),
+      modelEndpoint: Boolean(process.env.MODEL_ENDPOINT?.trim()),
+    }),
+  );
   const workers = startStageGraph(
     {
       cursors,
-      handler: {
-        async run(ctx: StageStepContext) {
-          console.log(
-            JSON.stringify({
-              msg: "stage step",
-              taskId: ctx.taskId,
-              sessionId: ctx.sessionId,
-              stage: ctx.stage,
-              step: ctx.step,
-            }),
-          );
-        },
-      },
+      worktrees,
+      handler: createProductionStageHandler({ env: process.env, worktrees }),
     },
     bullmqStageWorkerFactory(connection),
   );

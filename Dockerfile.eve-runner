@@ -17,6 +17,9 @@ COPY workflows ./workflows
 COPY .cursor/skills ./.cursor/skills
 COPY .cursor/agents ./.cursor/agents
 RUN npx tsc -p tsconfig.eve.json && npm prune --omit=dev
+RUN apk add --no-cache git ca-certificates \
+  && git config --system --add safe.directory /opt/optio-new \
+  && git config --system --add safe.directory '*'
 ENV EVE_RUNNER_HOST=0.0.0.0
 ENV EVE_RUNNER_PORT=3200
 EXPOSE 3200

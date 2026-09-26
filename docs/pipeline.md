@@ -39,7 +39,7 @@ Steps, in order:
 
 The handler runs, then the cursor advances. If the process dies or the cursor write throws, the next delivery runs that same step again and skips steps whose index was already saved. A finished stage does not call the handler again. A later stage throws `StageNotReadyError` until the previous stage is `completed`.
 
-`createAgentStageHandler(adapter)` calls `runAgentLoop` once per step (`${stage}:${step} task=${taskId}`). The adapter is injected. `createEnvModelAdapter` still does not perform HTTP.
+`createAgentStageHandler(adapter)` calls `runAgentLoop` once per step (`${stage}:${step} task=${taskId}`). The adapter is injected. `createEnvModelAdapter` performs no HTTP.
 
 Optional `StageRuntime.worktrees` (`WorktreeManager`) hooks the implement and merge stages:
 
@@ -72,9 +72,45 @@ const workers = startStageGraph(
 );
 ```
 
-`adapter` is any `ModelAdapter`. `createEnvModelAdapter()` reads `MODEL_API_KEY` and `MODEL_ENDPOINT` and still does not perform HTTP.
+`adapter` is any `ModelAdapter`. `createEnvModelAdapter()` reads `MODEL_API_KEY` and `MODEL_ENDPOINT` and performs no HTTP.
 
-The Compose `orchestrator` service (profiles `full` and `orchestrator`) runs `src/orchestrator/main.ts`. It listens on `ORCHESTRATOR_PORT` (3100), requires `OPTIO_NEW_REDIS_URL` and `OPTIO_NEW_DATABASE_URL`, and starts one BullMQ worker per stage queue. `GET /health` reports the Redis ping. `POST /intake` enqueues the plan stage.
+## Live orchestrator
+
+The Compose `orchestrator` service (profiles `full` and `orchestrator`) runs `src/orchestrator/main.ts`. It listens on `ORCHESTRATOR_PORT` (3100), requires `OPTIO_NEW_REDIS_URL` and `OPTIO_NEW_DATABASE_URL`, and starts one BullMQ worker per stage queue. `GET /health` reports the Redis ping. `POST /intake` enqueues the plan stage. The worker handler is `createProductionStageHandler`, with `WorktreeManager` on implement and merge.
+
+Compose interpolates these names from the env file into `orchestrator` and `eve-runner` (`${VAR:-}`, empty when unset):
+
+| Name                              | Role                                                                                          |
+| --------------------------------- | --------------------------------------------------------------------------------------------- |
+| `CURSOR_API_KEY`                  | Cursor coding agent (`resolveCodingBackend` defaults to `cursor`, then `createCursorAdapter`) |
+| `OPTIO_NEW_GITHUB_TOKEN`          | Push the task branch and call the GitHub pull request API                                     |
+| `OPTIO_NEW_GITHUB_REPO`           | `owner/repo` for that API                                                                     |
+| `MODEL_API_KEY`, `MODEL_ENDPOINT` | Planner fallback only. The env adapter performs no HTTP                                       |
+| `OPTIO_NEW_BASE_BRANCH`           | Worktree base and pull request base. Default `development`                                    |
+
+`CURSOR_AGENT_BIN` is passed through when set. The image installs `git` and does not download the Cursor CLI. A missing `agent` binary fails the coding step with `cli_not_found`.
+
+| Step                                     | What the process does                                                                                                                                                                                                                                      |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ack_session`, `record_cleanup`          | Bookkeeping. `record_cleanup` still reaps via `createWorktreeStageHandler`                                                                                                                                                                                 |
+| `invoke_planner`                         | With `CURSOR_API_KEY`: Cursor agent in a new task worktree. Without it: requires `MODEL_API_KEY` and `MODEL_ENDPOINT`, then `createAgentStageHandler(createEnvModelAdapter())`, which throws `StageCredentialsError` because that adapter performs no HTTP |
+| `invoke_implementation`, `invoke_review` | Cursor agent in the worktree. Missing `CURSOR_API_KEY` throws `StageCredentialsError`. Any non-succeeded adapter status fails the job                                                                                                                      |
+| `record_diff`, `record_verdict`          | `git status --short` in the worktree                                                                                                                                                                                                                       |
+| `open_pr`                                | Push `task/<id>` and open a GitHub pull request. A task id matching `e2e-…` gets a marker commit when the branch has no commits ahead of the base. Other empty branches fail the step                                                                      |
+| `record_ci_wait`                         | One combined commit status. Anything other than `success` fails the attempt so BullMQ can retry                                                                                                                                                            |
+| `merge_branch`                           | Merges the pull request. Task ids matching `e2e-…` stay unmerged                                                                                                                                                                                           |
+
+The container runs as root so it can register worktrees on the host checkout mounted at `/opt/optio-new`. Worktree directories use the `optio_new_worktrees` volume.
+
+Host proof (does not merge):
+
+```bash
+cd /opt/optio-new
+bash scripts/secrets.sh compose --profile orchestrator up -d --build orchestrator
+INTAKE_PR_E2E=1 bash scripts/secrets.sh run -- bash scripts/intake-pr-e2e.sh
+```
+
+`scripts/intake-pr-e2e.sh` posts `{ brief, metadata.taskId }` with an `e2e-` id and polls GitHub for an open pull request whose head is `task/<id>`. It skips unless `INTAKE_PR_E2E=1`. Close that pull request when you are done. `scripts/hello-world-e2e.sh` still polls plan completion; planner now runs this handler, so that check needs `CURSOR_API_KEY` and the `agent` binary.
 
 Apply `state/migrations/001_pipeline_step_cursor.sql` before using Postgres. `createPgStepCursorStore` also runs that DDL on connect.
 

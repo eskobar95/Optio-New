@@ -63,6 +63,8 @@ pass "eve-runner cli"
 
 bash -n "$ROOT/scripts/smoke-compose-mac.sh" || fail "smoke-compose-mac.sh syntax"
 pass "smoke-compose-mac.sh syntax"
+bash -n "$ROOT/scripts/intake-pr-e2e.sh" || fail "intake-pr-e2e.sh syntax"
+pass "intake-pr-e2e.sh syntax"
 
 npx vitest run tests/security-gates.test.ts || fail "security gates"
 pass "security gates (secrets deny, config lock, tool timeout)"

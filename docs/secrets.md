@@ -35,6 +35,11 @@ Templates list every name Compose and the agent loop read:
 - `LITELLM_MASTER_KEY`, `LITELLM_BASE_URL`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` — LiteLLM process env
 - `OPTIO_NEW_HARNESS_URL` — kit-harness on the host (`http://127.0.0.1:3200`). Not a public name.
 - `CURSOR_API_KEY` — Cursor subscription CLI
+- `OPTIO_NEW_GITHUB_REPO` — `owner/repo` for `ready` / `open_pr`
+- `OPTIO_NEW_BASE_BRANCH` — worktree and pull request base (default `development`)
+
+Compose interpolates `CURSOR_API_KEY`, `OPTIO_NEW_GITHUB_TOKEN`, `MODEL_API_KEY`, `MODEL_ENDPOINT`, and `OPTIO_NEW_GITHUB_REPO` into `orchestrator` and `eve-runner` (`${VAR:-}`). `learning-worker` already receives `OPTIO_NEW_GITHUB_TOKEN`. A bare `docker compose` without this helper leaves those values empty. The stage handler then fails the step with `StageCredentialsError` instead of acking it. See [pipeline.md](pipeline.md).
+
 - `KIT_HARNESS_PORT` — decision sidecar bind port (default 3200, host `127.0.0.1`)
 - `CAVEMAN_*` and optional `CAVE_SSRF_ALLOWLIST` — local proxy, default off
 

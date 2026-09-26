@@ -22,6 +22,9 @@ COPY --from=build /app/dist ./dist
 # cursor.ts resolves the DDL three levels above its compiled file
 # (dist/src/orchestrator/jobs -> dist/state/migrations).
 COPY state/migrations ./dist/state/migrations
+RUN apk add --no-cache git ca-certificates \
+  && git config --system --add safe.directory /opt/optio-new \
+  && git config --system --add safe.directory '*'
 USER node
 EXPOSE 3100
 CMD ["node", "dist/src/orchestrator/main.js"]

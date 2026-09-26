@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Prove intake → plan on a running orchestrator (loopback :3100).
 #
+# The orchestrator handler runs the Cursor coding agent on invoke_planner when
+# CURSOR_API_KEY is set. Without that key the plan stage fails closed
+# (StageCredentialsError) and this poll does not see a completed plan.
+# Intake → pull request proof is scripts/intake-pr-e2e.sh (INTAKE_PR_E2E=1).
+#
 # On the kit-harness host:
 #   docker compose --profile full --profile harness up -d --build orchestrator
 #   HELLO_WORLD_E2E=1 bash scripts/hello-world-e2e.sh

@@ -34,6 +34,14 @@ describe("compose full stack profiles", () => {
     expect(slices.orchestrator).toContain("127.0.0.1:3100:3100");
     expect(slices.orchestrator).toContain("condition: service_healthy");
     expect(slices.orchestrator).toContain("healthcheck:");
+    for (const name of [
+      "CURSOR_API_KEY",
+      "OPTIO_NEW_GITHUB_TOKEN",
+      "MODEL_API_KEY",
+      "MODEL_ENDPOINT",
+    ]) {
+      expect(slices.orchestrator).toContain(`${name}: \${${name}:-}`);
+    }
   });
 
   it("publishes eve-runner on 127.0.0.1:3210", () => {
@@ -42,5 +50,18 @@ describe("compose full stack profiles", () => {
     expect(block).toContain('"127.0.0.1:3210:3210"');
     expect(block).toContain("http://127.0.0.1:3210/health");
     expect(block).not.toContain("3200");
+    for (const name of [
+      "CURSOR_API_KEY",
+      "OPTIO_NEW_GITHUB_TOKEN",
+      "MODEL_API_KEY",
+      "MODEL_ENDPOINT",
+    ]) {
+      expect(block).toContain(`${name}: \${${name}:-}`);
+    }
+  });
+
+  it("installs git for orchestrator and eve-runner worktrees", () => {
+    expect(readFileSync("Dockerfile.orchestrator", "utf8")).toContain("apk add --no-cache git");
+    expect(readFileSync("Dockerfile.eve-runner", "utf8")).toContain("apk add --no-cache git");
   });
 });
