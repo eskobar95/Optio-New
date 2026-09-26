@@ -39,6 +39,7 @@ Templates list every name Compose and the agent loop read:
 - `OPTIO_NEW_LINEAR_API_KEY` — GraphQL key for the `queued` comment. Policy: `commentCreate`, and `issueUpdate` of `stateId` only. No issue create, delete, or archive. Team FIN.
 - `OPTIO_NEW_LINEAR_WEBHOOK_SECRET` — HMAC for `POST /webhooks/linear`.
 - `OPTIO_NEW_LINEAR_DEFAULT_REPO_ID` — catalog id for accepted Linear issues (`findjobabroad` on kit-harness).
+- `LINEAR_WORKFLOW_CI_FAIL_ESCALATE_AFTER` — positive integer. Default `3`. Not a secret.
 - `OPTIO_NEW_BASE_BRANCH` — worktree and pull request base (default `development`)
 - `OPTIO_NEW_REPOS`, `OPTIO_NEW_DEFAULT_REPO_ID`, `OPTIO_NEW_REPO_PATH`, `OPTIO_NEW_REPO_CLONE_URL` — multi-repo catalog. The JSON may contain clone URLs; do not log it.
 - `OPTIO_NEW_SLACK_SIGNING_SECRET` — Slack intake HMAC. Same handling as the GitHub webhook secret.

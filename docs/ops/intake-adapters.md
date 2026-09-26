@@ -29,7 +29,8 @@ Adapters normalize into `bot.intake.created` and call `enqueueIntakePipeline`. S
 - Task id is `lin-<identifier>` (for example `lin-FIN-12`). Title and description come from the issue. The Linear URL is appended to the description when the payload has one.
 - After the pipeline is enqueued, the orchestrator calls Linear GraphQL `commentCreate` with body exactly `queued`. The key is `OPTIO_NEW_LINEAR_API_KEY`. A missing key returns `503` `linear_api_unconfigured` and does not enqueue. Accepted responses are HTTP `200`.
 - A retry whose BullMQ job id already exists still comments `queued` and returns `200`. One task id is one pipeline while that job id remains.
-- API key policy: `commentCreate` is the live write. `issueUpdate` may set `stateId` only and is not called in this phase. `issueCreate`, `issueDelete`, and `issueArchive` are rejected. Scope stays team FIN. No Agent Sessions.
+- API key policy: `commentCreate` is the live write. `issueUpdate` may set `stateId` only. Phase 1 calls `commentCreate` (`queued`) and does not itself call `issueUpdate`. The workflow module (`src/orchestrator/linear/`) calls `issueUpdate` for status moves. `issueCreate`, `issueDelete`, and `issueArchive` are rejected. Scope stays team FIN. No Agent Sessions.
+- After the `queued` comment, a human move into Review, Merge, or Done (Completed counts as Done) is reverted to `updatedFrom.stateId`. That revert does not undraft a pull request. An agent write is marked for 60 seconds so the webhook does not undo it. See [../linear-workflow-spec.md](../linear-workflow-spec.md).
 
 Linear's own webhook settings require a public HTTPS URL. The kit-harness edge in [caddy-tls-edge.md](caddy-tls-edge.md) is HTTP on the public IP until a domain exists. Point the Linear webhook at `https://<host>/webhooks/linear` once TLS is in front of `/webhooks/*`.
 

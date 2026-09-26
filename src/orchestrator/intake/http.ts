@@ -24,6 +24,7 @@ import { LINEAR_WEBHOOK_PATH, handleLinearWebhook } from "./adapters/linear.js";
 import { SLACK_WEBHOOK_PATH, handleSlackWebhook } from "./adapters/slack.js";
 import type { IntakeAdapterResult } from "./adapters/shared.js";
 import { commentQueuedOnIssue } from "../linear/comment.js";
+import { enforceObservedLinearStatus } from "../linear/observe.js";
 import { redactSecrets } from "./redact.js";
 import {
   authorizeIntakeWebhook,
@@ -299,6 +300,17 @@ async function enqueueAdapter(
   }
   if (result.linearIssueId) {
     await deliverLinearQueuedComment(result.linearIssueId, options);
+    const toStatus = result.linearToStatus?.trim() ?? "";
+    const apiKey = options.linearApiKey?.trim() ?? "";
+    if (toStatus && apiKey) {
+      await enforceObservedLinearStatus({
+        issueId: result.linearIssueId,
+        toStatus,
+        fromStateId: result.linearFromStateId,
+        apiKey,
+        fetchImpl: options.linearFetch,
+      });
+    }
   }
   const body: Record<string, unknown> = {
     event: result.intake.event,

@@ -27,6 +27,16 @@ You are the **implementation** agent for an Optio-New task session (New Bot–dr
 
 When the coding backend is Cursor, the adapter appends `CURSOR_IMPLEMENT_ACI_POLICY` on steps `implementation` and `invoke_implementation`. A failed syntax check rolls the edit back and returns a short observation. Search and list results stay truncated. A command that exits 0 with empty stdout is reported as `Command succeeded with no output.` The CLI stays on `https://api2.cursor.sh`. See `docs/cursor-implement-feedback.md`.
 
+## Blind alley
+
+When another attempt would not move the solution, stop instead of looping. Put this single line in the final output:
+
+```text
+LINEAR_BLIND_ALLEY why: <why> | tried: <what was tried> | failed: <what failed>
+```
+
+The orchestrator escalates to Needs Human (or In Progress) and comments on the issue. Do not move the issue status yourself.
+
 ## Exit
 
 Satisfy `jev_completion` and `local_checks` before the orchestrator advances.

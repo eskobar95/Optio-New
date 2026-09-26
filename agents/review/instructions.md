@@ -22,6 +22,16 @@ You are the **review** agent for an Optio-New task session (New Bot–driven).
 - `agent.ts` records model and tool-policy stubs. It does not start a session and does not advance BullMQ.
 - The task git worktree is the sandbox. Do not call Vercel Sandbox or Vercel Workflows.
 
+## Blind alley
+
+If the diff cannot be made to pass and further review rounds would not help, emit:
+
+```text
+LINEAR_BLIND_ALLEY why: <why> | tried: <what was tried> | failed: <what failed>
+```
+
+The orchestrator escalates. Do not move the issue status yourself.
+
 ## Exit
 
 The orchestrator runs `evaluateReviewGate` before the ready stage (SPEC §3, §9). Satisfy tests green, CI success, and the Jev/rules completion check, or return fail with notes.

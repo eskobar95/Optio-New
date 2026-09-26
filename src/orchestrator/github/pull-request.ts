@@ -31,6 +31,8 @@ export interface OpenPullRequestInput {
   head: string;
   base: string;
   body: string;
+  /** When true, GitHub opens the pull request as a draft. */
+  draft?: boolean;
   fetchImpl?: typeof fetch;
 }
 
@@ -82,6 +84,7 @@ export async function openGithubPullRequest(input: OpenPullRequestInput): Promis
       head: input.head,
       base: input.base,
       body: input.body,
+      ...(input.draft ? { draft: true } : {}),
     }),
   });
   if (created.status === 422) {
@@ -94,6 +97,11 @@ export async function openGithubPullRequest(input: OpenPullRequestInput): Promis
   return readPullRequest(created, input.token);
 }
 
+export interface CommitStatusReport {
+  state: string;
+  failedChecks: string[];
+}
+
 export async function readCommitStatus(input: {
   token: string;
   owner: string;
@@ -101,6 +109,16 @@ export async function readCommitStatus(input: {
   sha: string;
   fetchImpl?: typeof fetch;
 }): Promise<string> {
+  return (await readCommitStatusReport(input)).state;
+}
+
+export async function readCommitStatusReport(input: {
+  token: string;
+  owner: string;
+  repo: string;
+  sha: string;
+  fetchImpl?: typeof fetch;
+}): Promise<CommitStatusReport> {
   const fetchImpl = input.fetchImpl ?? fetch;
   const endpoint = `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/commits/${encodeURIComponent(input.sha)}/status`;
   const response = await githubFetch(fetchImpl, endpoint, input.token, { method: "GET" });
@@ -108,8 +126,22 @@ export async function readCommitStatus(input: {
     throw await requestError(response, input.token, "commit status");
   }
   const payload = (await response.json()) as unknown;
-  const state = record(payload)?.state;
-  return typeof state === "string" && state.length > 0 ? state : "pending";
+  const row = record(payload);
+  const state = row?.state;
+  const failedChecks: string[] = [];
+  if (Array.isArray(row?.statuses)) {
+    for (const item of row.statuses) {
+      const status = record(item);
+      const checkState = status?.state;
+      if (checkState === "success" || checkState === "pending") continue;
+      const context = status?.context;
+      if (typeof context === "string" && context.trim()) failedChecks.push(context.trim());
+    }
+  }
+  return {
+    state: typeof state === "string" && state.length > 0 ? state : "pending",
+    failedChecks,
+  };
 }
 
 export async function mergeGithubPullRequest(input: {
@@ -132,6 +164,121 @@ export async function mergeGithubPullRequest(input: {
   if (record(payload)?.merged !== true) {
     throw new GithubRequestError(response.status, "github merge did not complete");
   }
+}
+
+export async function markGithubPullRequestReady(input: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  fetchImpl?: typeof fetch;
+}): Promise<void> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const endpoint = `${pullsUrl(input.owner, input.repo)}/${input.number}`;
+  const response = await githubFetch(fetchImpl, endpoint, input.token, {
+    method: "PATCH",
+    body: JSON.stringify({ draft: false }),
+  });
+  if (!response.ok) {
+    throw await requestError(response, input.token, "undraft");
+  }
+}
+
+export interface GithubReviewNote {
+  login: string;
+  state: string;
+  body: string;
+}
+
+export async function listGithubPullRequestReviews(input: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  fetchImpl?: typeof fetch;
+}): Promise<GithubReviewNote[]> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const endpoint = `${pullsUrl(input.owner, input.repo)}/${input.number}/reviews`;
+  const response = await githubFetch(fetchImpl, endpoint, input.token, { method: "GET" });
+  if (!response.ok) {
+    throw await requestError(response, input.token, "reviews");
+  }
+  const payload = (await response.json()) as unknown;
+  if (!Array.isArray(payload)) return [];
+  const notes: GithubReviewNote[] = [];
+  for (const item of payload) {
+    const row = record(item);
+    if (!row) continue;
+    const login = record(row.user)?.login;
+    if (typeof login !== "string" || login.length === 0) continue;
+    notes.push({
+      login,
+      state: typeof row.state === "string" ? row.state : "",
+      body: typeof row.body === "string" ? row.body : "",
+    });
+  }
+  return notes;
+}
+
+/**
+ * Asks existing reviewers to look again and posts the feedback on the pull request.
+ * Does not change `draft`.
+ */
+export async function reRequestGithubPullRequestReview(input: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  reviewers: readonly string[];
+  comment: string;
+  fetchImpl?: typeof fetch;
+}): Promise<void> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const reviewers = [...new Set(input.reviewers.map((login) => login.trim()).filter(Boolean))];
+  if (reviewers.length > 0) {
+    const endpoint = `${pullsUrl(input.owner, input.repo)}/${input.number}/requested_reviewers`;
+    const response = await githubFetch(fetchImpl, endpoint, input.token, {
+      method: "POST",
+      body: JSON.stringify({ reviewers }),
+    });
+    if (!response.ok && response.status !== 422) {
+      throw await requestError(response, input.token, "re-request review");
+    }
+  }
+  const reviewEndpoint = `${pullsUrl(input.owner, input.repo)}/${input.number}/reviews`;
+  const reviewed = await githubFetch(fetchImpl, reviewEndpoint, input.token, {
+    method: "POST",
+    body: JSON.stringify({ body: input.comment, event: "COMMENT" }),
+  });
+  if (!reviewed.ok && reviewed.status !== 422) {
+    throw await requestError(reviewed, input.token, "pull request review comment");
+  }
+  const commentEndpoint = `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/issues/${input.number}/comments`;
+  const commented = await githubFetch(fetchImpl, commentEndpoint, input.token, {
+    method: "POST",
+    body: JSON.stringify({ body: input.comment }),
+  });
+  if (!commented.ok) {
+    throw await requestError(commented, input.token, "pull request comment");
+  }
+}
+
+export async function githubPullRequestApproved(input: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  fetchImpl?: typeof fetch;
+}): Promise<boolean> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const endpoint = `${pullsUrl(input.owner, input.repo)}/${input.number}/reviews`;
+  const response = await githubFetch(fetchImpl, endpoint, input.token, { method: "GET" });
+  if (!response.ok) {
+    throw await requestError(response, input.token, "reviews");
+  }
+  const payload = (await response.json()) as unknown;
+  if (!Array.isArray(payload)) return false;
+  return payload.some((item) => record(item)?.state === "APPROVED");
 }
 
 export async function findOpenGithubPullRequest(

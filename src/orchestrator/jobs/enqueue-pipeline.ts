@@ -35,6 +35,8 @@ export async function enqueueIntakePipeline(
         title: task.title,
         description: task.description,
         repoId: task.repoId,
+        source: task.source,
+        linearIssueId: task.linearIssueId,
       });
       await enqueuer.add(flow);
       return { ...identity, flow };

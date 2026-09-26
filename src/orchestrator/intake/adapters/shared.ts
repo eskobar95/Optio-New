@@ -11,6 +11,10 @@ export type IntakeAdapterResult =
       intake: BotIntakeCreated;
       /** Set by the Linear adapter so the HTTP layer can comment after enqueue. */
       linearIssueId?: string;
+      /** Current workflow state name, when the payload includes one. */
+      linearToStatus?: string;
+      /** Previous state id from updatedFrom.stateId. Used to revert a human gate move. */
+      linearFromStateId?: string;
     }
   | { action: "respond"; status: number; body: Record<string, unknown> };
 

@@ -87,6 +87,10 @@ export interface StageStepContext {
   recordUsage?: (usage: StageUsageReport) => Promise<void>;
   /** Catalog repo for worktree create. */
   repoId?: string;
+  /** Intake source. Linear tasks drive the board workflow. */
+  source?: "http" | "github" | "slack" | "linear";
+  /** Linear issue UUID when source is linear. */
+  linearIssueId?: string;
 }
 
 export interface StageStepHandler {
@@ -525,6 +529,8 @@ async function executeStageJob(
         title: payload.title,
         description: payload.description,
         repoId: payload.repoId,
+        source: payload.source,
+        linearIssueId: payload.linearIssueId,
         recordUsage: async (usage) => {
           if (!runLog) return;
           await safeRunLog(() => runLog.recordUsage({ ...identity, ...usage }), undefined);

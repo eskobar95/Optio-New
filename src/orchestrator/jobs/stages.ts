@@ -57,6 +57,8 @@ export const StageJobPayloadSchema = PipelineIdentitySchema.extend({
     .string()
     .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "repoId must be a safe token")
     .optional(),
+  source: z.enum(["http", "github", "slack", "linear"]).optional(),
+  linearIssueId: z.string().min(1).optional(),
 });
 
 export type StageJobPayload = z.infer<typeof StageJobPayloadSchema>;
