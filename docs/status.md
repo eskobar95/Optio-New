@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 12:33 UTC
+Last refreshed: 2026-09-26 12:34 UTC
 
 ## Bootstrap progress
 
@@ -19,7 +19,7 @@ Last refreshed: 2026-09-26 12:33 UTC
 
 [![CI](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml/badge.svg)](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml)
 
-Latest conclusion: **cancelled**
+Latest conclusion: **success**
 
 Actions: https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml
 
