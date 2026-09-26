@@ -25,7 +25,7 @@ Host checkout `/opt/optio-new` after that merge. Compose profiles `harness`, `fu
 
 Profile `learn` starts `learning-worker` (queue `optio.learn`) beside that set. #76 closed [#77](https://github.com/eskobar95/Optio-New/issues/77).
 
-Checked-in boot unit `deploy/systemd/optio-new-compose.service` sets `COMPOSE_PROFILES=harness,orchestrator`. `scripts/vps-pull-rebuild.sh` reads that unit.
+Checked-in boot unit `deploy/systemd/optio-new-compose.service` sets `COMPOSE_PROFILES=harness,orchestrator,edge`. `scripts/vps-pull-rebuild.sh` reads that unit. Profile `edge` is HTTP on `:80` for `62.238.125.114` (no DNS, no ACME).
 
 ## What landed overnight
 
@@ -60,6 +60,6 @@ Tracker: https://github.com/eskobar95/Optio-New/issues
 
 ## Daytime next steps
 
-- Profile `edge` (Caddy on 80/443) stays off until `OPTIO_NEW_WEBHOOK_HOST` has DNS. Firewall: no inbound rule for 3100, 3200, or 3210.
+- Profile `edge` serves `http://62.238.125.114` on `:80`. Domain + TLS (`OPTIO_NEW_WEBHOOK_HOST`, ACME email) waits until a real name exists. Firewall: allow `80/tcp`; no inbound rule for 3100, 3200, or 3210.
 - Host secrets when those paths are used: `OPTIO_NEW_INTAKE_WEBHOOK_SECRET`, `OPTIO_NEW_GITHUB_TOKEN`, `OPTIO_NEW_GITHUB_WEBHOOK_SECRET`. Provider keys stay on the host. See [docs/secrets.md](docs/secrets.md) and [deploy/README.md](deploy/README.md).
 - Profile `laya` stays optional.

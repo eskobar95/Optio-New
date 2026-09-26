@@ -13,18 +13,24 @@ function dockerComposeAvailable(): boolean {
   }
 }
 
-describe("Caddy TLS edge", () => {
-  it("keeps the example Caddyfile free of a real host and mailbox", () => {
+describe("Caddy IP HTTP edge", () => {
+  it("serves :80 without a hostname, TLS, or ACME email", () => {
     const caddyfile = readFileSync("Caddyfile", "utf8");
-    expect(caddyfile).toContain("{$OPTIO_NEW_WEBHOOK_HOST:localhost}");
-    expect(caddyfile).toContain("{$OPTIO_NEW_ACME_EMAIL:tls-edge@localhost.invalid}");
+    expect(caddyfile).toContain("auto_https off");
+    expect(caddyfile).toContain(":80 {");
+    expect(caddyfile).toContain("handle /healthz");
+    expect(caddyfile).toContain('respond "ok" 200');
     expect(caddyfile).toContain("handle /webhooks/*");
     expect(caddyfile).toContain("reverse_proxy orchestrator:3100");
+    expect(caddyfile).toContain('respond "not found" 404');
     expect(caddyfile).not.toContain("handle /intake");
+    expect(caddyfile).not.toContain("OPTIO_NEW_WEBHOOK_HOST");
+    expect(caddyfile).not.toContain("OPTIO_NEW_ACME_EMAIL");
+    expect(caddyfile).not.toMatch(/^\s*tls\s/m);
     expect(caddyfile).not.toMatch(/@(?!localhost\.invalid)\S+\.\S+/);
   });
 
-  it("publishes 80/443 only on profile edge and leaves orchestrator on loopback", () => {
+  it("publishes 80/443 only on profile edge and boots that profile", () => {
     const compose = readFileSync("docker-compose.yml", "utf8");
     expect(compose).toContain('profiles: ["edge"]');
     expect(compose).toContain('"127.0.0.1:3100:3100"');
@@ -39,14 +45,17 @@ describe("Caddy TLS edge", () => {
     expect(compose).toContain('- "443:443"');
 
     const unit = readFileSync("deploy/systemd/optio-new-compose.service", "utf8");
-    expect(unit).toContain("Environment=COMPOSE_PROFILES=harness,orchestrator");
-    expect(unit).not.toMatch(/COMPOSE_PROFILES=.*edge/);
+    expect(unit).toContain("Environment=COMPOSE_PROFILES=harness,orchestrator,edge");
 
     const doc = readFileSync("docs/ops/caddy-tls-edge.md", "utf8");
     expect(doc).toContain("127.0.0.1:3100");
+    expect(doc).toContain("62.238.125.114");
+    expect(doc).toContain("auto_https off");
     expect(doc).toContain("OPTIO_NEW_ACME_EMAIL");
+    expect(doc).toContain("Let's Encrypt cannot issue");
     expect(doc).toContain("X-Optio-Signature");
     expect(doc).toContain("profile `edge`");
+    expect(doc).toContain("http://62.238.125.114/healthz");
   });
 
   it("appends nothing until the host drop-in exists", () => {

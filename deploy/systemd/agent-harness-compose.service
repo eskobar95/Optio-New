@@ -2,11 +2,11 @@
 # Install one of them, not both. Decrypt path: docs/secrets.md.
 #   sudo cp deploy/systemd/agent-harness-compose.service /etc/systemd/system/optio-new-compose.service
 # The helper decrypts to a mode-0600 tmpfs file. Do not add EnvironmentFile.
-# COMPOSE_PROFILES matches optio-new-compose.service. Profile edge stays off.
-# Optional drop-in: docs/ops/caddy-tls-edge.md. See deploy/README.md.
+# COMPOSE_PROFILES matches optio-new-compose.service (harness, orchestrator, edge).
+# Profile edge is the IP HTTP catch-all on :80. See docs/ops/caddy-tls-edge.md.
 
 [Unit]
-Description=Optio-New Docker Compose stack (litellm, harness, orchestrator)
+Description=Optio-New Docker Compose stack (litellm, harness, orchestrator, edge)
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
@@ -15,7 +15,7 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/optio-new
-Environment=COMPOSE_PROFILES=harness,orchestrator
+Environment=COMPOSE_PROFILES=harness,orchestrator,edge
 Environment=SOPS_AGE_KEY_FILE=/opt/optio-new/secrets/age/key.txt
 ExecStart=/opt/optio-new/scripts/secrets.sh compose up -d
 ExecStop=/usr/bin/docker compose -f /opt/optio-new/docker-compose.yml down

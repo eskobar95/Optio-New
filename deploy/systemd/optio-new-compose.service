@@ -5,15 +5,16 @@
 #   sudo systemctl enable --now optio-new-compose.service
 # The helper decrypts to a mode-0600 tmpfs file. Do not add EnvironmentFile:
 # systemd would expose those values through systemctl show.
-# COMPOSE_PROFILES is not a secret. Boot adds harness and orchestrator.
+# COMPOSE_PROFILES is not a secret. Boot adds harness, orchestrator, and edge.
 # LiteLLM stays unprofiled (default set, with redis and postgres) so
 # scripts/smoke-compose-mac.sh still sees it. kit-harness is 127.0.0.1:3200.
-# Profile edge stays off. Optional drop-in: docs/ops/caddy-tls-edge.md.
+# Profile edge is the IP HTTP catch-all on :80 (no DNS, no ACME email).
+# Domain+TLS is a later Caddyfile swap: docs/ops/caddy-tls-edge.md.
 # After merge: bash scripts/vps-pull-rebuild.sh — see deploy/README.md.
 # ExecStop is `down` without -v so named volumes stay.
 
 [Unit]
-Description=Optio-New Docker Compose stack (litellm, harness, orchestrator)
+Description=Optio-New Docker Compose stack (litellm, harness, orchestrator, edge)
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
@@ -22,7 +23,7 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/optio-new
-Environment=COMPOSE_PROFILES=harness,orchestrator
+Environment=COMPOSE_PROFILES=harness,orchestrator,edge
 Environment=SOPS_AGE_KEY_FILE=/opt/optio-new/secrets/age/key.txt
 ExecStart=/opt/optio-new/scripts/secrets.sh compose up -d
 ExecStop=/usr/bin/docker compose -f /opt/optio-new/docker-compose.yml down

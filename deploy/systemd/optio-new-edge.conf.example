@@ -1,8 +1,7 @@
-# Optional TLS edge. Not installed by the default unit.
-# Copy to /etc/systemd/system/optio-new-compose.service.d/edge.conf
-# after DNS, OPTIO_NEW_ACME_EMAIL, and OPTIO_NEW_INTAKE_WEBHOOK_SECRET exist.
-# See docs/ops/caddy-tls-edge.md.
-# This replaces COMPOSE_PROFILES. Keep harness and orchestrator in the list.
+# Optional override. The repo boot unit already includes profile edge (IP HTTP).
+# Copy to /etc/systemd/system/optio-new-compose.service.d/edge.conf only to pin
+# COMPOSE_PROFILES. This replaces the unit list. Keep harness, orchestrator, and edge.
+# IP mode does not need DNS or OPTIO_NEW_ACME_EMAIL. See docs/ops/caddy-tls-edge.md.
 # Do not commit a filled-in copy of this file.
 
 [Service]

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const BOOT_PROFILES = "harness,orchestrator";
+const BOOT_PROFILES = "harness,orchestrator,edge";
 
 const UNITS = [
   "deploy/systemd/optio-new-compose.service",
