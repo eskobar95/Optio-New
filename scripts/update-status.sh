@@ -120,7 +120,7 @@ trap cleanup EXIT
   echo "| TypeScript \`src/\` + \`tests/\` + tooling (ESLint, Prettier, Vitest, Husky) | Done |"
   echo "| Public GitHub + CI on push/PR | Live |"
   echo "| Good first issue: \`src/agent/loop.ts\` | See open issues |"
-  echo "| Full BullMQ hello-world workers | Pending |"
+  echo "| BullMQ stage graph (plan → merge) + Postgres step cursor | Skeleton (\`docs/pipeline.md\`) |"
   echo "| Real model providers / GPU / Vercel key | Pending (secrets local only) |"
   echo
   echo "## CI"

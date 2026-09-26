@@ -11,7 +11,8 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `skills/index.json`                                   | §2, §6, §6.5      | Index → `.cursor/skills`                                                  |
 | `workflows/default-task.yaml`                         | §3.1, §3.2        | Default New Bot–driven task step graph                                    |
 | `orchestrator/intake/`                                | §8, §11           | New Bot chat/API intake → BullMQ enqueue (no Linear)                      |
-| `orchestrator/jobs/`                                  | §11, §12, §14.0   | BullMQ / Redis — official task-to-merge pipeline                          |
+| `orchestrator/jobs/`                                  | §11, §12, §14.0   | BullMQ stage graph; runnable TS in `src/orchestrator/jobs/`               |
+| `state/migrations/001_pipeline_step_cursor.sql`       | §11, §14.0        | Postgres step cursor for crash resume                                     |
 | `orchestrator/worktrees/`                             | §7, §6.5          | Worktree lifecycle keyed by task id                                       |
 | `orchestrator/jev/`                                   | §9, §14.3         | Decision client; Vercel AI Gateway base URL                               |
 | `orchestrator/learning/`                              | §10               | Failure fingerprints → meta-tasks                                         |
