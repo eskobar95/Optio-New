@@ -1,9 +1,12 @@
 /**
  * Review gate before the BullMQ ready stage (SPEC §3, §9).
  *
- * kit-harness `checkCompletion` is not on main, so this is the local rules
- * engine plus an optional soft Jev advisor. A hard miss never consults Jev.
- * Missing tests, CI, or the evidence object fails closed.
+ * Completion is `checkCompletion` from kit-harness. This module only maps that
+ * verdict onto the pipeline path and carries `review_notes`.
+ *
+ * Omitted `ci_status` is sent as `missing`, so a run cannot reach ready without
+ * an explicit CI success. Jev is consulted inside the harness, and only after
+ * the deterministic checks pass.
  *
  * Paths (see docs/review-gate.md):
  * - pass → ready
@@ -11,42 +14,24 @@
  * - fail → replan (planner)
  */
 import { UnrecoverableError } from "bullmq";
+import { checkCompletion } from "../../kit-harness/completion-check.js";
+import type {
+  CompletionEvidence,
+  DecisionAdvisor,
+  DecisionEngine,
+} from "../../kit-harness/types.js";
 
 export const DEFAULT_REVIEW_GATE_ATTEMPTS = 3;
 
-/** Minimum advisor confidence before a soft Jev choice replaces a rules pass. */
-export const ADVISOR_CONFIDENCE_MIN = 0.8;
-
-export type CiStatus = "success" | "failure" | "pending" | "missing";
+export type ReviewGateEvidence = CompletionEvidence & {
+  review_notes?: string;
+};
 
 export type ReviewGateVerdict = "pass" | "fail" | "retry";
 
 export type ReviewGatePath = "ready" | "rework" | "replan";
 
-export type ReviewGateEngine = "rules" | "jev";
-
-export interface ReviewGateEvidence {
-  tests_green?: boolean;
-  ci_status?: CiStatus;
-  open_blockers?: string[];
-  review_notes?: string;
-  attempt?: number;
-  max_attempts?: number;
-}
-
-export interface AdvisorResult {
-  choice?: string;
-  confidence?: number;
-  reason?: string;
-}
-
-/**
- * Soft Jev completion advisor. Same call shape as kit-harness `DecisionAdvisor`
- * for `kind: "completion"`, so a sidecar can be injected without changing the gate.
- */
-export interface CompletionAdvisor {
-  advise(input: { kind: "completion"; payload: ReviewGateEvidence }): Promise<AdvisorResult | null>;
-}
+export type ReviewGateEngine = DecisionEngine;
 
 export interface ReviewGateDecision {
   verdict: ReviewGateVerdict;
@@ -65,98 +50,57 @@ export interface ReviewGateBinding {
     taskId: string;
     sessionId: string;
   }): Promise<ReviewGateEvidence | null | undefined>;
-  advisor?: CompletionAdvisor | null;
+  advisor?: DecisionAdvisor | null;
 }
 
-interface AttemptBudget {
-  attempt: number;
-  max: number;
-  exhausted: boolean;
-}
-
-function budget(evidence: ReviewGateEvidence): AttemptBudget {
+function budget(evidence: ReviewGateEvidence): { attempt: number; max: number } {
   const max =
     evidence.max_attempts && evidence.max_attempts > 0
       ? evidence.max_attempts
       : DEFAULT_REVIEW_GATE_ATTEMPTS;
   const attempt = evidence.attempt && evidence.attempt > 0 ? evidence.attempt : 1;
-  return { attempt, max, exhausted: attempt >= max };
+  return { attempt, max };
 }
 
-function decided(
-  evidence: ReviewGateEvidence,
-  verdict: ReviewGateVerdict,
-  reason: string,
-  hard: boolean,
-  engine: ReviewGateEngine = "rules",
-): ReviewGateDecision {
-  const { attempt, max } = budget(evidence);
-  const path: ReviewGatePath =
-    verdict === "pass" ? "ready" : verdict === "retry" ? "rework" : "replan";
-  const decision: ReviewGateDecision = {
-    verdict,
-    path,
-    reason,
-    hard,
-    engine,
-    attempt,
-    max_attempts: max,
+/** Harness treats a missing CI field as success once tests are green. Ready does not. */
+function toCompletionEvidence(evidence: ReviewGateEvidence): CompletionEvidence {
+  return {
+    tests_green: evidence.tests_green,
+    typecheck_green: evidence.typecheck_green,
+    lint_green: evidence.lint_green,
+    diff_present: evidence.diff_present,
+    open_blockers: evidence.open_blockers,
+    attempt: evidence.attempt,
+    max_attempts: evidence.max_attempts,
+    ci_status: evidence.ci_status ?? "missing",
   };
-  const notes = evidence.review_notes?.trim();
-  if (notes) decision.review_notes = notes;
-  return decision;
 }
 
-function blockingReason(evidence: ReviewGateEvidence): string | null {
-  const blockers = (evidence.open_blockers ?? []).map((item) => item.trim()).filter(Boolean);
-  if (blockers.length > 0) return "open_blockers";
-  if (evidence.tests_green !== true) {
-    return evidence.tests_green === false ? "tests_failed" : "evidence_incomplete";
-  }
-  if (evidence.ci_status === "success") return null;
-  if (evidence.ci_status === "pending") return "ci_pending";
-  if (evidence.ci_status === "failure" || evidence.ci_status === "missing") return "ci_failed";
-  return "evidence_incomplete";
-}
-
-async function consultAdvisor(
-  advisor: CompletionAdvisor | null | undefined,
-  evidence: ReviewGateEvidence,
-): Promise<AdvisorResult | null> {
-  if (!advisor) return null;
-  try {
-    return await advisor.advise({ kind: "completion", payload: evidence });
-  } catch {
-    return null;
-  }
-}
-
-function confidentChoice(result: AdvisorResult | null): ReviewGateVerdict | null {
-  if (!result?.choice) return null;
-  if ((result.confidence ?? 0) < ADVISOR_CONFIDENCE_MIN) return null;
-  if (result.choice === "pass" || result.choice === "fail" || result.choice === "retry") {
-    return result.choice;
-  }
-  return null;
+function pathFor(verdict: ReviewGateVerdict): ReviewGatePath {
+  if (verdict === "pass") return "ready";
+  if (verdict === "retry") return "rework";
+  return "replan";
 }
 
 export async function evaluateReviewGate(
   evidence: ReviewGateEvidence | null | undefined,
-  advisor?: CompletionAdvisor | null,
+  advisor?: DecisionAdvisor | null,
 ): Promise<ReviewGateDecision> {
   const source = evidence ?? {};
-  const reason = blockingReason(source);
-  if (reason) {
-    if (reason === "open_blockers") return decided(source, "fail", reason, true);
-    const { exhausted } = budget(source);
-    return decided(source, exhausted ? "fail" : "retry", reason, exhausted);
-  }
-
-  const advice = confidentChoice(await consultAdvisor(advisor, source));
-  if (advice === "fail" || advice === "retry") {
-    return decided(source, advice, "advisor", false, "jev");
-  }
-  return decided(source, "pass", "checks_passed", false);
+  const completion = await checkCompletion(toCompletionEvidence(source), advisor);
+  const { attempt, max } = budget(source);
+  const decision: ReviewGateDecision = {
+    verdict: completion.verdict,
+    path: pathFor(completion.verdict),
+    reason: completion.reason,
+    hard: completion.hard,
+    engine: completion.engine,
+    attempt,
+    max_attempts: max,
+  };
+  const notes = source.review_notes?.trim();
+  if (notes) decision.review_notes = notes;
+  return decision;
 }
 
 /** Ready must not run. BullMQ treats this as unrecoverable so the job is not retried in place. */

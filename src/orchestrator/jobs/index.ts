@@ -25,13 +25,9 @@ export {
   type StepCursorStore,
 } from "./cursor.js";
 export {
-  ADVISOR_CONFIDENCE_MIN,
   DEFAULT_REVIEW_GATE_ATTEMPTS,
   ReviewGateClosedError,
   evaluateReviewGate,
-  type AdvisorResult,
-  type CiStatus,
-  type CompletionAdvisor,
   type ReviewGateBinding,
   type ReviewGateDecision,
   type ReviewGateEngine,

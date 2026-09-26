@@ -5,7 +5,7 @@ import {
   ReviewGateClosedError,
   evaluateReviewGate,
   processStageJob,
-  type CompletionAdvisor,
+  type DecisionAdvisor,
   type ReviewGateEvidence,
 } from "../src/index.js";
 
@@ -16,7 +16,7 @@ const green: ReviewGateEvidence = {
 
 const identity = { taskId: "t-1", sessionId: "s-1" };
 
-function advisor(choice: string, confidence: number): CompletionAdvisor {
+function advisor(choice: string, confidence: number): DecisionAdvisor {
   return {
     async advise() {
       return { choice, confidence, reason: "mock" };
@@ -115,16 +115,35 @@ describe("evaluateReviewGate", () => {
     expect(failed).toMatchObject({ verdict: "retry", path: "rework", reason: "ci_failed" });
 
     const absent = await evaluateReviewGate({ tests_green: true, attempt: 1 });
-    expect(absent).toMatchObject({
+    expect(absent).toMatchObject({ verdict: "retry", path: "rework", reason: "ci_failed" });
+  });
+
+  it("forwards typecheck and lint misses to kit-harness checkCompletion", async () => {
+    const typecheck = await evaluateReviewGate({ ...green, typecheck_green: false, attempt: 1 });
+    expect(typecheck).toMatchObject({
       verdict: "retry",
       path: "rework",
-      reason: "evidence_incomplete",
+      reason: "typecheck_failed",
+      engine: "rules",
+    });
+
+    const lint = await evaluateReviewGate({
+      ...green,
+      lint_green: false,
+      attempt: 3,
+      max_attempts: 3,
+    });
+    expect(lint).toMatchObject({
+      verdict: "fail",
+      path: "replan",
+      reason: "lint_failed",
+      hard: true,
     });
   });
 
   it("fails open blockers closed into replan and does not ask Jev", async () => {
     const calls = { n: 0 };
-    const jev: CompletionAdvisor = {
+    const jev: DecisionAdvisor = {
       async advise() {
         calls.n += 1;
         return { choice: "pass", confidence: 1 };
@@ -147,7 +166,7 @@ describe("evaluateReviewGate", () => {
 
   it("does not let Jev turn a red test into a pass", async () => {
     const calls = { n: 0 };
-    const jev: CompletionAdvisor = {
+    const jev: DecisionAdvisor = {
       async advise() {
         calls.n += 1;
         return { choice: "pass", confidence: 1 };
@@ -183,7 +202,7 @@ describe("evaluateReviewGate", () => {
   });
 
   it("keeps the rules pass when Jev throws", async () => {
-    const jev: CompletionAdvisor = {
+    const jev: DecisionAdvisor = {
       async advise() {
         throw new Error("jev down");
       },
