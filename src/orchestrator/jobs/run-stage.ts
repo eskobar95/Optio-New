@@ -17,9 +17,11 @@ import {
   type StageTracer,
 } from "../telemetry/index.js";
 import type { StageRunLog, StageUsageReport } from "../observability/run-log.js";
+import { redactSecrets } from "../../security/redact.js";
 import type { WorktreeLifecycle } from "../worktrees/manager.js";
 import { createWorktreeStageHandler } from "../worktrees/stage-hooks.js";
 import type { StepCursor, StepCursorStore } from "./cursor.js";
+import { logStageEvent } from "./stage-log.js";
 import {
   ReviewGateClosedError,
   evaluateReviewGate,
@@ -179,23 +181,21 @@ export function createAgentStageHandler(
 }
 
 function logStage(level: "log" | "error", body: Record<string, unknown>): void {
-  const line = JSON.stringify(body);
-  if (level === "error") console.error(line);
-  else console.log(line);
+  logStageEvent(body, level === "error" ? console.error : console.log);
 }
 
 async function safeRunLog<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
   try {
     return await fn();
   } catch (error) {
-    const reason = error instanceof Error ? error.message : "run log failed";
+    const reason = redactSecrets(error instanceof Error ? error.message : "run log failed");
     logStage("error", { msg: "stage.run_log_failed", reason });
     return fallback;
   }
 }
 
 function errorReason(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return redactSecrets(error instanceof Error ? error.message : String(error));
 }
 
 async function recordLearning(
@@ -207,7 +207,7 @@ async function recordLearning(
     await sink.record(observation);
   } catch (error) {
     const message = error instanceof Error ? error.message : "learning record failed";
-    console.error(`[optio.learn] ${message}`);
+    logStageEvent({ msg: "learning record failed", error: message }, console.error);
   }
 }
 

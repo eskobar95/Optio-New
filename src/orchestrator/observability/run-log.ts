@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { redactSecrets } from "../../security/redact.js";
 import { PIPELINE_STAGES, type PipelineStage } from "../jobs/stages.js";
 
 export type StageRunStatus = "running" | "completed" | "failed";
@@ -192,7 +193,7 @@ export function createStageRunLog(store: StageRunStore): StageRunLog {
         durationMs: input.durationMs,
         status: input.status,
       };
-      if (input.status === "failed" && input.reason) next.reason = input.reason;
+      if (input.status === "failed" && input.reason) next.reason = redactSecrets(input.reason);
       else delete next.reason;
       await store.save(next);
     },
@@ -206,10 +207,10 @@ export function createStageRunLog(store: StageRunStore): StageRunLog {
         stage: input.stage,
         step: input.step,
         agentId: input.agentId,
-        name: input.name,
+        name: redactSecrets(input.name),
         status: input.status,
       };
-      if (input.reason) action.reason = input.reason;
+      if (input.reason) action.reason = redactSecrets(input.reason);
       await store.save({ ...existing, actions: [...existing.actions, action] });
     },
 

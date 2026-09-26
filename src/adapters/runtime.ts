@@ -4,6 +4,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { redactSecrets } from "../security/redact.js";
 
 import {
   CANONICAL_SPAN,
@@ -297,7 +298,7 @@ function eventText(events: Record<string, unknown>[]): string {
 }
 
 function scrub(text: string, secrets: readonly string[]): string {
-  let out = text;
+  let out = redactSecrets(text);
   for (const secret of secrets) {
     if (secret.length > 0) out = out.split(secret).join("[redacted]");
   }
@@ -390,7 +391,7 @@ export function mapCliToOutput(args: {
     usage,
     status,
   };
-  if (diffSummary) output.diff_summary = diffSummary;
+  if (diffSummary) output.diff_summary = scrub(diffSummary, args.secrets ?? []);
   if (logs) output.logs = logs;
   if (status !== "succeeded" && errorClass) output.error_class = errorClass;
   return output;

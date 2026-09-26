@@ -4,6 +4,7 @@
  */
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { redactSecrets } from "./redact.js";
 
 export const LEARNING_SOURCES = ["review_gate", "implementation", "review"] as const;
 
@@ -74,13 +75,7 @@ export function failureFingerprint(parts: FingerprintParts): string {
 }
 
 export function redactExcerpt(raw: string): string {
-  const compact = raw.replace(/\s+/g, " ").trim().slice(0, 500);
-  return compact
-    .replace(/postgres(?:ql)?:\/\/([^:\s/]+):([^@\s]+)@/gi, "postgres://$1:redacted@")
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer redacted")
-    .replace(/\bsk-[A-Za-z0-9]{8,}\b/g, "sk-redacted")
-    .replace(/\bghp_[A-Za-z0-9]{8,}\b/g, "ghp_redacted")
-    .replace(/\bgithub_pat_[A-Za-z0-9_]{8,}\b/g, "github_pat_redacted");
+  return redactSecrets(raw).replace(/\s+/g, " ").trim().slice(0, 500);
 }
 
 export function normalizeObservation(input: unknown, now: Date): NormalizedObservation {

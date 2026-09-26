@@ -64,6 +64,7 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `scripts/secrets.sh`                                  | §12.5             | init, encrypt, check, compose, run, audit                                 |
 | `docs/ops/postgres-storagebox-backup.md`              | §12.5             | Storage Box backup, retention, restore dry-run                            |
 | `docs/ops/worktree-isolation.md`                      | §7, §6.5, §12.5   | Per-task git worktree on the CX33 disk; not a container per task          |
+| `docs/ops/secret-redaction.md`                        | §12.1, §12.5      | Redact secrets in stage logs, spans, and agent dumps                      |
 | `scripts/backup-postgres-to-storagebox.sh`            | §12.5             | pg_dump to restic, borg, sftp, or rsync                                   |
 | `scripts/restore-postgres-storagebox-dry-run.sh`      | §12.5             | Restore drill; does not write to Postgres                                 |
 | `deploy/systemd/optio-new-postgres-backup.timer`      | §12.5             | Daily backup; secrets via `scripts/secrets.sh run`                        |

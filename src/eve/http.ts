@@ -2,6 +2,7 @@
  * HTTP surface for the local eve-runner. GET /health, POST /v1/steps.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { formatAgentDump, redactValue } from "../security/redact.js";
 import { EveRequestError } from "./contract.js";
 import { runEveStep, type EveRunOptions } from "./run-step.js";
 
@@ -71,7 +72,7 @@ async function handle(
       }
       const result = await runEveStep(payload, options);
       console.error(
-        JSON.stringify({
+        formatAgentDump({
           service: "eve-runner",
           event: "agent.run",
           taskId: result.taskId,
@@ -80,7 +81,7 @@ async function handle(
           graphAdvanced: false,
         }),
       );
-      sendJson(res, 200, result);
+      sendJson(res, 200, redactValue(result));
       return;
     }
     sendJson(res, 404, {

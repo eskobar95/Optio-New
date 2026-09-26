@@ -1,13 +1,14 @@
 /**
  * Process entry for Compose / `npm run kit-harness`.
  */
+import { formatStageLog } from "./redact.js";
 import { createKitHarnessServer, resolveListen } from "./server.js";
 
 const { host, port } = resolveListen();
 const server = createKitHarnessServer();
 
 server.on("error", (error: NodeJS.ErrnoException) => {
-  console.error(JSON.stringify({ service: "kit-harness", event: "error", message: error.message }));
+  console.error(formatStageLog({ service: "kit-harness", event: "error", message: error.message }));
   process.exit(1);
 });
 

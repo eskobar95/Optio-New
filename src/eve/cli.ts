@@ -5,6 +5,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { formatAgentDump, redactSecrets } from "../security/redact.js";
 import { EveRequestError } from "./contract.js";
 import { startEveHttpServer } from "./http.js";
 import { runEveStep } from "./run-step.js";
@@ -68,8 +69,8 @@ export async function executeCli(
       });
       return {
         exitCode: result.ok ? 0 : 2,
-        stdout: `${JSON.stringify(result)}\n`,
-        stderr: `${line}\n`,
+        stdout: `${formatAgentDump(result)}\n`,
+        stderr: `${redactSecrets(line)}\n`,
       };
     }
     return { exitCode: 1, stdout: "", stderr: `${usage()}\n` };
@@ -78,11 +79,11 @@ export async function executeCli(
       return {
         exitCode: 1,
         stdout: "",
-        stderr: `${JSON.stringify({ ok: false, graphAdvanced: false, error: { class: error.errorClass, message: error.message } })}\n`,
+        stderr: `${formatAgentDump({ ok: false, graphAdvanced: false, error: { class: error.errorClass, message: error.message } })}\n`,
       };
     }
     const message = error instanceof Error ? error.message : String(error);
-    return { exitCode: 1, stdout: "", stderr: `${message}\n` };
+    return { exitCode: 1, stdout: "", stderr: `${redactSecrets(message)}\n` };
   }
 }
 

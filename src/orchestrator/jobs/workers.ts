@@ -4,6 +4,7 @@
 import { Worker, type ConnectionOptions } from "bullmq";
 import { PIPELINE_STAGES, STAGE_QUEUES, StageJobPayloadSchema } from "./stages.js";
 import { processStageJob, type StageRuntime } from "./run-stage.js";
+import { logStageEvent } from "./stage-log.js";
 
 export interface StageWorkerHandle {
   close(): Promise<void>;
@@ -34,8 +35,9 @@ export function bullmqStageWorkerFactory(connection: ConnectionOptions): StageWo
     create(queueName, processor) {
       const worker = new Worker(queueName, async (job) => processor(job.data), { connection });
       worker.on("error", (error: Error) => {
-        console.error(
-          JSON.stringify({ msg: "worker error", queue: queueName, error: error.message }),
+        logStageEvent(
+          { msg: "worker error", queue: queueName, error: error.message },
+          console.error,
         );
       });
       return {
