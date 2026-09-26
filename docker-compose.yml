@@ -76,7 +76,10 @@ services:
       OPTIO_NEW_GITHUB_REPO: ${OPTIO_NEW_GITHUB_REPO:-}
       OPTIO_NEW_GITHUB_TOKEN: ${OPTIO_NEW_GITHUB_TOKEN:-}
       CURSOR_API_KEY: ${CURSOR_API_KEY:-}
+      # Image bakes glibc `agent` on PATH. Empty keeps that binary.
       CURSOR_AGENT_BIN: ${CURSOR_AGENT_BIN:-}
+      # Literal: host OPTIO_CURSOR_SANDBOX must not re-enable the AppArmor sandbox.
+      OPTIO_CURSOR_SANDBOX: disabled
       MODEL_API_KEY: ${MODEL_API_KEY:-}
       MODEL_ENDPOINT: ${MODEL_ENDPOINT:-}
       JEV_BASE_URL: ${JEV_BASE_URL:-https://ai-gateway.vercel.sh}

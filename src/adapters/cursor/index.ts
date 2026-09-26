@@ -38,6 +38,26 @@ const STRIP_FROM_CURSOR = [
   "CAVEMAN_PROXY_URL",
 ] as const;
 
+/**
+ * In-container runs set OPTIO_CURSOR_SANDBOX=disabled (Dockerfile and Compose).
+ * That rewrites the tier's Cursor flags to `--sandbox disabled` (allowlist mode)
+ * and keeps `--force` when the tier already adds it. Docker AppArmor cannot
+ * start Cursor's user-namespace sandbox.
+ * Unset keeps `cursorSandboxArgs`: read-only and workspace-write stay enabled;
+ * host-admin stays `--force` with no sandbox flag.
+ */
+function cursorSandboxDisabled(env: NodeJS.ProcessEnv): boolean {
+  const mode = env.OPTIO_CURSOR_SANDBOX?.trim().toLowerCase();
+  return mode === "disabled" || mode === "allowlist";
+}
+
+function cursorLaunchArgs(env: NodeJS.ProcessEnv, sandbox: AgentSandbox): string[] {
+  const args = cursorSandboxArgs(sandbox);
+  if (!cursorSandboxDisabled(env)) return args;
+  const kept = args.filter((arg) => arg !== "--sandbox" && arg !== "enabled");
+  return ["--sandbox", "disabled", ...kept];
+}
+
 function cursorRequest(
   input: CodingAgentInput,
   env: NodeJS.ProcessEnv,
@@ -51,7 +71,7 @@ function cursorRequest(
     "--trust",
     "--workspace",
     input.worktree_path,
-    ...cursorSandboxArgs(sandbox),
+    ...cursorLaunchArgs(env, sandbox),
   ];
   const model = input.metadata.model_id?.trim();
   if (model) args.push("--model", model);

@@ -119,6 +119,8 @@ describe("Cursor CodingAgent", () => {
       "/tmp/wt-task",
     ]);
     expect(call?.args).toContain("--force");
+    expect(call?.args).toContain("--sandbox");
+    expect(call?.args).toContain("enabled");
     expect(call?.args).toContain("--model");
     expect(call?.args.at(-1)).toBe(CURSOR_IMPLEMENT_PROMPT);
     expect(call?.args.join(" ")).not.toContain(CURSOR_KEY);
@@ -218,6 +220,51 @@ describe("Cursor CodingAgent", () => {
     expect(calls[0]?.args).not.toContain("--force");
     expect(calls[0]?.args).toContain("--sandbox");
     expect(calls[0]?.args).toContain("enabled");
+  });
+
+  it("disables the Cursor sandbox inside the orchestrator container", async () => {
+    const readOnly = fakeRunner({
+      stdout: JSON.stringify({ type: "result", subtype: "success", is_error: false }),
+    });
+    const review = createCodingAgent("cursor", {
+      runner: readOnly.runner,
+      env: { CURSOR_API_KEY: CURSOR_KEY, OPTIO_CURSOR_SANDBOX: "disabled" },
+    });
+    await review.run(sampleInput({ allowed_tools: ["read"] }));
+    expect(readOnly.calls[0]?.args).not.toContain("--force");
+    expect(readOnly.calls[0]?.args).toContain("--sandbox");
+    expect(readOnly.calls[0]?.args).toContain("disabled");
+    expect(readOnly.calls[0]?.args).not.toContain("enabled");
+
+    const write = fakeRunner({
+      stdout: JSON.stringify({ type: "result", subtype: "success", is_error: false }),
+    });
+    const implement = createCodingAgent("cursor", {
+      runner: write.runner,
+      env: { CURSOR_API_KEY: CURSOR_KEY, OPTIO_CURSOR_SANDBOX: " allowlist " },
+    });
+    await implement.run(sampleInput());
+    expect(write.calls[0]?.args).toContain("--force");
+    expect(write.calls[0]?.args).toContain("--sandbox");
+    expect(write.calls[0]?.args).toContain("disabled");
+    expect(write.calls[0]?.args).not.toContain("enabled");
+
+    const host = fakeRunner({
+      stdout: JSON.stringify({ type: "result", subtype: "success", is_error: false }),
+    });
+    const hostAgent = createCodingAgent("cursor", {
+      runner: host.runner,
+      env: { CURSOR_API_KEY: CURSOR_KEY, OPTIO_CURSOR_SANDBOX: "disabled" },
+    });
+    await hostAgent.run(
+      sampleInput({
+        allowed_tools: ["docker"],
+        permission_tier: "host-admin",
+      }),
+    );
+    expect(host.calls[0]?.args).toContain("--force");
+    expect(host.calls[0]?.args).toContain("--sandbox");
+    expect(host.calls[0]?.args).toContain("disabled");
   });
 });
 

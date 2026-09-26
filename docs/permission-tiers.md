@@ -38,3 +38,5 @@ The production handler passes that tier into `CodingAgent.run`. Planner and revi
    - `host-admin` — Cursor `--force` without a sandbox; Codex `danger-full-access`.
 
 A read-only tool list stays in the read-only sandbox even when the stage default is higher. `host-admin` opens the host sandbox only when the tool list asks for `docker`, `sops`, `host`, or `host_admin`.
+
+The orchestrator image and Compose set `OPTIO_CURSOR_SANDBOX=disabled`. That rewrites the Cursor flags above to `--sandbox disabled` and keeps `--force` where the tier already adds it, because Docker AppArmor cannot start Cursor's user-namespace sandbox. Host and dev leave the variable unset. Codex sandbox modes are unchanged.
