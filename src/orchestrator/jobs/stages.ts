@@ -52,6 +52,11 @@ export const StageJobPayloadSchema = PipelineIdentitySchema.extend({
   title: z.string().min(1).optional(),
   /** Intake description. Omitted when the brief has none. */
   description: z.string().optional(),
+  /** Catalog repo for worktree routing. Omitted uses the catalog default at create time. */
+  repoId: z
+    .string()
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "repoId must be a safe token")
+    .optional(),
 });
 
 export type StageJobPayload = z.infer<typeof StageJobPayloadSchema>;

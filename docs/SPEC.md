@@ -318,14 +318,15 @@ Rules:
 - Accept a task payload (title, description, optional repo/branch hints) from New Bot.
 - ACK fast and enqueue BullMQ work; do not block the chat turn on the full pipeline.
 - Surface elicitations, progress, and failures back to New Bot / the human in chat.
-- Optional public intake: Compose profile `edge` serves HTTP on `:80` (kit-harness public IP; no DNS, no ACME) and proxies `POST /webhooks/intake` only. TLS waits for a real domain. Loopback `POST /intake` on `127.0.0.1:3100` stays the local/dev path. See `docs/ops/caddy-tls-edge.md`.
+- Optional public intake: Compose profile `edge` serves HTTP on `:80` (kit-harness public IP; no DNS, no ACME) and proxies `/webhooks/*`. TLS waits for a real domain. Loopback `POST /intake` on `127.0.0.1:3100` stays the local/dev path. See `docs/ops/caddy-tls-edge.md`.
+- Optional `repoId` on the task, or `repo_id` on the workflow, selects a catalog checkout. Omitted uses the default repo. See `docs/ops/multi-repo-cx33.md`.
 
 **Explicitly out (v1):**
 
-- Linear Agent Session webhooks, Agent Activities, backlog polling, Linear status vocabulary (Backlog / Implementing / Ready as tracker states).
+- Linear Agent Session webhooks, Agent Activities, backlog polling, Linear status vocabulary (Backlog / Implementing / Ready as tracker states). GitHub Issues and Slack may enqueue `bot.intake.created`; that does not add a Linear adapter. `POST /webhooks/linear` stays a refusal.
 - Any requirement that Linear must exist for the factory to run.
 
-**Auth (optional webhook):** shared secret / HMAC for intake; GitHub webhooks remain for PR/CI signals.
+**Auth (optional webhook):** shared secret / HMAC for intake. GitHub Issues intake uses `X-Hub-Signature-256` and `OPTIO_NEW_GITHUB_WEBHOOK_SECRET`. Slack uses `OPTIO_NEW_SLACK_SIGNING_SECRET`. PR/CI still uses the GitHub token and webhook secret. Do not log those values. See `docs/ops/intake-adapters.md`.
 
 ## 9. Jev AI — decision layer only
 

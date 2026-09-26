@@ -148,6 +148,8 @@ The learning worker is a separate Compose profile (`learn`), not part of this si
 
 Keep port 3200 on loopback and on the Compose network. Do not put it behind Caddy. Public intake HTTP is profile `edge` ([docs/ops/caddy-tls-edge.md](ops/caddy-tls-edge.md)). kit-harness is not on that proxy.
 
+Before the orchestrator adds a worktree, `ResourceGuard` checks free disk, inodes, and memory and fails closed with a `resource_guard` task status. Host cron: `bash scripts/resource-usage.sh` (paths and counts only). See [docs/ops/resource-guard.md](ops/resource-guard.md).
+
 ## Still needed for a Hetzner deploy
 
 Do not point the server at this branch and expect a finished production rollout. After the draft PR merges, the box still needs:

@@ -20,6 +20,8 @@ export interface WorktreeStageStep {
   plannerSelection?: readonly string[];
   /** Filled from `create` before the implement step handler runs. */
   worktreeId?: string;
+  /** Catalog repo. Omitted uses the router default. */
+  repoId?: string;
 }
 
 export interface WorktreeStageStepRunner<T extends WorktreeStageStep = WorktreeStageStep> {
@@ -40,6 +42,7 @@ export function createWorktreeStageHandler<T extends WorktreeStageStep>(
         const handle = await worktrees.create(ctx.taskId, {
           stepId: ctx.workflowStepId,
           plannerSelection: ctx.plannerSelection,
+          repoId: ctx.repoId,
         });
         if (!ctx.worktreeId) ctx.worktreeId = handle.worktreeId;
       }

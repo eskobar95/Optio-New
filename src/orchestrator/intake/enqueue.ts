@@ -8,6 +8,10 @@ export const IntakeTaskSchema = z.object({
   taskId: z.string().min(1),
   title: z.string().min(1),
   description: z.string().default(""),
+  /** Catalog repo. Omitted on legacy callers; HTTP and adapters set it. */
+  repoId: z.string().min(1).optional(),
+  source: z.enum(["http", "github", "slack"]).optional(),
+  event: z.literal("bot.intake.created").optional(),
 });
 
 export type IntakeTask = z.infer<typeof IntakeTaskSchema>;

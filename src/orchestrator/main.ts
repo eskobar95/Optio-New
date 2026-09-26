@@ -5,6 +5,8 @@
  * createEnvModelAdapter performs no HTTP. Planner steps require CURSOR_API_KEY, or they
  * fail with StageCredentialsError when MODEL_API_KEY / MODEL_ENDPOINT are missing or unused.
  */
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { FlowProducer } from "bullmq";
 import { Redis } from "ioredis";
 import { readPlanStage } from "./jobs/hello-world.js";
@@ -14,9 +16,11 @@ import { createProductionStageHandler } from "./jobs/production-handler.js";
 import { createPgStageRunStore, createStageRunLog } from "./observability/run-log.js";
 import { bullmqStageWorkerFactory, startStageGraph } from "./jobs/workers.js";
 import { logStageEvent } from "./jobs/stage-log.js";
+import { RepoCatalogError, loadRepoCatalog, readWorkflowRepoId } from "./repos/catalog.js";
+import { createGuardedRepoWorktrees } from "./repos/router.js";
 import { readOrchestratorPort, redisConnectionOptions } from "./redis.js";
 import { getStageTracer } from "./telemetry/index.js";
-import { createWorktreeManagerFromEnv } from "./worktrees/config.js";
+import { loadWorktreeRuntimeConfig } from "./worktrees/config.js";
 
 export async function startOrchestrator(): Promise<void> {
   const port = readOrchestratorPort(process.env.ORCHESTRATOR_PORT);
@@ -30,7 +34,23 @@ export async function startOrchestrator(): Promise<void> {
   const cursors = await createPgStepCursorStore(databaseUrl);
   const stageRuns = await createPgStageRunStore(databaseUrl);
   const runLog = createStageRunLog(stageRuns);
-  const worktrees = createWorktreeManagerFromEnv(process.env, getStageTracer());
+  const repoCatalog = loadRepoCatalog(process.env);
+  const worktreeConfig = loadWorktreeRuntimeConfig(process.env);
+  const worktrees = createGuardedRepoWorktrees(process.env, {
+    catalog: repoCatalog,
+    tracer: getStageTracer(),
+  });
+  let workflowRepoId: string | undefined;
+  try {
+    const workflowYaml = await readFile(
+      path.join(process.cwd(), "workflows", "default-task.yaml"),
+      "utf8",
+    );
+    workflowRepoId = readWorkflowRepoId(workflowYaml);
+  } catch (error) {
+    if (error instanceof RepoCatalogError) throw error;
+    workflowRepoId = undefined;
+  }
   logStageEvent({
     msg: "orchestrator stage handler",
     cursorApiKey: Boolean(process.env.CURSOR_API_KEY?.trim()),
@@ -38,8 +58,10 @@ export async function startOrchestrator(): Promise<void> {
     githubRepo: Boolean(process.env.OPTIO_NEW_GITHUB_REPO?.trim()),
     modelApiKey: Boolean(process.env.MODEL_API_KEY?.trim()),
     modelEndpoint: Boolean(process.env.MODEL_ENDPOINT?.trim()),
-    worktreeRoot: process.env.OPTIO_NEW_WORKTREE_ROOT?.trim() || "/var/lib/optio-new/worktrees",
-    retainOnFailure: process.env.OPTIO_NEW_WORKTREE_RETAIN_ON_FAILURE?.trim() !== "false",
+    worktreeRoot: worktreeConfig.root,
+    retainOnFailure: worktreeConfig.retainOnFailure,
+    repos: repoCatalog.repos.map((repo) => repo.repoId),
+    defaultRepoId: repoCatalog.defaultRepoId,
   });
   const workers = startStageGraph(
     {
@@ -72,6 +94,10 @@ export async function startOrchestrator(): Promise<void> {
     readPlanStage: (taskId, sessionId) => readPlanStage(cursors, taskId, sessionId),
     readTaskActions: (taskId) => runLog.inspect(taskId),
     webhookSecret: process.env.OPTIO_NEW_INTAKE_WEBHOOK_SECRET,
+    repoCatalog,
+    workflowRepoId,
+    githubWebhookSecret: process.env.OPTIO_NEW_GITHUB_WEBHOOK_SECRET,
+    slackSigningSecret: process.env.OPTIO_NEW_SLACK_SIGNING_SECRET,
     checkRedis: async () => {
       try {
         return (await redis.ping()) === "PONG";

@@ -33,14 +33,23 @@ export {
 } from "./harness/gates/index.js";
 export { createEnvModelAdapter, readModelEnv, type ModelEnvConfig } from "./agent/env-adapter.js";
 export {
-  IntakeHttpSchema,
+  BOT_INTAKE_CREATED,
+  GITHUB_WEBHOOK_PATH,
   INTAKE_WEBHOOK_PATH,
   INTAKE_WEBHOOK_SIGNATURE_HEADER,
+  IntakeHttpSchema,
+  TRACKER_WEBHOOK_PATH,
+  SLACK_WEBHOOK_PATH,
   buildIntakeJob,
   createIntakeServer,
+  handleGithubWebhook,
   handleIntakeRequest,
+  handleSlackWebhook,
   IntakeTaskSchema,
+  redactSecrets,
   signIntakeWebhookBody,
+  signSlackBody,
+  type BotIntakeCreated,
   type IntakeAccepted,
   type IntakeHttpRequest,
   type IntakeServerOptions,
@@ -141,6 +150,31 @@ export {
   type WorktreeRuntimeConfig,
   type WorktreeSkillStageHook,
 } from "./orchestrator/worktrees/index.js";
+export {
+  DEFAULT_REPO_ID,
+  RepoCatalogError,
+  RepoWorktreeRouter,
+  UnknownRepoError,
+  createGuardedRepoWorktrees,
+  loadRepoCatalog,
+  matchRepoId,
+  readWorkflowRepoId,
+  resolveRepo,
+  selectRepoId,
+  type RepoBinding,
+  type RepoCatalog,
+} from "./orchestrator/repos/index.js";
+export {
+  DEFAULT_RESOURCE_THRESHOLDS,
+  InMemoryTaskStatusStore,
+  ResourceGuard,
+  ResourceGuardError,
+  createHostResourceProbe,
+  loadResourceThresholds,
+  type ResourceProbe,
+  type ResourceThresholds,
+  type TaskStatusRecord,
+} from "./orchestrator/resources/index.js";
 export {
   EveRunnerStepSchema,
   IMPLEMENTATION_AGENT_ID,

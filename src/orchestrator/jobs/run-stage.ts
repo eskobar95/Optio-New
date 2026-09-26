@@ -62,6 +62,8 @@ export interface StageStepContext {
   description?: string;
   /** Records adapter usage for this stage when the adapter exposed token or cost figures. */
   recordUsage?: (usage: StageUsageReport) => Promise<void>;
+  /** Catalog repo for worktree create. */
+  repoId?: string;
 }
 
 export interface StageStepHandler {
@@ -403,6 +405,7 @@ async function executeStageJob(
         tracer,
         title: payload.title,
         description: payload.description,
+        repoId: payload.repoId,
         recordUsage: async (usage) => {
           if (!runLog) return;
           await safeRunLog(() => runLog.recordUsage({ ...identity, ...usage }), undefined);
@@ -494,7 +497,7 @@ async function executeStageJob(
 }
 
 export async function runPipeline(
-  input: { taskId: string; sessionId: string },
+  input: { taskId: string; sessionId: string; repoId?: string },
   deps: StageRuntime,
 ): Promise<PipelineRunResult> {
   const stages: StageJobResult[] = [];

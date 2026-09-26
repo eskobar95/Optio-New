@@ -66,6 +66,9 @@ const worktrees = new WorktreeManager({
   retainOnFailure: true,
 });
 
+// Multi-repo plus the CX33 disk/memory guard. `main.ts` uses this helper.
+// const worktrees = createGuardedRepoWorktrees(process.env);
+
 const workers = startStageGraph(
   { cursors, handler: createAgentStageHandler(adapter), worktrees },
   bullmqStageWorkerFactory({

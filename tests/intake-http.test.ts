@@ -67,6 +67,7 @@ describe("POST /intake", () => {
       sessionId: "s-1",
       jobId: "s-1__plan",
       queue: "optio.plan",
+      repoId: "default",
     });
     expect(added).toHaveLength(1);
     const plan = planJob(added[0] as FlowJob);
@@ -78,6 +79,7 @@ describe("POST /intake", () => {
       stage: "plan",
       title: "Add intake",
       description: "Enqueue the plan stage",
+      repoId: "default",
     });
   });
 
@@ -176,6 +178,7 @@ describe("POST /intake", () => {
       sessionId: "t-2",
       jobId: "t-2__plan",
       queue: "optio.plan",
+      repoId: "default",
     });
   });
 

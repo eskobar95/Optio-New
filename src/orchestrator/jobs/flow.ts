@@ -15,7 +15,7 @@ import {
 function stageNode(
   stage: PipelineStage,
   identity: PipelineIdentity,
-  brief: { title?: string; description?: string },
+  brief: { title?: string; description?: string; repoId?: string },
   child?: FlowChildJob,
 ): FlowChildJob {
   const data: {
@@ -24,9 +24,11 @@ function stageNode(
     stage: PipelineStage;
     title?: string;
     description?: string;
+    repoId?: string;
   } = { taskId: identity.taskId, sessionId: identity.sessionId, stage };
   if (brief.title) data.title = brief.title;
   if (brief.description) data.description = brief.description;
+  if (brief.repoId) data.repoId = brief.repoId;
   const node: FlowChildJob = {
     name: stage,
     queueName: STAGE_QUEUES[stage],
@@ -48,11 +50,13 @@ export function buildPipelineFlow(input: {
   sessionId: string;
   title?: string;
   description?: string;
+  repoId?: string;
 }): FlowJob {
   const identity = PipelineIdentitySchema.parse(input);
   const brief = {
     title: input.title?.trim() || undefined,
     description: input.description?.trim() || undefined,
+    repoId: input.repoId?.trim() || undefined,
   };
   let node: FlowChildJob | undefined;
   for (const stage of PIPELINE_STAGES) {

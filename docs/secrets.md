@@ -37,6 +37,9 @@ Templates list every name Compose and the agent loop read:
 - `CURSOR_API_KEY` — Cursor subscription CLI
 - `OPTIO_NEW_GITHUB_REPO` — `owner/repo` for `ready` / `open_pr`
 - `OPTIO_NEW_BASE_BRANCH` — worktree and pull request base (default `development`)
+- `OPTIO_NEW_REPOS`, `OPTIO_NEW_DEFAULT_REPO_ID`, `OPTIO_NEW_REPO_PATH`, `OPTIO_NEW_REPO_CLONE_URL` — multi-repo catalog. The JSON may contain clone URLs; do not log it.
+- `OPTIO_NEW_SLACK_SIGNING_SECRET` — Slack intake HMAC. Same handling as the GitHub webhook secret.
+- `OPTIO_NEW_MIN_FREE_DISK_BYTES`, `OPTIO_NEW_MIN_FREE_INODES`, `OPTIO_NEW_MIN_AVAILABLE_MEMORY_BYTES`, `OPTIO_NEW_DOCKER_DATA_ROOT` — CX33 guard thresholds (counts and a path, not credentials).
 
 Compose interpolates `CURSOR_API_KEY`, `OPTIO_NEW_GITHUB_TOKEN`, `MODEL_API_KEY`, `MODEL_ENDPOINT`, and `OPTIO_NEW_GITHUB_REPO` into `orchestrator` and `eve-runner` (`${VAR:-}`). `learning-worker` already receives `OPTIO_NEW_GITHUB_TOKEN`. A bare `docker compose` without this helper leaves those values empty. The stage handler then fails the step with `StageCredentialsError` instead of acking it. See [pipeline.md](pipeline.md).
 

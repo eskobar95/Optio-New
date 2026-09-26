@@ -67,6 +67,7 @@ describe("POST /webhooks/intake", () => {
       sessionId: "s-edge",
       jobId: "s-edge__plan",
       queue: "optio.plan",
+      repoId: "default",
     });
     expect(added).toHaveLength(1);
   });
