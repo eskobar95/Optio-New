@@ -15,6 +15,9 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `orchestrator/intake/`                                | §8, §11           | New Bot chat/API intake → BullMQ enqueue (no Linear)                      |
 | `orchestrator/jobs/`                                  | §11, §12, §14.0   | BullMQ stage graph; runnable TS in `src/orchestrator/jobs/`               |
 | `state/migrations/001_pipeline_step_cursor.sql`       | §11, §14.0        | Postgres step cursor for crash resume                                     |
+| `state/migrations/004_session_artifacts.sql`          | §11, §14.0        | Per-task plan, PR link, stage outcome, last error                         |
+| `docs/ops/crash-recovery.md`                          | §14.0             | Resume from the stage checkpoint; no duplicate PR or worktree             |
+| `docs/ops/session-artifacts.md`                       | §11, §14.0        | Artifact dump API and CX33 retention                                      |
 | `orchestrator/worktrees/`                             | §7, §6.5          | Notes; runnable manager is `src/orchestrator/worktrees/`                  |
 | `orchestrator/sessions/`                              | §13.5             | Concurrency caps; workspace port plugs into worktrees                     |
 | `src/orchestrator/sessions/`                          | §13.5             | Session gate, overflow, queue-depth telemetry                             |

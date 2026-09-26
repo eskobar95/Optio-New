@@ -413,6 +413,9 @@ function githubFetch(fixture: EvalFixture, calls: { n: number }): typeof fetch {
   return async (input, init) => {
     const url = String(input);
     const method = init?.method ?? "GET";
+    if (method === "GET" && url.includes("/pulls?") && url.includes("state=open")) {
+      return jsonResponse(200, []);
+    }
     if (method === "POST" && url.endsWith("/pulls")) {
       calls.n += 1;
       if (!pull) return jsonResponse(500, { message: "no mock pull request" });

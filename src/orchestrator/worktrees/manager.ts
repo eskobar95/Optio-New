@@ -191,22 +191,26 @@ async function readLock(lockPath: string): Promise<LockRecord | undefined> {
   }
 }
 
-function git(cwd: string, args: readonly string[]): Promise<void> {
+function gitOutput(cwd: string, args: readonly string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       "git",
       [...args],
       { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } },
-      (error, _stdout, stderr) => {
+      (error, stdout, stderr) => {
         if (error) {
           const detail = stderr.trim() || error.message;
           reject(new Error(`git ${args.join(" ")} (${cwd}): ${detail}`));
           return;
         }
-        resolve();
+        resolve(stdout);
       },
     );
   });
+}
+
+function git(cwd: string, args: readonly string[]): Promise<void> {
+  return gitOutput(cwd, args).then(() => undefined);
 }
 
 export class WorktreeManager implements WorktreeLifecycle {
@@ -252,6 +256,25 @@ export class WorktreeManager implements WorktreeLifecycle {
         };
       }
       if (await exists(layout.path)) {
+        const branch = await this.registeredBranch(layout.path);
+        const expected = existing?.branch ?? layout.branch;
+        if (branch === expected) {
+          await this.seedSkills(taskId, layout.path, options);
+          await this.writeLock(layout.lockPath, {
+            taskId,
+            branch: expected,
+            worktreeId: layout.worktreeId,
+          });
+          return {
+            fresh: false,
+            handle: {
+              taskId,
+              path: layout.path,
+              branch: expected,
+              worktreeId: layout.worktreeId,
+            },
+          };
+        }
         throw new WorktreeIsolationError(`path ${layout.path} already exists`, taskId, layout.path);
       }
 
@@ -274,13 +297,11 @@ export class WorktreeManager implements WorktreeLifecycle {
         throw error;
       }
 
-      const record: LockRecord = {
+      await this.writeLock(layout.lockPath, {
         taskId,
         branch,
         worktreeId: layout.worktreeId,
-      };
-      await mkdir(path.dirname(layout.lockPath), { recursive: true });
-      await writeFile(layout.lockPath, `${JSON.stringify(record)}\n`, "utf8");
+      });
       return {
         fresh: true,
         handle: {
@@ -379,6 +400,35 @@ export class WorktreeManager implements WorktreeLifecycle {
   private async emitSpan(name: string, taskId: string, worktreeId: string): Promise<void> {
     if (!this.tracer) return;
     await this.tracer.runStage(name, { taskId, worktreeId }, async () => undefined);
+  }
+
+  private async writeLock(lockPath: string, record: LockRecord): Promise<void> {
+    await mkdir(path.dirname(lockPath), { recursive: true });
+    await writeFile(lockPath, `${JSON.stringify(record)}\n`, "utf8");
+  }
+
+  /** Branch name registered for this path, without `refs/heads/`. */
+  private async registeredBranch(worktreePath: string): Promise<string | undefined> {
+    const text = await gitOutput(this.repoPath, ["worktree", "list", "--porcelain"]);
+    const target = path.resolve(worktreePath);
+    let currentPath = "";
+    let currentBranch: string | undefined;
+    const matched = (): string | undefined => {
+      if (!currentPath || path.resolve(currentPath) !== target) return undefined;
+      return currentBranch;
+    };
+    for (const line of text.split("\n")) {
+      if (line.startsWith("worktree ")) {
+        const found = matched();
+        if (found) return found;
+        currentPath = line.slice("worktree ".length).trim();
+        currentBranch = undefined;
+      } else if (line.startsWith("branch ") && currentPath) {
+        const ref = line.slice("branch ".length).trim();
+        currentBranch = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : ref;
+      }
+    }
+    return matched();
   }
 
   private async seedSkills(
