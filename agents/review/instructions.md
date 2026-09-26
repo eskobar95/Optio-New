@@ -31,3 +31,11 @@ The orchestrator runs `evaluateReviewGate` before the ready stage (SPEC §3, §9
 - Fail (budget exhausted, open blockers, or a confident Jev fail) → replan: planner.
 
 Missing evidence fails closed. Paths: `docs/review-gate.md`.
+
+## Gates
+
+Same ids as step `review` in `workflows/default-task.yaml`. This phase does not advance BullMQ; the orchestrator worker does after the exit gates pass.
+
+- Entry: `diff_present`
+- Exit: `jev_review_pass`
+- On fail: `return_to_implementation`

@@ -25,3 +25,11 @@ You are the **ready** agent for an Optio-New task session (New Bot–driven).
 ## Exit
 
 Satisfy `pr_open` and `ci_pending_or_green`.
+
+## Gates
+
+Same ids as step `ready` in `workflows/default-task.yaml`. This phase does not advance BullMQ; the orchestrator worker does after the exit gates pass.
+
+- Entry: `review_pass`
+- Exit: `pr_open`, `ci_pending_or_green`
+- On fail: `escalate_bot`
