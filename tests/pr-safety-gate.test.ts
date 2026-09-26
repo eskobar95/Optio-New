@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { UnrecoverableError } from "bullmq";
 import {
@@ -195,6 +196,30 @@ describe("evaluatePrSafetyGate", () => {
     expect(escape.findings[0]?.rule).toBe("path_escape");
   });
 
+  it("maps install failure ahead of a missing or failed test", () => {
+    expect(
+      evaluatePrSafetyGate({ diff: cleanDiff, installFailure: "deps_install_failed" }),
+    ).toMatchObject({ verdict: "fail", reason: "deps_install_failed", hard: true, findings: [] });
+    expect(
+      evaluatePrSafetyGate({
+        diff: cleanDiff,
+        installFailure: "deps_install_failed",
+        checks: { ...passedChecks(), test: { exitCode: 127 } },
+      }),
+    ).toMatchObject({ reason: "deps_install_failed" });
+    expect(
+      evaluatePrSafetyGate({ diff: cleanDiff, installFailure: "lockfile_missing" }),
+    ).toMatchObject({ verdict: "fail", reason: "lockfile_missing", hard: true });
+  });
+
+  it("names a secret ahead of an install failure", () => {
+    const decision = evaluatePrSafetyGate({
+      installFailure: "deps_install_failed",
+      diff: unified(".env", "TOKEN=1"),
+    });
+    expect(decision.reason).toBe("secret_in_diff");
+  });
+
   it("names a secret ahead of a failing lint check", () => {
     const decision = evaluatePrSafetyGate({
       checks: { ...passedChecks(), lint: { exitCode: 1 } },
@@ -217,6 +242,9 @@ describe("collectPrSafetyInput", () => {
         calls.push(`${command} ${args.join(" ")}`);
         if (command === "npm" && args[0] === "test") return { exitCode: undefined, stdout: "" };
         if (command === "npm") return { exitCode: 0, stdout: "" };
+        if (command === "node" && args.join(" ").includes("pnpm-lock.yaml")) {
+          return { exitCode: 1, stdout: "" };
+        }
         if (args[0] === "ls-files") return { exitCode: 0, stdout: "notes.env\0" };
         if (args.includes("--no-index")) {
           return { exitCode: 1, stdout: unified("notes.env", "TOKEN=local") };
@@ -230,6 +258,8 @@ describe("collectPrSafetyInput", () => {
       "git diff HEAD",
       "git ls-files -z --others --exclude-standard",
       "git diff --no-index -- /dev/null notes.env",
+      'node --eval require("fs").accessSync("pnpm-lock.yaml")',
+      'node --eval require("fs").accessSync("package-lock.json")',
       'node --eval require("fs").accessSync("node_modules/vitest/package.json")',
       "npm test",
       "npm run lint",
@@ -244,6 +274,10 @@ describe("collectPrSafetyInput", () => {
     const shell: ShellRunner = {
       async run(_cwd, command, args) {
         calls.push(`${command} ${args.join(" ")}`);
+        const spec = args.join(" ");
+        if (command === "node" && spec.includes("package-lock.json")) {
+          return { exitCode: 0, stdout: "" };
+        }
         if (command === "node") return { exitCode: 1, stdout: "" };
         if (command === "npm") return { exitCode: 0, stdout: "" };
         return { exitCode: 0, stdout: "" };
@@ -254,6 +288,8 @@ describe("collectPrSafetyInput", () => {
       "git diff development...HEAD",
       "git diff HEAD",
       "git ls-files -z --others --exclude-standard",
+      'node --eval require("fs").accessSync("pnpm-lock.yaml")',
+      'node --eval require("fs").accessSync("package-lock.json")',
       'node --eval require("fs").accessSync("node_modules/vitest/package.json")',
       "npm ci --ignore-scripts --include=dev",
       "npm test",
@@ -278,7 +314,7 @@ describe("collectPrSafetyInput", () => {
       },
     };
     const input = await collectPrSafetyInput("/work/task", { base: "development", shell });
-    expect(calls.some((call) => call.startsWith("npm "))).toBe(false);
+    expect(calls.some((call) => call.startsWith("npm ") || call.startsWith("pnpm "))).toBe(false);
     const decision = evaluatePrSafetyGate(input);
     expect(decision.reason).toBe("secret_in_diff");
     expect(JSON.stringify(decision)).not.toContain(secret);
@@ -299,6 +335,164 @@ describe("collectPrSafetyInput", () => {
     expect(input.diff).toBeUndefined();
     expect(calls).toEqual([]);
     expect(evaluatePrSafetyGate(input).reason).toBe("tests_not_run");
+  });
+
+  it("installs and checks with pnpm when pnpm-lock.yaml is present", async () => {
+    const calls: string[] = [];
+    const shell: ShellRunner = {
+      async run(_cwd, command, args) {
+        calls.push(`${command} ${args.join(" ")}`);
+        const spec = args.join(" ");
+        if (command === "node" && spec.includes("pnpm-lock.yaml"))
+          return { exitCode: 0, stdout: "" };
+        if (command === "node") return { exitCode: 1, stdout: "" };
+        if (command === "pnpm") return { exitCode: 0, stdout: "" };
+        return { exitCode: 0, stdout: "" };
+      },
+    };
+    const input = await collectPrSafetyInput("/work/task", { base: "development", shell });
+    expect(calls).toEqual([
+      "git diff development...HEAD",
+      "git diff HEAD",
+      "git ls-files -z --others --exclude-standard",
+      'node --eval require("fs").accessSync("pnpm-lock.yaml")',
+      'node --eval require("fs").accessSync("node_modules/vitest/package.json")',
+      "pnpm install --frozen-lockfile --ignore-scripts",
+      "pnpm run test",
+      "pnpm run lint",
+      "pnpm run typecheck",
+    ]);
+    expect(evaluatePrSafetyGate(input).reason).toBe("checks_passed");
+  });
+
+  it("prefers pnpm when both pnpm and npm lockfiles exist", async () => {
+    const calls: string[] = [];
+    const shell: ShellRunner = {
+      async run(_cwd, command, args) {
+        calls.push(`${command} ${args.join(" ")}`);
+        if (command === "node" && args.join(" ").includes("vitest"))
+          return { exitCode: 0, stdout: "" };
+        return { exitCode: 0, stdout: "" };
+      },
+    };
+    await collectPrSafetyInput("/work/task", { base: "development", shell });
+    expect(calls).toContain('node --eval require("fs").accessSync("pnpm-lock.yaml")');
+    expect(calls.some((call) => call.includes("package-lock.json"))).toBe(false);
+    expect(calls).toContain("pnpm run test");
+    expect(calls.some((call) => call.startsWith("npm "))).toBe(false);
+  });
+
+  it("uses npm ci for npm-shrinkwrap.json when package-lock.json is absent", async () => {
+    const calls: string[] = [];
+    const shell: ShellRunner = {
+      async run(_cwd, command, args) {
+        calls.push(`${command} ${args.join(" ")}`);
+        const spec = args.join(" ");
+        if (command === "node" && spec.includes("npm-shrinkwrap.json")) {
+          return { exitCode: 0, stdout: "" };
+        }
+        if (command === "node") return { exitCode: 1, stdout: "" };
+        if (command === "npm") return { exitCode: 0, stdout: "" };
+        return { exitCode: 0, stdout: "" };
+      },
+    };
+    const input = await collectPrSafetyInput("/work/task", { base: "development", shell });
+    expect(calls).toContain("npm ci --ignore-scripts --include=dev");
+    expect(calls).toContain("npm test");
+    expect(calls.some((call) => call.startsWith("pnpm "))).toBe(false);
+    expect(evaluatePrSafetyGate(input).reason).toBe("checks_passed");
+  });
+
+  it("fails as lockfile_missing and does not install or run checks", async () => {
+    const calls: string[] = [];
+    const shell: ShellRunner = {
+      async run(_cwd, command, args) {
+        calls.push(`${command} ${args.join(" ")}`);
+        if (command === "node") return { exitCode: 1, stdout: "" };
+        return { exitCode: 0, stdout: "" };
+      },
+    };
+    const input = await collectPrSafetyInput("/work/task", { base: "development", shell });
+    expect(calls.filter((call) => call.startsWith("npm ") || call.startsWith("pnpm "))).toEqual([]);
+    expect(input.checks).toBeUndefined();
+    expect(evaluatePrSafetyGate(input)).toMatchObject({
+      verdict: "fail",
+      reason: "lockfile_missing",
+      hard: true,
+    });
+  });
+
+  it("maps a failed pnpm install to deps_install_failed and skips checks", async () => {
+    const calls: string[] = [];
+    const shell: ShellRunner = {
+      async run(_cwd, command, args) {
+        calls.push(`${command} ${args.join(" ")}`);
+        const spec = args.join(" ");
+        if (command === "node" && spec.includes("pnpm-lock.yaml"))
+          return { exitCode: 0, stdout: "" };
+        if (command === "node") return { exitCode: 1, stdout: "" };
+        if (command === "pnpm" && args[0] === "install") return { exitCode: 1, stdout: "EUSAGE" };
+        if (command === "pnpm") return { exitCode: 127, stdout: "vitest: not found" };
+        return { exitCode: 0, stdout: "" };
+      },
+    };
+    const input = await collectPrSafetyInput("/work/task", { base: "development", shell });
+    expect(calls.some((call) => call.startsWith("pnpm run"))).toBe(false);
+    expect(input.checks).toBeUndefined();
+    expect(JSON.stringify(input)).not.toContain("EUSAGE");
+    expect(evaluatePrSafetyGate(input)).toMatchObject({
+      verdict: "fail",
+      reason: "deps_install_failed",
+      hard: true,
+    });
+  });
+
+  it("maps a missing package manager binary to deps_install_failed", async () => {
+    const shell: ShellRunner = {
+      async run(_cwd, command, args) {
+        const spec = args.join(" ");
+        if (command === "node" && spec.includes("package-lock.json"))
+          return { exitCode: 0, stdout: "" };
+        if (command === "node") return { exitCode: 1, stdout: "" };
+        if (command === "npm" && args[0] === "ci") return { exitCode: undefined, stdout: "" };
+        return { exitCode: 0, stdout: "" };
+      },
+    };
+    const input = await collectPrSafetyInput("/work/task", { base: "development", shell });
+    expect(input.checks).toBeUndefined();
+    expect(evaluatePrSafetyGate(input).reason).toBe("deps_install_failed");
+  });
+
+  it("keeps a real test failure as tests_failed after a successful pnpm install", async () => {
+    const shell: ShellRunner = {
+      async run(_cwd, command, args) {
+        const spec = args.join(" ");
+        if (command === "node" && spec.includes("pnpm-lock.yaml"))
+          return { exitCode: 0, stdout: "" };
+        if (command === "node") return { exitCode: 1, stdout: "" };
+        if (command === "pnpm" && args[0] === "install") return { exitCode: 0, stdout: "" };
+        if (command === "pnpm" && args[1] === "test")
+          return { exitCode: 1, stdout: "assertion failed" };
+        if (command === "pnpm") return { exitCode: 0, stdout: "" };
+        return { exitCode: 0, stdout: "" };
+      },
+    };
+    const input = await collectPrSafetyInput("/work/task", { base: "development", shell });
+    expect(JSON.stringify(input)).not.toContain("assertion failed");
+    expect(evaluatePrSafetyGate(input)).toMatchObject({
+      verdict: "fail",
+      reason: "tests_failed",
+      hard: true,
+    });
+  });
+});
+
+describe("orchestrator image", () => {
+  it("enables corepack pnpm for the pr safety gate", () => {
+    const dockerfile = readFileSync("Dockerfile.orchestrator", "utf8");
+    expect(dockerfile).toContain("corepack enable");
+    expect(dockerfile).toContain("corepack prepare pnpm@12.6.0 --activate");
+    expect(dockerfile).toContain("COREPACK_ENABLE_DOWNLOAD_PROMPT=0");
   });
 });
 
