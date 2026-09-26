@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 01:06 UTC
+Last refreshed: 2026-09-26 01:15 UTC
 
 ## Bootstrap progress
 
@@ -19,7 +19,7 @@ Last refreshed: 2026-09-26 01:06 UTC
 
 [![CI](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml/badge.svg)](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml)
 
-Latest conclusion: **success**
+Latest conclusion: **cancelled**
 
 Actions: https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml
 
@@ -51,15 +51,13 @@ curl -fsS -X POST http://127.0.0.1:3100/intake \\
 
 ## Open issues
 
-Open: 12.
+Open: 10.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
 - #62 [EVE-5] Vitest for Eve skill budget, materialize, specialist share (P1, enhancement, orchestration)
-- #61 [EVE-4] Specialist subagent invoke (shared worktree) (P1, enhancement, orchestration)
 - #60 [EVE-3] Local eve-runner invoked by BullMQ stage (P0, enhancement, orchestration)
 - #59 [EVE-2] SkillLoader + worktree skill seed/reap (P1, enhancement, orchestration)
-- #58 [EVE-1] Docs + Eve mappe-alignment for phase agents (P1, enhancement, orchestration)
 - #45 [e2e] Add a hello-world endpoint to the agent loop (P2, enhancement, good first issue, orchestration)
 - #22 [P2] Caddy TLS edge for optional intake webhook (P2, deploy, infra, security)
 - #21 [P2] Eve phase agents: planner / implementation / review / ready / merge contracts (P2, enhancement, orchestration)
