@@ -16,6 +16,8 @@ SPEC §14.0. BullMQ on Redis is the orchestrator. New Bot only decides and enque
 
 `enqueueIntakePipeline(input, flowProducer)` runs `buildIntakeJob` and enqueues that flow. `sessionId` defaults to `taskId`.
 
+`POST /intake` (`createIntakeServer`) is the HTTP entry. It accepts `{ brief, metadata }`, then calls `enqueueIntakePipeline`. The `202` body returns `jobId` `${sessionId}__plan` on queue `optio.plan`. Invalid bodies return `400` and do not enqueue. See `orchestrator/intake/README.md`.
+
 ## Step cursor
 
 Table `pipeline_step_cursor` (`state/migrations/001_pipeline_step_cursor.sql`), keyed by `(task_id, session_id, stage)`.
