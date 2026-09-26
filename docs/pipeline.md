@@ -88,6 +88,8 @@ Compose interpolates these names from the env file into `orchestrator` and `eve-
 | `MODEL_API_KEY`, `MODEL_ENDPOINT` | Planner fallback only. The env adapter performs no HTTP                                       |
 | `OPTIO_NEW_BASE_BRANCH`           | Worktree base and pull request base. Default `development`                                    |
 
+Inside the container, `OPTIO_NEW_REPO_PATH` is `/opt/optio-new` and `OPTIO_NEW_WORKTREE_ROOT` is `/var/lib/optio-new/worktrees` (volume `optio_new_worktrees`). The host side of the checkout mount is `${OPTIO_NEW_REPO_PATH:-/opt/optio-new}`. `OPTIO_NEW_WORKTREE_RETAIN_ON_FAILURE` defaults to `true`; `false` removes the named `wt-<task>` directory when merge fails.
+
 `CURSOR_AGENT_BIN` is passed through when set. The image installs `git` and does not download the Cursor CLI. A missing `agent` binary fails the coding step with `cli_not_found`.
 
 | Step                                     | What the process does                                                                                                                                                                                                                                      |
@@ -116,7 +118,7 @@ Apply `state/migrations/001_pipeline_step_cursor.sql` before using Postgres. `cr
 
 ## Spans
 
-Each `processStageJob` call emits `workflow.step` with `task_id`, `worktree_id` (empty until a worktree exists), `workflow_id=default-task`, and `step_id` set to the stage. The agent handler nests `agent.run` and `skill.load` under that span. Export to Langfuse or SigNoz stays off unless the env flag is `true`. See `docs/observability.md`.
+Each `processStageJob` call emits `workflow.step` with `task_id`, `worktree_id` (empty until a worktree exists; later stages read it from `WorktreeManager.status`), `workflow_id=default-task`, and `step_id` set to the stage. The agent handler nests `agent.run` and `skill.load` under that span. A new checkout emits `worktree.create`. Deleting it emits `worktree.remove`. Export to Langfuse or SigNoz stays off unless the env flag is `true`. See `docs/observability.md` and `docs/ops/worktree-isolation.md`.
 
 ## Tests
 

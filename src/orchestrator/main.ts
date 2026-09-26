@@ -13,7 +13,8 @@ import { createPgStepCursorStore } from "./jobs/cursor.js";
 import { createProductionStageHandler } from "./jobs/production-handler.js";
 import { bullmqStageWorkerFactory, startStageGraph } from "./jobs/workers.js";
 import { readOrchestratorPort, redisConnectionOptions } from "./redis.js";
-import { WorktreeManager } from "./worktrees/manager.js";
+import { getStageTracer } from "./telemetry/index.js";
+import { createWorktreeManagerFromEnv } from "./worktrees/config.js";
 
 export async function startOrchestrator(): Promise<void> {
   const port = readOrchestratorPort(process.env.ORCHESTRATOR_PORT);
@@ -25,11 +26,7 @@ export async function startOrchestrator(): Promise<void> {
 
   const connection = redisConnectionOptions(redisUrl);
   const cursors = await createPgStepCursorStore(databaseUrl);
-  const worktrees = new WorktreeManager({
-    root: process.env.OPTIO_NEW_WORKTREE_ROOT?.trim() || "/var/lib/optio-new/worktrees",
-    repoPath: process.env.OPTIO_NEW_REPO_PATH?.trim() || "/opt/optio-new",
-    baseBranch: process.env.OPTIO_NEW_BASE_BRANCH?.trim() || "development",
-  });
+  const worktrees = createWorktreeManagerFromEnv(process.env, getStageTracer());
   console.log(
     JSON.stringify({
       msg: "orchestrator stage handler",
@@ -38,6 +35,8 @@ export async function startOrchestrator(): Promise<void> {
       githubRepo: Boolean(process.env.OPTIO_NEW_GITHUB_REPO?.trim()),
       modelApiKey: Boolean(process.env.MODEL_API_KEY?.trim()),
       modelEndpoint: Boolean(process.env.MODEL_ENDPOINT?.trim()),
+      worktreeRoot: process.env.OPTIO_NEW_WORKTREE_ROOT?.trim() || "/var/lib/optio-new/worktrees",
+      retainOnFailure: process.env.OPTIO_NEW_WORKTREE_RETAIN_ON_FAILURE?.trim() !== "false",
     }),
   );
   const workers = startStageGraph(

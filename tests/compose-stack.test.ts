@@ -34,6 +34,14 @@ describe("compose full stack profiles", () => {
     expect(slices.orchestrator).toContain("127.0.0.1:3100:3100");
     expect(slices.orchestrator).toContain("condition: service_healthy");
     expect(slices.orchestrator).toContain("healthcheck:");
+    expect(slices.orchestrator).toContain("OPTIO_NEW_REPO_PATH: /opt/optio-new");
+    expect(slices.orchestrator).toContain("OPTIO_NEW_WORKTREE_ROOT: /var/lib/optio-new/worktrees");
+    expect(slices.orchestrator).toContain(
+      "OPTIO_NEW_WORKTREE_RETAIN_ON_FAILURE: ${OPTIO_NEW_WORKTREE_RETAIN_ON_FAILURE:-true}",
+    );
+    expect(slices.orchestrator).toContain("${OPTIO_NEW_REPO_PATH:-/opt/optio-new}:/opt/optio-new");
+    expect(slices.orchestrator).toContain("optio_new_worktrees:/var/lib/optio-new/worktrees");
+    expect(compose).toContain("\n  optio_new_worktrees:\n");
     for (const name of [
       "CURSOR_API_KEY",
       "OPTIO_NEW_GITHUB_TOKEN",
