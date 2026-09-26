@@ -3,7 +3,10 @@
  * Callers inject an implementation; the loop does not open a network connection.
  */
 
+import type { ModelToolCall } from "../harness/gates/types.js";
 import type { LoadedSkill } from "./skills.js";
+
+export type { ModelToolCall } from "../harness/gates/types.js";
 
 export interface ModelRequest {
   prompt: string;
@@ -13,6 +16,8 @@ export interface ModelRequest {
 
 export interface ModelResponse {
   text: string;
+  /** Proposed effects. The loop runs hard gates before executing any of them. */
+  toolCalls?: readonly ModelToolCall[];
 }
 
 export interface ModelAdapter {

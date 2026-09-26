@@ -17,7 +17,9 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `orchestrator/learning/`                              | §10               | Failure fingerprints → meta-tasks                                         |
 | `orchestrator/telemetry/`                             | §12.1–§12.4       | OTel helpers, canonical spans                                             |
 | `orchestrator/routing/`                               | §14.4             | Hop-1 backend selection                                                   |
-| `src/`                                                | §8, §11, §13, §14 | TypeScript harness (intake, jobs, adapters, gateway)                      |
+| `src/`                                                | §8, §11, §13, §14 | TypeScript harness (intake, jobs, adapters, gateway, gates)               |
+| `src/agent/`                                          | §9, §13           | Request-response loop; tool calls pass hard gates before effects          |
+| `src/harness/gates/`                                  | §9.1, §13         | Secrets deny, harness config lock, tool timeout; sidecar cannot override  |
 | `tests/`                                              | —                 | Unit/smoke tests (`tsx --test`)                                           |
 | `AGENTS.md`                                           | —                 | Agent operating guide (New Bot, no Linear)                                |
 | `src/adapters/cursor/`                                | §13, §14.1        | Cursor CLI headless (subscription only)                                   |
