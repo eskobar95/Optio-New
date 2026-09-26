@@ -6,6 +6,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { ZodError, z } from "zod";
 import { enqueueIntakePipeline, type FlowEnqueuer } from "../jobs/enqueue-pipeline.js";
+import type { SessionArtifactTrail } from "../artifacts/trail.js";
 import { HELLO_WORLD_RESPONSE, type PlanStageView } from "../jobs/hello-world.js";
 import { HitlDecisionError, type HitlAction, type HitlPoint } from "../jobs/hitl.js";
 import type { TaskRunView } from "../observability/run-log.js";
@@ -46,6 +47,8 @@ const ApprovalDecisionSchema = z.object({
   action: z.enum(["approve", "reject", "replan"]),
 });
 
+const ArtifactTrailQuerySchema = HelloPlanQuerySchema;
+
 export const IntakeHttpSchema = z.object({
   brief: z.object({
     title: z.string().min(1),
@@ -82,6 +85,11 @@ export interface IntakeServerOptions {
    * Omitted means that route stays 404.
    */
   readTaskActions?: (taskId: string) => Promise<TaskRunView>;
+  /**
+   * When set, GET /tasks/:taskId/artifacts dumps the session artifact trail.
+   * Omitted means that route stays 404.
+   */
+  readArtifactTrail?: (taskId: string, sessionId: string) => Promise<SessionArtifactTrail>;
   /**
    * HMAC secret for POST /webhooks/intake. Blank or omitted fails that route closed (503).
    * POST /intake does not read this value.
@@ -427,6 +435,33 @@ export async function handleIntakeRequest(
       await handleBudget(req, res, url, options);
       return;
     }
+    const artifactMatch = /^\/tasks\/([^/]+)\/artifacts$/.exec(url.pathname);
+    if (artifactMatch) {
+      if (req.method !== "GET") {
+        res.setHeader("allow", "GET");
+        sendJson(res, 405, {
+          error: "method_not_allowed",
+          message: "Use GET /tasks/:taskId/artifacts",
+        });
+        return;
+      }
+      if (!options.readArtifactTrail) {
+        sendJson(res, 404, {
+          error: "not_found",
+          message: "Artifact trail is unavailable",
+        });
+        return;
+      }
+      const artifactTaskId = decodeURIComponent(artifactMatch[1] ?? "");
+      const sessionRaw = url.searchParams.get("sessionId");
+      const query = ArtifactTrailQuerySchema.parse({
+        taskId: artifactTaskId,
+        sessionId: sessionRaw && sessionRaw.length > 0 ? sessionRaw : artifactTaskId,
+      });
+      const trail = await options.readArtifactTrail(query.taskId, query.sessionId);
+      sendJson(res, 200, trail);
+      return;
+    }
     if (url.pathname === INTAKE_WEBHOOK_PATH) {
       if (req.method !== "POST") {
         res.setHeader("allow", "POST");
@@ -493,7 +528,7 @@ export async function handleIntakeRequest(
       sendJson(res, 404, {
         error: "not_found",
         message:
-          "Known routes: GET /health, GET /hello, GET /hello/plan, GET /tasks/:taskId/actions, GET /approvals, POST /approvals, GET /budget, POST /intake, POST /webhooks/intake, POST /webhooks/github, POST /webhooks/slack",
+          "Known routes: GET /health, GET /hello, GET /hello/plan, GET /tasks/:taskId/actions, GET /tasks/:taskId/artifacts, GET /approvals, POST /approvals, GET /budget, POST /intake, POST /webhooks/intake, POST /webhooks/github, POST /webhooks/slack",
       });
       return;
     }

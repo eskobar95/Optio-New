@@ -10,7 +10,7 @@
 
 ## HTTP
 
-`createIntakeServer` (`src/orchestrator/intake/http.ts`) serves `POST /intake`. The process entry is `src/orchestrator/main.ts` (image `Dockerfile.orchestrator`, `ORCHESTRATOR_PORT`, default 3100). `GET /health` is 200 when Redis answers `PING`. `GET /hello` is the demo card (`hello: "world"`, stage `plan`, queue `optio.plan`). `GET /hello/plan?taskId=&sessionId=` reads the plan step cursor. `sessionId` defaults to `taskId`. `progressed` is true only when that cursor is `completed`. The route is 404 until the process wires a cursor reader. `GET /tasks/:taskId/actions` returns stage timing, usage, and agent actions for that task. It is 404 until the process wires a run log. No new port: Compose already publishes 3100 on `127.0.0.1`.
+`createIntakeServer` (`src/orchestrator/intake/http.ts`) serves `POST /intake`. The process entry is `src/orchestrator/main.ts` (image `Dockerfile.orchestrator`, `ORCHESTRATOR_PORT`, default 3100). `GET /health` is 200 when Redis answers `PING`. `GET /hello` is the demo card (`hello: "world"`, stage `plan`, queue `optio.plan`). `GET /hello/plan?taskId=&sessionId=` reads the plan step cursor. `sessionId` defaults to `taskId`. `progressed` is true only when that cursor is `completed`. The route is 404 until the process wires a cursor reader. `GET /tasks/:taskId/actions` returns stage timing, usage, and agent actions for that task. It is 404 until the process wires a run log. `GET /tasks/:taskId/artifacts?sessionId=` dumps the session artifact trail (plan text, pull request URL, last error). It is 404 until a store is wired, and 200 with an empty trail when the task has no rows. No new port: Compose already publishes 3100 on `127.0.0.1`.
 
 ```json
 {

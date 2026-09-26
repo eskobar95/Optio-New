@@ -35,6 +35,9 @@ export {
   type ReviewGatePath,
   type ReviewGateVerdict,
 } from "./review-gate.js";
+export { readStageCheckpoint, type StageCheckpoint } from "./checkpoint.js";
+export { JsonFileStepCursorStore } from "./file-cursor.js";
+export { openOrchestratorDatabase, type OrchestratorDatabase } from "./pg-state.js";
 export {
   PR_SAFETY_CHECKS,
   PrSafetyClosedError,

@@ -58,7 +58,7 @@ export async function openGithubPullRequest(input: OpenPullRequestInput): Promis
     }),
   });
   if (created.status === 422) {
-    const existing = await findOpenPullRequest(input);
+    const existing = await findOpenGithubPullRequest(input);
     if (existing) return existing;
   }
   if (!created.ok) {
@@ -107,7 +107,7 @@ export async function mergeGithubPullRequest(input: {
   }
 }
 
-async function findOpenPullRequest(
+export async function findOpenGithubPullRequest(
   input: OpenPullRequestInput,
 ): Promise<PullRequestRef | undefined> {
   const fetchImpl = input.fetchImpl ?? fetch;

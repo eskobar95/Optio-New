@@ -13,6 +13,10 @@ export interface StageStepResult {
   usage?: StageStepUsage;
   /** Planner confidence in [0, 1]. Missing or out of range does not auto-approve. */
   confidence?: number;
+  /** Planner text stored on the plan artifact. */
+  summary?: string;
+  /** Pull request URL stored on the stage artifact. */
+  prUrl?: string;
 }
 
 const STEP_USAGE = Symbol.for("optio.stageStepUsage");

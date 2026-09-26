@@ -16,10 +16,18 @@ import {
   readStringField,
   type StageTracer,
 } from "../telemetry/index.js";
+import { redact } from "../github/pull-request.js";
 import type { StageRunLog, StageUsageReport } from "../observability/run-log.js";
 import { redactSecrets } from "../../security/redact.js";
 import type { WorktreeLifecycle } from "../worktrees/manager.js";
 import { createWorktreeStageHandler } from "../worktrees/stage-hooks.js";
+import {
+  artifactCutoffIso,
+  buildSessionArtifact,
+  readArtifactLimits,
+  type ArtifactLimits,
+  type SessionArtifactStore,
+} from "../artifacts/index.js";
 import {
   accountBudgetAfterRun,
   assertBudgetBeforeRun,
@@ -106,6 +114,10 @@ export interface StageRuntime {
   hitl?: HitlBinding;
   /** When set, agent steps fail closed with BudgetExceeded once a cap is exceeded. */
   budget?: BudgetBinding;
+  /** When set, each stage writes one artifact row (plan, PR link, outcome, last error). */
+  artifacts?: SessionArtifactStore;
+  /** Caps and retention for {@link artifacts}. Defaults from the environment. */
+  artifactLimits?: ArtifactLimits;
   /** When set, review-gate and implementation failures are fingerprinted. */
   learning?: LearningSink;
   /** When set, stage timing, failures, usage, and step actions are stored for the task. */
@@ -204,6 +216,9 @@ export function createAgentStageHandler(
       const mappedUsage = result.usage ? stepUsageFromModel(result.usage) : undefined;
       if (mappedUsage) stepResult.usage = mappedUsage;
       if (result.confidence !== undefined) stepResult.confidence = result.confidence;
+      if (ctx.stage === "plan" && ctx.step === "invoke_planner" && result.text.trim()) {
+        stepResult.summary = result.text;
+      }
       return stepResult;
     },
   };
@@ -238,6 +253,56 @@ function stepUsageFromModel(usage: {
   if (typeof usage.output_tokens === "number") reported.outputTokens = usage.output_tokens;
   if (typeof usage.cost_usd === "number") reported.costUsd = usage.cost_usd;
   return Object.keys(reported).length > 0 ? reported : undefined;
+}
+
+function scrubArtifactText(text: string): string {
+  const secrets = [
+    process.env.OPTIO_NEW_GITHUB_TOKEN,
+    process.env.CURSOR_API_KEY,
+    process.env.MODEL_API_KEY,
+    process.env.OPTIO_NEW_DATABASE_URL,
+    process.env.OPTIO_NEW_INTAKE_WEBHOOK_SECRET,
+  ].filter((value): value is string => Boolean(value?.trim()));
+  return redact(text, secrets);
+}
+
+function planTextFor(payload: StageJobPayload, summary: string | null): string | null {
+  if (payload.stage !== "plan") return null;
+  const parts = [payload.title?.trim(), payload.description?.trim(), summary?.trim()].filter(
+    (part): part is string => Boolean(part),
+  );
+  return parts.length > 0 ? parts.join("\n\n") : null;
+}
+
+async function recordStageArtifact(
+  deps: StageRuntime,
+  payload: StageJobPayload,
+  outcome: "completed" | "failed",
+  details: { planText: string | null; prUrl: string | null; errorMessage: string | null },
+): Promise<void> {
+  if (!deps.artifacts) return;
+  const limits = deps.artifactLimits ?? readArtifactLimits();
+  const artifact = buildSessionArtifact({
+    taskId: payload.taskId,
+    sessionId: payload.sessionId,
+    stage: payload.stage,
+    outcome,
+    planText: details.planText,
+    prUrl: details.prUrl,
+    errorMessage: details.errorMessage ? scrubArtifactText(details.errorMessage) : null,
+    updatedAt: nowIso(),
+    limits,
+  });
+  try {
+    await deps.artifacts.upsert(artifact);
+    await deps.artifacts.prune(artifactCutoffIso(limits.retentionDays), limits.maxRows);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "artifact write failed";
+    console.error(
+      JSON.stringify({ msg: "session artifact write failed", error: scrubArtifactText(message) }),
+    );
+    if (outcome === "completed") throw error;
+  }
 }
 
 async function recordLearning(
@@ -294,6 +359,8 @@ async function executeStageJob(
   let startedMs = 0;
   let activeStep: string | undefined;
   let failureRecorded = false;
+  let planSummary: string | null = null;
+  let prUrl: string | null = null;
 
   const identity = {
     taskId: payload.taskId,
@@ -420,6 +487,11 @@ async function executeStageJob(
             workflowId: evidence?.workflow_id,
           }),
         );
+        await recordStageArtifact(deps, payload, "failed", {
+          planText: null,
+          prUrl: null,
+          errorMessage: decision.reason,
+        });
         throw new ReviewGateClosedError(decision);
       }
     }
@@ -471,6 +543,22 @@ async function executeStageJob(
             await accountBudgetAfterRun(deps.budget, ctx, attached);
           }
         }
+        const message = error instanceof Error ? error.message : "stage failed";
+        cursor = { ...cursor, status: "failed", updatedAt: nowIso() };
+        try {
+          await deps.cursors.save(cursor);
+        } catch (saveError) {
+          const saveMessage = saveError instanceof Error ? saveError.message : "cursor save failed";
+          logStage("error", {
+            msg: "step cursor failed-status write failed",
+            error: saveMessage,
+          });
+        }
+        await recordStageArtifact(deps, payload, "failed", {
+          planText: planTextFor(payload, planSummary),
+          prUrl,
+          errorMessage: message,
+        });
         if (payload.stage === "implement" || payload.stage === "review") {
           await recordLearning(
             deps.learning,
@@ -500,6 +588,10 @@ async function executeStageJob(
       if (deps.budget && isBudgetedAgentStep(step)) {
         await accountBudgetAfterRun(deps.budget, ctx, result?.usage);
       }
+      if (payload.stage === "plan" && step === "invoke_planner" && result?.summary?.trim()) {
+        planSummary = result.summary;
+      }
+      if (result?.prUrl?.trim()) prUrl = result.prUrl;
       if (ctx.worktreeId) activeWorktreeId = ctx.worktreeId;
       const actedAt = clock();
       if (runLog) {
@@ -518,6 +610,13 @@ async function executeStageJob(
       }
       activeStep = undefined;
       const finished = index + 1 >= steps.length;
+      if (finished) {
+        await recordStageArtifact(deps, payload, "completed", {
+          planText: planTextFor(payload, planSummary),
+          prUrl,
+          errorMessage: null,
+        });
+      }
       cursor = {
         ...cursor,
         nextStepIndex: index + 1,

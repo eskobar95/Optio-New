@@ -40,7 +40,13 @@ Steps, in order:
 - ready: `open_pr`, `record_ci_wait`
 - merge: `merge_branch`, `record_cleanup`
 
-The handler runs, then the cursor advances. If the process dies or the cursor write throws, the next delivery runs that same step again and skips steps whose index was already saved. A finished stage does not call the handler again. A later stage throws `StageNotReadyError` until the previous stage is `completed`.
+The handler runs, then the cursor advances. If the process dies or the cursor write throws, the next delivery runs that same step again and skips steps whose index was already saved. A thrown step is saved as `failed` at the same index. A finished stage does not call the handler again. A later stage throws `StageNotReadyError` until the previous stage is `completed`.
+
+`readStageCheckpoint` reports `lastCompletedStage` and `resumeStage` from those rows. A restarted orchestrator continues at `resumeStage`. Re-running `open_pr` reuses the recorded pull request. Re-running implement reuses the task worktree, including when the lock file was lost after `git worktree add`. Operators: [docs/ops/crash-recovery.md](ops/crash-recovery.md). Host proof: `bash scripts/chaos-resume-implement.sh`.
+
+## Session artifacts
+
+When `StageRuntime.artifacts` is set, each stage upserts one row in `session_artifacts` (`state/migrations/004_session_artifacts.sql`): stage name, outcome, plan text, pull request URL, and the last error. `GET /tasks/:taskId/artifacts` and `scripts/dump-session-artifacts.sh` print that trail. Retention defaults suit a CX33 80 GB disk (14 days, 16 KiB, 2000 rows). See [docs/ops/session-artifacts.md](ops/session-artifacts.md).
 
 `createAgentStageHandler(adapter)` calls `runAgentLoop` once per step (`${stage}:${step} task=${taskId}`). The adapter is injected. `createEnvModelAdapter` performs no HTTP.
 
@@ -130,7 +136,7 @@ INTAKE_PR_E2E=1 bash scripts/secrets.sh run -- bash scripts/intake-pr-e2e.sh
 
 `scripts/intake-pr-e2e.sh` posts `{ brief, metadata.taskId }` with an `e2e-` id and polls GitHub for an open pull request whose head is `task/<id>`. It skips unless `INTAKE_PR_E2E=1`. Close that pull request when you are done. `scripts/hello-world-e2e.sh` still polls plan completion; planner now runs this handler, so that check needs `CURSOR_API_KEY` and the `agent` binary.
 
-Apply `state/migrations/001_pipeline_step_cursor.sql` before using Postgres. `createPgStepCursorStore` also runs that DDL on connect.
+Apply `state/migrations/001_pipeline_step_cursor.sql`, `state/migrations/003_pipeline_stage_run.sql`, and `state/migrations/004_session_artifacts.sql` before using Postgres. `openOrchestratorDatabase` runs the cursor and session-artifact DDL on connect. `createPgStageRunStore` runs the stage-run DDL. `createPgStepCursorStore` still runs only the cursor DDL.
 
 ## Spans
 
@@ -142,7 +148,7 @@ Each `processStageJob` call emits `workflow.step` with `task_id`, `worktree_id` 
 
 ## Tests
 
-`npm test` covers the happy path and crash resume with in-memory and SQL-executor cursors. It does not need Redis, Postgres, or `MODEL_API_KEY`.
+`npm test` covers the happy path, crash resume, worktree and pull-request replay, the artifact trail, and a SIGKILL during implement. It does not need Redis, Postgres, or `MODEL_API_KEY`.
 
 The harness regression suite (`npm run eval`, also part of `npm test`) runs fixture tasks from intake through the production stage handler. CI mocks the Cursor CLI and `open_pr`. See [ops/harness-eval.md](ops/harness-eval.md).
 

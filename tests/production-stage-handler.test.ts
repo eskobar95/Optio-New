@@ -94,6 +94,9 @@ function githubFetch(extra?: { onPost?: () => Response }) {
     const url = String(input);
     const method = init?.method ?? "GET";
     calls.push({ url, method });
+    if (method === "GET" && url.includes("/pulls?") && url.includes("state=open")) {
+      return jsonResponse(200, []);
+    }
     if (method === "POST" && url.endsWith("/pulls")) {
       return (
         extra?.onPost?.() ??
@@ -337,6 +340,68 @@ describe("production stage handler", () => {
     await expect(handler.run(step("ready", "open_pr", taskId))).rejects.toBeInstanceOf(
       StageCredentialsError,
     );
+  });
+
+  it("re-running open_pr after the pull request record exists does not open another", async () => {
+    const taskId = "ship-replay";
+    const { worktrees } = worktreeFixture(taskId, true);
+    const git = gitRunner({ ahead: "1" });
+    const github = githubFetch();
+    const handler = createProductionStageHandler({
+      env: handlerEnv(),
+      worktrees,
+      git: git.git,
+      fetchImpl: github.fetchImpl,
+    });
+    await handler.run(step("ready", "open_pr", taskId));
+    const posts = github.calls.filter((call) => call.method === "POST").length;
+    const pushes = git.calls.filter((call) => call.startsWith("push ")).length;
+    expect(posts).toBe(1);
+    expect(pushes).toBe(1);
+    github.calls.length = 0;
+    git.calls.length = 0;
+    await handler.run(step("ready", "open_pr", taskId));
+    expect(github.calls.filter((call) => call.method === "POST")).toEqual([]);
+    expect(git.calls.filter((call) => call.startsWith("push "))).toEqual([]);
+  });
+
+  it("adopts an existing GitHub pull request instead of posting a second one", async () => {
+    const taskId = "ship-remote";
+    const { handle, worktrees } = worktreeFixture(taskId, true);
+    const git = gitRunner({ ahead: "1" });
+    const calls: { url: string; method: string }[] = [];
+    const handler = createProductionStageHandler({
+      env: handlerEnv(),
+      worktrees,
+      git: git.git,
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        calls.push({ url, method });
+        if (method === "GET" && url.includes("/pulls?")) {
+          return jsonResponse(200, [
+            {
+              html_url: "https://github.com/acme/widgets/pull/9",
+              number: 9,
+              head: { ref: handle.branch },
+            },
+          ]);
+        }
+        if (method === "POST") return jsonResponse(500, { message: "should not post" });
+        return jsonResponse(500, { message: "unexpected" });
+      },
+    });
+    await handler.run(step("ready", "open_pr", taskId));
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+    const again = githubFetch();
+    const second = createProductionStageHandler({
+      env: handlerEnv(),
+      worktrees,
+      git: git.git,
+      fetchImpl: again.fetchImpl,
+    });
+    await second.run(step("ready", "open_pr", taskId));
+    expect(again.calls.filter((call) => call.method === "POST")).toEqual([]);
   });
 
   it("puts the intake brief on every stage job", async () => {

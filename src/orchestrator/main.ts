@@ -11,10 +11,11 @@ import { FlowProducer, Queue } from "bullmq";
 import { Redis } from "ioredis";
 import { readPlanStage } from "./jobs/hello-world.js";
 import { createIntakeServer } from "./intake/http.js";
+import { dumpSessionArtifactTrail, readArtifactLimits } from "./artifacts/index.js";
 import { loadTaskBudgetCaps, createPgUsageStore, readTaskBudgetStatus } from "./jobs/budget.js";
-import { createPgStepCursorStore } from "./jobs/cursor.js";
 import { applyHitlDecision, createHitlQueuePort, loadHitlConfig } from "./jobs/hitl.js";
 import { createPgHitlStore } from "./jobs/hitl-store.js";
+import { openOrchestratorDatabase } from "./jobs/pg-state.js";
 import { createProductionStageHandler } from "./jobs/production-handler.js";
 import { STAGE_QUEUES } from "./jobs/stages.js";
 import { createPgStageRunStore, createStageRunLog } from "./observability/run-log.js";
@@ -52,7 +53,8 @@ export async function startOrchestrator(): Promise<void> {
   }
 
   const connection = redisConnectionOptions(redisUrl);
-  const cursors = await createPgStepCursorStore(databaseUrl);
+  const database = await openOrchestratorDatabase(databaseUrl);
+  const cursors = database.cursors;
   const stageRuns = await createPgStageRunStore(databaseUrl);
   const runLog = createStageRunLog(stageRuns);
   const repoCatalog = loadRepoCatalog(process.env);
@@ -105,6 +107,8 @@ export async function startOrchestrator(): Promise<void> {
     {
       cursors,
       worktrees,
+      artifacts: database.artifacts,
+      artifactLimits: readArtifactLimits(process.env),
       handler: createProductionStageHandler({ env: process.env, worktrees }),
       runLog,
       hitl,
@@ -138,6 +142,8 @@ export async function startOrchestrator(): Promise<void> {
       decide: (input) => applyHitlDecision(input, hitl, cursors),
     },
     budgetStatus: (taskId, sessionId) => readTaskBudgetStatus(budget, { taskId, sessionId }),
+    readArtifactTrail: (taskId, sessionId) =>
+      dumpSessionArtifactTrail(database.artifacts, taskId, sessionId),
     webhookSecret: process.env.OPTIO_NEW_INTAKE_WEBHOOK_SECRET,
     repoCatalog,
     workflowRepoId,
@@ -168,7 +174,7 @@ export async function startOrchestrator(): Promise<void> {
     await Promise.all(workers.map((worker) => worker.close()));
     await flow.close();
     await Promise.all([planQueue.close(), implementQueue.close(), readyQueue.close()]);
-    await cursors.close();
+    await database.close();
     await stageRuns.close();
     await hitlState.close();
     await usage.close();

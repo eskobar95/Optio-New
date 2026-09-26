@@ -160,6 +160,28 @@ describe("worktree manager", () => {
     });
     await expect(access(gone.path)).rejects.toThrow();
   });
+
+  it("adopts the same worktree when the lock file was lost before a retry", async () => {
+    const { repoPath, root } = await initFixture();
+    const manager = new WorktreeManager({
+      root,
+      repoPath,
+      baseBranch: "development",
+    });
+    const first = await manager.create("task-a");
+    await rm(path.join(root, ".locks", "task-a.json"));
+    const again = await manager.create("task-a");
+    expect(again.path).toBe(first.path);
+    expect(again.branch).toBe(first.branch);
+    const listed = await execFileAsync("git", ["worktree", "list", "--porcelain"], {
+      cwd: repoPath,
+    });
+    const paths = listed.stdout
+      .split("\n")
+      .filter((line) => line.startsWith("worktree "))
+      .map((line) => line.slice("worktree ".length).trim());
+    expect(paths.filter((entry) => entry === first.path)).toEqual([first.path]);
+  });
 });
 
 describe("BullMQ worktree hooks", () => {
@@ -234,6 +256,46 @@ describe("BullMQ worktree hooks", () => {
       }),
     ).rejects.toThrow(/merge rejected/);
     expect(failureLog).toEqual(["merge:merge_branch", "reap:t-2:false"]);
+  });
+
+  it("retries implement after a crash without adding a second worktree", async () => {
+    const { repoPath, root } = await initFixture();
+    const manager = new WorktreeManager({ root, repoPath, baseBranch: "development" });
+    const cursors = new InMemoryStepCursorStore();
+    const identity = { taskId: "t-1", sessionId: "s-1" };
+    await processStageJob(
+      { ...identity, stage: "plan" },
+      { cursors, worktrees: manager, handler: { async run() {} } },
+    );
+    let crash = true;
+    await expect(
+      processStageJob(
+        { ...identity, stage: "implement" },
+        {
+          cursors,
+          worktrees: manager,
+          handler: {
+            async run(ctx) {
+              if (crash && ctx.step === "invoke_implementation") {
+                crash = false;
+                throw new Error("implement crashed");
+              }
+            },
+          },
+        },
+      ),
+    ).rejects.toThrow(/implement crashed/);
+    await processStageJob(
+      { ...identity, stage: "implement" },
+      { cursors, worktrees: manager, handler: { async run() {} } },
+    );
+    const listed = await execFileAsync("git", ["worktree", "list", "--porcelain"], {
+      cwd: repoPath,
+    });
+    const matches = listed.stdout
+      .split("\n")
+      .filter((line) => line.startsWith("worktree ") && line.includes(`${path.sep}wt-t-1`));
+    expect(matches).toHaveLength(1);
   });
 });
 

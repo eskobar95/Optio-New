@@ -18,6 +18,7 @@ import type { ModelAdapter } from "../../agent/adapter.js";
 import { createEnvModelAdapter } from "../../agent/env-adapter.js";
 import {
   GithubRequestError,
+  findOpenGithubPullRequest,
   mergeGithubPullRequest,
   openGithubPullRequest,
   parseGithubRepo,
@@ -113,9 +114,10 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
         case "record_verdict":
           await recordGitSummary(ctx);
           return { usage: ZERO_USAGE };
-        case "open_pr":
-          await openPullRequest(ctx);
-          return { usage: ZERO_USAGE };
+        case "open_pr": {
+          const opened = await openPullRequest(ctx);
+          return { usage: ZERO_USAGE, prUrl: opened.prUrl };
+        }
         case "record_ci_wait":
           await waitForCi(ctx);
           return { usage: ZERO_USAGE };
@@ -174,7 +176,11 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
         costUsd: output.usage.cost_usd,
       });
     }
-    if (output.status === "succeeded") return { usage };
+    if (output.status === "succeeded") {
+      if (ctx.step !== "invoke_planner") return { usage };
+      const summary = (output.diff_summary ?? output.logs ?? "").trim().slice(0, 4000);
+      return summary ? { usage, summary } : { usage };
+    }
     if (output.error_class === "missing_credentials") {
       const error = new StageCredentialsError(
         `coding agent ${backend} is missing credentials (${output.error_class})`,
@@ -208,9 +214,19 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     });
   }
 
-  async function openPullRequest(ctx: StageStepContext): Promise<void> {
+  async function openPullRequest(ctx: StageStepContext): Promise<StageStepResult> {
     const handle = await requireWorktree(ctx);
     const github = requireGithub();
+    const stored = await readPullRecordOptional(handle);
+    if (stored) {
+      logStageEvent({
+        msg: "pull request already open",
+        taskId: ctx.taskId,
+        url: stored.url,
+        number: stored.number,
+      });
+      return { prUrl: stored.url };
+    }
     const token = github.token;
     const ahead = await commitCount(handle.path, token);
     if (ahead === 0) {
@@ -222,6 +238,32 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     await assertPrSafety(handle.path);
     const remote = `https://x-access-token:${encodeURIComponent(token)}@github.com/${github.owner}/${github.repo}.git`;
     await git(handle.path, ["push", remote, `${handle.branch}:${handle.branch}`], [token]);
+    const remoteExisting = await mapGithub(() =>
+      findOpenGithubPullRequest({
+        token,
+        owner: github.owner,
+        repo: github.repo,
+        title: ctx.taskId,
+        head: handle.branch,
+        base: baseBranch,
+        body: "",
+        fetchImpl,
+      }),
+    );
+    if (remoteExisting) {
+      await writePullRecord(handle, {
+        ...remoteExisting,
+        head: handle.branch,
+        base: baseBranch,
+      });
+      logStageEvent({
+        msg: "pull request already open",
+        taskId: ctx.taskId,
+        url: remoteExisting.url,
+        number: remoteExisting.number,
+      });
+      return { prUrl: remoteExisting.url };
+    }
     const title = E2E_TASK.test(ctx.taskId)
       ? `e2e: ${ctx.taskId}`
       : ctx.title?.trim() || `task ${ctx.taskId}`;
@@ -244,6 +286,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       url: opened.url,
       number: opened.number,
     });
+    return { prUrl: opened.url };
   }
 
   async function waitForCi(ctx: StageStepContext): Promise<void> {
@@ -458,22 +501,30 @@ async function writePullRecord(handle: WorktreeHandle, record: StoredPullRequest
   await writeFile(file, `${JSON.stringify(record)}\n`, "utf8");
 }
 
-async function readPullRecord(handle: WorktreeHandle): Promise<StoredPullRequest> {
+async function readPullRecordOptional(
+  handle: WorktreeHandle,
+): Promise<StoredPullRequest | undefined> {
   try {
     const parsed: unknown = JSON.parse(await readFile(recordPath(handle), "utf8"));
-    if (!parsed || typeof parsed !== "object") throw new Error("empty");
+    if (!parsed || typeof parsed !== "object") return undefined;
     const row = parsed as StoredPullRequest;
     if (
       typeof row.url !== "string" ||
       typeof row.number !== "number" ||
       typeof row.head !== "string"
     ) {
-      throw new Error("shape");
+      return undefined;
     }
     return row;
   } catch {
-    throw new Error(`merge_branch: no pull request record for ${handle.taskId}`);
+    return undefined;
   }
+}
+
+async function readPullRecord(handle: WorktreeHandle): Promise<StoredPullRequest> {
+  const stored = await readPullRecordOptional(handle);
+  if (!stored) throw new Error(`merge_branch: no pull request record for ${handle.taskId}`);
+  return stored;
 }
 
 export function execGit(cwd: string, args: readonly string[]): Promise<string> {
