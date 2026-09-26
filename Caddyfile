@@ -1,13 +1,13 @@
-# Optio-New example TLS edge (SPEC §12.5). Safe to commit: no real host or mailbox.
-# Compose profile `edge` only. Local/dev stays loopback HTTP on 127.0.0.1:3100.
-# Set OPTIO_NEW_WEBHOOK_HOST and OPTIO_NEW_ACME_EMAIL in the host env (sops).
-# See docs/ops/caddy-tls-edge.md.
-
+# Optio-New IP HTTP edge (SPEC §12.5). Safe to commit: no hostname, mailbox, or secret.
+# Compose profile `edge`. Catch-all on :80 for the kit-harness host public IP.
+# Let's Encrypt cannot issue for a bare IP. HTTP only until a real domain exists.
+# Domain + TLS is a later swap of this file. See docs/ops/caddy-tls-edge.md.
+# Local/dev intake stays loopback HTTP on 127.0.0.1:3100.
 {
-	email {$OPTIO_NEW_ACME_EMAIL:tls-edge@localhost.invalid}
+	auto_https off
 }
 
-{$OPTIO_NEW_WEBHOOK_HOST:localhost} {
+:80 {
 	handle /healthz {
 		respond "ok" 200
 	}

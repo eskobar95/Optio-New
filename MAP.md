@@ -49,8 +49,8 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `Dockerfile.kit-harness`                              | §12.5–§12.6       | Profile `harness`; decision sidecar on `127.0.0.1:3200`                   |
 | `Dockerfile.orchestrator`                             | §12.6, §14.0      | Profile `full` and `orchestrator`; BullMQ worker health on :3100          |
 | `scripts/vps-pull-rebuild.sh`                         | §12.5             | On-host `git pull` and Compose rebuild after merge                        |
-| `Caddyfile`                                           | §12.5             | Example TLS edge; host and ACME email come from the environment           |
-| `docs/ops/caddy-tls-edge.md`                          | §12.5             | Enable profile `edge` on the kit-harness host; HMAC intake webhook        |
+| `Caddyfile`                                           | §12.5             | IP HTTP catch-all on `:80`; domain + TLS is a later swap                  |
+| `docs/ops/caddy-tls-edge.md`                          | §12.5             | IP HTTP edge vs later domain + TLS; HMAC intake webhook                   |
 | `deploy/systemd/*.service`                            | §12.5             | Compose on boot                                                           |
 | `deploy/otel-collector-config.yaml`                   | §12.1             | Collector stub                                                            |
 | `secrets/`                                            | §12.5, §14.5      | sops+age examples; runbook is `docs/secrets.md`                           |

@@ -40,7 +40,8 @@ if [[ -z "$profiles" ]]; then
   echo "missing Environment=COMPOSE_PROFILES after pull" >&2
   exit 1
 fi
-# Optional host drop-in. Absent means the repo boot set (no public TLS).
+# Optional host drop-in. Absent means the repo boot set
+# (harness,orchestrator,edge: IP HTTP on :80, no ACME).
 edge_dropin="${OPTIO_NEW_EDGE_DROPIN:-/etc/systemd/system/optio-new-compose.service.d/edge.conf}"
 if [[ -f "$edge_dropin" ]]; then
   override="$(read_profiles "$edge_dropin")"

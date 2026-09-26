@@ -318,7 +318,7 @@ Rules:
 - Accept a task payload (title, description, optional repo/branch hints) from New Bot.
 - ACK fast and enqueue BullMQ work; do not block the chat turn on the full pipeline.
 - Surface elicitations, progress, and failures back to New Bot / the human in chat.
-- Optional public intake: Compose profile `edge` terminates TLS and proxies `POST /webhooks/intake` only. Loopback `POST /intake` on `127.0.0.1:3100` stays the local/dev path. See `docs/ops/caddy-tls-edge.md`.
+- Optional public intake: Compose profile `edge` serves HTTP on `:80` (kit-harness public IP; no DNS, no ACME) and proxies `POST /webhooks/intake` only. TLS waits for a real domain. Loopback `POST /intake` on `127.0.0.1:3100` stays the local/dev path. See `docs/ops/caddy-tls-edge.md`.
 
 **Explicitly out (v1):**
 
@@ -465,7 +465,7 @@ Recommended extra attributes (where applicable): `workflow_id`, `step_id`, `agen
 | Concern             | Choice                                                                                                                                                                     |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Process supervision | **Docker Compose** with `restart: unless-stopped`, plus **systemd** unit to ensure Compose stack starts on boot                                                            |
-| Public webhooks TLS | **Caddy** or **Traefik** terminating TLS for optional New Bot intake + GitHub webhook endpoints                                                                            |
+| Public webhooks     | **Caddy** HTTP on `:80` for the kit-harness public IP (no DNS). TLS when a real domain exists. GitHub webhooks stay off this edge.                                         |
 | Secrets             | **sops + age** on the Hetzner kit-harness (`/opt/optio-new`); Infisical is an optional later swap. Never commit plaintext or production ciphertext. See `docs/secrets.md`. |
 | Database backups    | **restic** or **borg** of Postgres dumps to a **Hetzner Storage Box** (scheduled). Runbook: `docs/ops/postgres-storagebox-backup.md`.                                      |
 | Network hardening   | **Hetzner Cloud Firewall** + **fail2ban** on SSH                                                                                                                           |
@@ -473,7 +473,7 @@ Recommended extra attributes (where applicable): `workflow_id`, `step_id`, `agen
 | Worker health       | HTTP **health endpoints** for queue workers (liveness + optional queue lag)                                                                                                |
 | Merge / CI signals  | **GitHub webhooks** (PR merged, check suite) in addition to New Bot status                                                                                                 |
 
-The Hetzner boot unit (`deploy/systemd/optio-new-compose.service`) enables Compose profiles `harness` and `orchestrator` next to the default set (Redis, Postgres, LiteLLM). kit-harness is published on `127.0.0.1:3200` only. Profile `edge` stays off until `OPTIO_NEW_WEBHOOK_HOST` has DNS. After a merge to `main`, rebuild on the VPS with `scripts/vps-pull-rebuild.sh`. Runbook: `deploy/README.md`.
+The Hetzner boot unit (`deploy/systemd/optio-new-compose.service`) enables Compose profiles `harness`, `orchestrator`, and `edge` next to the default set (Redis, Postgres, LiteLLM). kit-harness is published on `127.0.0.1:3200` only. Profile `edge` is an IP HTTP catch-all on `:80` (no `OPTIO_NEW_WEBHOOK_HOST`, no ACME email). Domain + TLS is a later Caddyfile swap. After a merge to `main`, rebuild on the VPS with `scripts/vps-pull-rebuild.sh`. Runbook: `deploy/README.md`.
 
 ### 12.6 Practical v1 Compose stack
 

@@ -255,8 +255,10 @@ services:
   #   # image: signoz/signoz:latest
   #   profiles: ["observability"]
 
-  # Optional TLS edge for POST /webhooks/intake. Off unless `--profile edge`.
+  # IP HTTP edge for /webhooks/*. Profile `edge` (on in the VPS boot unit).
+  # Publishes :80 (catch-all) and :443 (mapped, unused until a domain+TLS Caddyfile).
   # Orchestrator stays on 127.0.0.1:3100. See docs/ops/caddy-tls-edge.md.
+  # WEBHOOK_HOST and ACME_EMAIL are unused in IP mode; they feed a later TLS swap.
   caddy:
     image: caddy:2-alpine
     profiles: ["edge"]

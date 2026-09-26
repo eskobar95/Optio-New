@@ -144,13 +144,13 @@ Workers are not clients of the sidecar yet. Until they are, BullMQ and LiteLLM b
 
 The learning worker is a separate Compose profile (`learn`), not part of this sidecar. It fingerprints failures into Postgres and can open GitHub meta-issues. See [learning-worker.md](learning-worker.md). `docker compose --profile learn up -d --build learning-worker` after redis and postgres are up.
 
-Keep port 3200 on loopback and on the Compose network. Do not put it behind Caddy. Public intake TLS is profile `edge` ([docs/ops/caddy-tls-edge.md](ops/caddy-tls-edge.md)). kit-harness is not on that proxy.
+Keep port 3200 on loopback and on the Compose network. Do not put it behind Caddy. Public intake HTTP is profile `edge` ([docs/ops/caddy-tls-edge.md](ops/caddy-tls-edge.md)). kit-harness is not on that proxy.
 
 ## Still needed for a Hetzner deploy
 
 Do not point the server at this branch and expect a finished production rollout. After the draft PR merges, the box still needs:
 
-1. **Profile enablement.** `deploy/systemd/optio-new-compose.service` sets `COMPOSE_PROFILES=harness,orchestrator` and calls `scripts/secrets.sh compose up -d` from `/opt/optio-new`. That starts kit-harness and the BullMQ orchestrator beside the default set (redis, postgres, litellm). LiteLLM stays unprofiled so the Mac compose smoke still sees it. Profile `full` still adds eve-runner for `docker compose --profile full --profile harness up -d`. Profile `edge` stays off. See `deploy/README.md`.
+1. **Profile enablement.** `deploy/systemd/optio-new-compose.service` sets `COMPOSE_PROFILES=harness,orchestrator,edge` and calls `scripts/secrets.sh compose up -d` from `/opt/optio-new`. That starts kit-harness, the BullMQ orchestrator, and the IP HTTP edge beside the default set (redis, postgres, litellm). LiteLLM stays unprofiled so the Mac compose smoke still sees it. Profile `full` still adds eve-runner for `docker compose --profile full --profile harness up -d`. See `deploy/README.md`.
 2. **Image on the box.** Nothing is pushed to a registry. After merge, `bash scripts/vps-pull-rebuild.sh` on the VPS runs `compose up -d --build`, which builds `Dockerfile.kit-harness` and `Dockerfile.orchestrator`. The runtime image installs this repo’s production `dependencies` (including BullMQ’s client libraries) even though the process does not open Redis.
 3. **Secrets.** The rules engine needs none. When an advisor is actually connected, set `JEV_BASE_URL` and any gateway key in the host env and encrypt with sops+age (`docs/secrets.md`). The unit does not use `EnvironmentFile`. Do not bake keys into the image. v0 will still ignore the URL except for the health flag.
 4. **Jev client.** No HTTP client, timeout, auth header, or shadow mode. `DecisionAdvisor` is an in-process hook used by tests. Wiring it to Vercel AI Gateway (or a later TypeSafe / Laya base URL) is separate work, and it must not be able to override a hard deny (SPEC §9.1).

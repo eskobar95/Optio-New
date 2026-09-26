@@ -1,6 +1,6 @@
 # Optional Laya CPU decision service
 
-Compose profile **`laya`** is **off by default**. A plain `docker compose up`, `--profile full`, and `--profile harness` do not start it. Boot on the VPS (`COMPOSE_PROFILES=harness,orchestrator`) does not start it either.
+Compose profile **`laya`** is **off by default**. A plain `docker compose up`, `--profile full`, and `--profile harness` do not start it. Boot on the VPS (`COMPOSE_PROFILES=harness,orchestrator,edge`) does not start it either.
 
 The service is a loopback stand-in for [Laya](https://github.com/NandhaKishorM/laya) `laya-serve`: the Jev-compatible `POST /v1/systemone` decision API, on CPU, for when TypeSafe hosted Jev is unavailable. Upstream publishes **no registry image** (the CPU quickstart builds a local image from that repo). This profile therefore runs `deploy/laya/stub_server.py` on `python:3.12-slim`. It does not download checkpoints and it does not invent an API key.
 

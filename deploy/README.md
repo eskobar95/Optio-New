@@ -11,7 +11,7 @@ Secrets stay on the sops+age path in [docs/secrets.md](../docs/secrets.md). The 
 `deploy/systemd/optio-new-compose.service` sets:
 
 ```text
-COMPOSE_PROFILES=harness,orchestrator
+COMPOSE_PROFILES=harness,orchestrator,edge
 ```
 
 `deploy/systemd/agent-harness-compose.service` is the same unit under the historical filename. Install one of them, not both.
@@ -22,12 +22,12 @@ COMPOSE_PROFILES=harness,orchestrator
 | `harness`       | kit-harness                  | yes             |
 | `orchestrator`  | orchestrator (BullMQ worker) | yes             |
 | `full`          | orchestrator and eve-runner  | no              |
-| `edge`          | caddy (80/443)               | no              |
+| `edge`          | caddy (HTTP :80; 443 mapped) | yes             |
 | `laya`          | laya (CPU placeholder)       | no              |
 | `caveman`       | caveman-proxy placeholder    | no              |
 | `observability` | otel-collector               | no              |
 
-`orchestrator` is also in profile `full`, so `docker compose --profile full` still starts it together with eve-runner. Profile `laya` stays off for that command and for `COMPOSE_PROFILES=harness,orchestrator`.
+`orchestrator` is also in profile `full`, so `docker compose --profile full` still starts it together with eve-runner. Profile `laya` stays off for that command and for `COMPOSE_PROFILES=harness,orchestrator,edge`.
 
 Laya is a CPU placeholder (`deploy/laya/stub_server.py`) with a Compose healthcheck on `GET /health`. It does not reserve a GPU. The NVIDIA Container Toolkit is not required. Enable, env vars, and the upstream `laya-serve` swap are in [docs/laya.md](../docs/laya.md). Do not commit `LAYA_API_KEY`.
 
@@ -48,12 +48,12 @@ Compose binds the data plane to loopback. Docker does not publish these on the p
 | laya          | `127.0.0.1:8000` |
 | caveman-proxy | `127.0.0.1:8787` |
 
-Profile `edge` publishes Caddy on `80` and `443` on all host interfaces. The boot unit leaves that profile out, so a default start does not open those ports. Enable it only with the steps in [docs/ops/caddy-tls-edge.md](../docs/ops/caddy-tls-edge.md) (public name, ACME email, intake HMAC). kit-harness stays on loopback and is not a Caddy upstream.
+Profile `edge` publishes Caddy on `80` and `443` on all host interfaces. The boot unit includes that profile. The Caddyfile is an IP catch-all on `:80` for `62.238.125.114` (HTTP only; no DNS and no ACME email). Port `443` is mapped for a later domain + TLS swap and is unused until then. kit-harness stays on loopback and is not a Caddy upstream. See [docs/ops/caddy-tls-edge.md](../docs/ops/caddy-tls-edge.md).
 
 Hetzner Cloud Firewall, inbound:
 
 - `22/tcp` from operator addresses only. Keep fail2ban on SSH.
-- `80/tcp` and `443/tcp` only after profile `edge` is enabled.
+- `80/tcp` for the IP HTTP edge. `443/tcp` when domain + TLS is turned on.
 - No inbound rule for `3200`, `3210`, `4000`, `3100`, `5432`, `6379`, `8000`, or `8787`.
 
 ## Install the unit
@@ -61,7 +61,7 @@ Hetzner Cloud Firewall, inbound:
 On the VPS, from `/opt/optio-new`, after [docs/secrets.md](../docs/secrets.md) steps through `check`:
 
 ```bash
-export COMPOSE_PROFILES=harness,orchestrator
+export COMPOSE_PROFILES=harness,orchestrator,edge
 bash scripts/secrets.sh compose up -d --build
 curl -fsS http://127.0.0.1:3200/health
 curl -fsS http://127.0.0.1:3100/health
@@ -100,14 +100,14 @@ The script refuses to run when the checkout is not `/opt/optio-new`, unless `OPT
 3. Export the same profiles and rebuild:
 
    ```bash
-   export COMPOSE_PROFILES=harness,orchestrator
+   export COMPOSE_PROFILES=harness,orchestrator,edge
    bash scripts/secrets.sh compose up -d --build
    ```
 
 4. Do not run `docker compose down -v`. That deletes the Postgres and Redis volumes.
 5. `systemctl stop optio-new-compose.service` runs `down` without `-v`. Volumes remain. Start the unit again after the checkout is the commit you want.
 6. If the unit file is the regression, restore `deploy/systemd/optio-new-compose.service` from the previous commit, copy it to `/etc/systemd/system/`, and `systemctl daemon-reload`.
-7. Profile `edge` is not in the boot set. Rolling the harness profile back does not stop Caddy.
+7. Profile `edge` is in the boot set. Rolling only the harness profile back does not stop Caddy. To stop the public listener, remove `edge` from `COMPOSE_PROFILES` and restart the unit.
 
 If `up --build` fails before containers are replaced, the previous containers keep running. If they were replaced and are unhealthy, check out the previous SHA and run the compose command in step 3 again.
 
@@ -121,11 +121,11 @@ Ciphertext, the age key, and plaintext `.env` stay on the host. See [docs/secret
 - [ ] `LITELLM_MASTER_KEY` is not `sk-change-me`.
 - [ ] `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` are set if LiteLLM should call those providers.
 - [ ] `OPTIO_NEW_GITHUB_TOKEN` and `OPTIO_NEW_GITHUB_WEBHOOK_SECRET` are set when PR and CI signals are required.
-- [ ] `OPTIO_NEW_INTAKE_WEBHOOK_SECRET` and `OPTIO_NEW_ACME_EMAIL` are set before profile `edge` is enabled.
+- [ ] `OPTIO_NEW_INTAKE_WEBHOOK_SECRET` is set before `POST /webhooks/intake` should enqueue. IP HTTP mode does not need `OPTIO_NEW_ACME_EMAIL`.
 - [ ] `CURSOR_API_KEY` is set when the Cursor adapter runs on the box.
 - [ ] `OPTIO_NEW_BACKUP_REPO` and `OPTIO_NEW_BACKUP_PASSWORD` are set before the Storage Box timer.
 - [ ] `OPTIO_NEW_HARNESS_URL` stays `http://127.0.0.1:3200`. kit-harness has no public name.
 - [ ] DNS: no public record for port `3200`, `3210`, `4000`, `3100`, `5432`, or `6379`.
-- [ ] DNS: `OPTIO_NEW_WEBHOOK_HOST` has an A/AAAA to this VPS only when profile `edge` is enabled.
+- [ ] DNS: none for the IP HTTP edge (`http://62.238.125.114`). `OPTIO_NEW_WEBHOOK_HOST` gets an A/AAAA only in the later domain + TLS mode.
 - [ ] Hetzner Cloud Firewall matches the inbound list above.
 - [ ] Plaintext `.env` is removed only after `check` and a healthy `compose up` (see the secrets runbook).

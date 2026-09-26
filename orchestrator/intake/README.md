@@ -40,7 +40,7 @@ The stage job payload from the pipeline graph is still `{ taskId, sessionId, sta
 
 `POST /webhooks/intake` accepts the same JSON body. It enqueues only when `X-Optio-Signature` is `sha256=` plus the hex HMAC-SHA256 of the raw body, keyed by `OPTIO_NEW_INTAKE_WEBHOOK_SECRET`. A blank secret returns `503` (`webhook_auth_unconfigured`) and does not enqueue. A bad or missing signature returns `401` (`invalid_signature`).
 
-`POST /intake` does not check that header. Keep it on `127.0.0.1:3100`. Caddy profile `edge` proxies `/webhooks/*` and does not proxy `/intake`. Enable steps: [docs/ops/caddy-tls-edge.md](../../docs/ops/caddy-tls-edge.md).
+`POST /intake` does not check that header. Keep it on `127.0.0.1:3100`. Caddy profile `edge` proxies `/webhooks/*` on `:80` and does not proxy `/intake`. Enable steps: [docs/ops/caddy-tls-edge.md](../../docs/ops/caddy-tls-edge.md).
 
 ## Explicitly out (v1)
 

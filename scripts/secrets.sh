@@ -52,7 +52,7 @@ Usage: scripts/secrets.sh <command>
                   Encrypt the host .env (default: .env -> secrets/optio-new.env)
   check           Decrypt and compare assignment hashes to the plaintext .env
   compose [args]  Decrypt to a tmpfs file and run docker compose --env-file
-                  Boot set is COMPOSE_PROFILES=harness,orchestrator
+                  Boot set is COMPOSE_PROFILES=harness,orchestrator,edge
                   (deploy/systemd/optio-new-compose.service). Not a secret.
                   LiteLLM stays in the default service set.
   run <command>   Decrypt to a tmpfs file, export it, and run a command

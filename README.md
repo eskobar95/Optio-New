@@ -55,7 +55,7 @@ docker compose --profile laya up -d laya   # off by default; CPU placeholder, no
 curl -s http://127.0.0.1:3200/health
 ```
 
-Local intake is loopback HTTP on `127.0.0.1:3100`. Profile `edge` is optional TLS for the public intake webhook and is not part of this local set. See [docs/ops/caddy-tls-edge.md](docs/ops/caddy-tls-edge.md).
+Local intake is loopback HTTP on `127.0.0.1:3100`. Profile `edge` is the VPS IP HTTP catch-all (`:80`, no DNS) and is not part of this local set. See [docs/ops/caddy-tls-edge.md](docs/ops/caddy-tls-edge.md).
 
 ```bash
 docker compose --profile edge up -d caddy
@@ -68,7 +68,7 @@ docker compose --profile full --profile harness up -d --build orchestrator
 HELLO_WORLD_E2E=1 bash scripts/hello-world-e2e.sh
 ```
 
-`GET /hello` returns `{ "hello": "world", "stage": "plan", "queue": "optio.plan" }`. The script posts `POST /intake` and polls `GET /hello/plan` until the plan cursor is `completed`. `GET /health` is the Redis ping. The script skips when nothing listens on `:3100`, so `npm run ci` does not need Docker. `HELLO_WORLD_E2E=1` fails instead of skipping. The command enables profiles `full` and `harness` and rebuilds the orchestrator. The script only calls `:3100`. Hetzner starts that listener with `COMPOSE_PROFILES=harness,orchestrator`. See [docs/kit-harness.md](docs/kit-harness.md).
+`GET /hello` returns `{ "hello": "world", "stage": "plan", "queue": "optio.plan" }`. The script posts `POST /intake` and polls `GET /hello/plan` until the plan cursor is `completed`. `GET /health` is the Redis ping. The script skips when nothing listens on `:3100`, so `npm run ci` does not need Docker. `HELLO_WORLD_E2E=1` fails instead of skipping. The command enables profiles `full` and `harness` and rebuilds the orchestrator. The script only calls `:3100`. Hetzner starts that listener with `COMPOSE_PROFILES=harness,orchestrator,edge`. See [docs/kit-harness.md](docs/kit-harness.md).
 
 `npm run smoke` stays Docker-optional. It records both paths and, when Docker is present, checks the Compose file. It starts containers only when `SMOKE_COMPOSE_UP=1` (redis and postgres).
 
@@ -90,7 +90,7 @@ bash scripts/smoke-compose-mac.sh
 
 See [docs/mac-compose-smoke.md](docs/mac-compose-smoke.md). GitHub Actions stays on `scripts/smoke-local.sh` (`--config-only` when Docker is present).
 
-On the Hetzner host (`/opt/optio-new`), load secrets with `scripts/secrets.sh`. LiteLLM stays in the default service set. The boot unit adds `COMPOSE_PROFILES=harness,orchestrator`. After merge: `bash scripts/vps-pull-rebuild.sh`. Runbook: [deploy/README.md](deploy/README.md). Secrets: [docs/secrets.md](docs/secrets.md).
+On the Hetzner host (`/opt/optio-new`), load secrets with `scripts/secrets.sh`. LiteLLM stays in the default service set. The boot unit adds `COMPOSE_PROFILES=harness,orchestrator,edge`. After merge: `bash scripts/vps-pull-rebuild.sh`. Runbook: [deploy/README.md](deploy/README.md). Secrets: [docs/secrets.md](docs/secrets.md).
 Postgres backup to Hetzner Storage Box: [docs/ops/postgres-storagebox-backup.md](docs/ops/postgres-storagebox-backup.md).
 
 ## CI and pre-commit (always on)
