@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 00:32 UTC
+Last refreshed: 2026-09-26 00:34 UTC
 
 ## Bootstrap progress
 
@@ -24,7 +24,7 @@ Actions: https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml
 
 ## Open issues
 
-Open: 18.
+Open: 17.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
@@ -45,7 +45,6 @@ Tracker: https://github.com/eskobar95/Optio-New/issues
 - #6 [P0] Worktree manager: create / isolate / reap per task (P0, enhancement, orchestration, security)
 - #5 [P0] Review gate: Jev/rules completion + CI green before ready (P0, enhancement, harness, orchestration)
 - #4 [P1] Docker Compose full stack: redis, postgres, orchestrator, litellm, kit-harness (P1, enhancement, infra)
-- #2 [P0] BullMQ job graph: plan → implement → review → ready → merge (P0, enhancement, orchestration)
 
 ## Refresh
 
