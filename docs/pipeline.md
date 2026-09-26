@@ -86,3 +86,7 @@ Optional:
 
 - `OPTIO_NEW_REDIS_URL` — enqueue the flow and let workers drain it
 - `OPTIO_NEW_DATABASE_URL` — crash/resume against Postgres
+
+## Learning queue
+
+`optio.learn` is a side queue, not a pipeline stage. Review-gate failures and implementation handler failures can be enqueued there. The consumer fingerprints them and, past `OPTIO_LEARN_THRESHOLD`, files a `meta/self-improve` proposal. It does not rewrite gates. See [learning-worker.md](learning-worker.md).

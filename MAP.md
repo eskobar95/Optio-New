@@ -19,7 +19,9 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `orchestrator/sessions/`                              | §13.5             | Concurrency caps; workspace port plugs into worktrees                     |
 | `src/orchestrator/sessions/`                          | §13.5             | Session gate, overflow, queue-depth telemetry                             |
 | `orchestrator/jev/`                                   | §9, §14.3         | Decision client; Vercel AI Gateway base URL                               |
-| `orchestrator/learning/`                              | §10               | Failure fingerprints → meta-tasks                                         |
+| `orchestrator/learning/`                              | §10               | Failure fingerprints → meta-tasks; TS in `src/orchestrator/learning/`     |
+| `state/migrations/002_learnings.sql`                  | §10               | Postgres `learnings` (fingerprints, field tags, meta-issue drafts)        |
+| `docs/learning-worker.md`                             | §10               | Queue `optio.learn`, env, kit-harness profile `learn`                     |
 | `orchestrator/telemetry/`                             | §12.1–§12.4       | OTel helpers, canonical spans; code in `src/orchestrator/telemetry/`      |
 | `docs/observability.md`                               | §12.2–§12.4       | v1 choice: Langfuse (not Phoenix); SigNoz export off by default           |
 | `orchestrator/routing/`                               | §14.4             | Hop-1 backend selection                                                   |

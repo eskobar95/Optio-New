@@ -70,6 +70,12 @@ curl -fsS -X POST http://127.0.0.1:3100/intake \
 
 Decision sidecar: **[docs/kit-harness.md](docs/kit-harness.md)**. A default `docker compose up` does not start `kit-harness`. Bound to `127.0.0.1:3200`.
 
+Learning worker (failure fingerprints → Postgres, optional GitHub meta-issues): **[docs/learning-worker.md](docs/learning-worker.md)**. Profile `learn`. It does not rewrite production gates.
+
+```bash
+docker compose --profile learn up -d --build learning-worker
+```
+
 Docker Desktop or Linux Docker (config check, then isolated up/down of redis, postgres, and litellm):
 
 ```bash

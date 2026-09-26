@@ -1,5 +1,7 @@
 # orchestrator/learning
 
-Failure fingerprints → Postgres; thresholded meta-issues (`meta/self-improve`). Never silent prompt mutation or auto-delete of skill files in v1.
+Failure fingerprints → Postgres table `learnings`; thresholded GitHub meta-issues (`meta/self-improve`).
 
-See `docs/SPEC.md` §10.
+Runnable worker: `src/orchestrator/learning/`. Queue: `optio.learn`. Compose profile: `learn`.
+
+The worker never rewrites production gates, workflow YAML, or skill files. The planner reads the stored recommendation. See `docs/learning-worker.md` and SPEC §10.

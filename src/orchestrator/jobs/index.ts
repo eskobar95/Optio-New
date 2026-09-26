@@ -42,6 +42,7 @@ export {
   runPipeline,
   type PipelineRunResult,
   type StageJobResult,
+  type StageLearningReader,
   type StageRuntime,
   type StageStepContext,
   type StageStepHandler,
