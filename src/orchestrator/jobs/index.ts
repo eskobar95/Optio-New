@@ -51,6 +51,7 @@ export { enqueueIntakePipeline, type FlowEnqueuer } from "./enqueue-pipeline.js"
 export {
   WorktreeIsolationError,
   WorktreeManager,
+  createSkillStageHook,
   createWorktreeStageHandler,
   worktreeKey,
   type CreateWorktreeOptions,
@@ -59,6 +60,7 @@ export {
   type WorktreeLifecycle,
   type WorktreeManagerOptions,
   type WorktreeReapOutcome,
+  type WorktreeSkillStageHook,
 } from "../worktrees/index.js";
 export {
   bullmqStageWorkerFactory,

@@ -51,6 +51,13 @@ const HARD_ALLOW: GateDecision = {
   audited: false,
 };
 
+const SKILL_BUDGET_DENY: GateDecision = {
+  verdict: "deny",
+  gate: "skill_budget",
+  reason: "load_skill denied: outside the active skill budget",
+  audited: true,
+};
+
 export interface GuardToolCallOptions {
   request: ToolCallRequest;
   execute: (call: ModelToolCall, signal: AbortSignal) => Promise<unknown>;
@@ -63,6 +70,11 @@ export interface GuardToolCallOptions {
 
 /** Deterministic preflight. Null means the hard gates allow the call. */
 export function evaluateHardGates(request: ToolCallRequest): GateDecision | null {
+  if (request.tool === "load_skill") {
+    const budget = request.skillBudget ?? [];
+    if (!request.skillId || !budget.includes(request.skillId)) return SKILL_BUDGET_DENY;
+  }
+
   if (request.path) {
     const classified = classifyPath(request.path, request.worktreeRoot);
     if (isSecretRelativePath(classified.relative)) return SECRET_DENY;
@@ -145,6 +157,7 @@ function toModelToolCall(request: ToolCallRequest): ModelToolCall {
     action: request.action,
     path: request.path,
     command: request.command,
+    ...(request.skillId ? { skillId: request.skillId } : {}),
   };
 }
 

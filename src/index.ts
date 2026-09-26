@@ -84,8 +84,17 @@ export {
   type WorktreeManagerLike,
 } from "./orchestrator/sessions/index.js";
 export {
+  SkillBudgetDeniedError,
+  createWorkflowSkillLoader,
+  type ComputeAllowListInput,
+  type WorkflowLoadedSkill,
+  type WorkflowSkillLoader,
+  type WorkflowSkillLoaderOptions,
+} from "./orchestrator/skills/index.js";
+export {
   WorktreeIsolationError,
   WorktreeManager,
+  createSkillStageHook,
   createWorktreeStageHandler,
   worktreeKey,
   type CreateWorktreeOptions,
@@ -94,6 +103,7 @@ export {
   type WorktreeLifecycle,
   type WorktreeManagerOptions,
   type WorktreeReapOutcome,
+  type WorktreeSkillStageHook,
 } from "./orchestrator/worktrees/index.js";
 export {
   EveRunnerStepSchema,
