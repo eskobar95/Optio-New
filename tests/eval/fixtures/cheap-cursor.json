@@ -1,0 +1,27 @@
+{
+  "id": "cheap-cursor",
+  "mode": "live",
+  "intake": {
+    "taskId": "eval-cheap-cursor",
+    "title": "Write eval-ok.txt",
+    "description": "Create eval-ok.txt containing the single word ok. Do not push or open a pull request."
+  },
+  "credentials": "present",
+  "github": {
+    "owner": "acme",
+    "repo": "widgets",
+    "pull": {
+      "number": 41,
+      "url": "https://github.com/acme/widgets/pull/41"
+    }
+  },
+  "expect": {
+    "outcome": "pr_opened",
+    "stages_completed": ["plan", "implement", "review", "ready", "merge"],
+    "open_pr_calls": 1,
+    "pr": {
+      "number": 41,
+      "url": "https://github.com/acme/widgets/pull/41"
+    }
+  }
+}

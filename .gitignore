@@ -37,5 +37,8 @@ logs/
 *.log
 coverage/
 
+# Harness eval report written by npm test and npm run eval
+eval-reports/
+
 # Docker
 *.override.yml

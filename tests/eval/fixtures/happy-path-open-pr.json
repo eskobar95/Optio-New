@@ -1,0 +1,34 @@
+{
+  "id": "happy-path-open-pr",
+  "mode": "mock",
+  "intake": {
+    "taskId": "eval-happy",
+    "title": "Add a status line",
+    "description": "Cheap fixture. The pull request is mocked."
+  },
+  "credentials": "present",
+  "agent": {
+    "exitCode": 0,
+    "stdout": "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"ok\"}",
+    "stderr": "",
+    "timedOut": false
+  },
+  "github": {
+    "owner": "acme",
+    "repo": "widgets",
+    "pull": {
+      "number": 41,
+      "url": "https://github.com/acme/widgets/pull/41"
+    }
+  },
+  "expect": {
+    "outcome": "pr_opened",
+    "stages_completed": ["plan", "implement", "review", "ready", "merge"],
+    "open_pr_calls": 1,
+    "cli_invoked": 3,
+    "pr": {
+      "number": 41,
+      "url": "https://github.com/acme/widgets/pull/41"
+    }
+  }
+}
