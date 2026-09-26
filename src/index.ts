@@ -3,11 +3,18 @@
  * Language standard: TypeScript (Node 20+, ESM).
  */
 export {
+  cavemanRequested,
+  createInstalledSkillLoader,
+  DEFAULT_SKILL_BUDGET,
   runAgentLoop,
   type AgentLoopInput,
+  type LoadedSkill,
   type ModelAdapter,
   type ModelRequest,
   type ModelResponse,
+  type SkillBudget,
+  type SkillLoader,
+  type SkillResolveInput,
 } from "./agent/loop.js";
 export { createEnvModelAdapter, readModelEnv, type ModelEnvConfig } from "./agent/env-adapter.js";
 export { buildIntakeJob, IntakeTaskSchema, type IntakeTask } from "./orchestrator/intake/index.js";
