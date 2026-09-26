@@ -230,3 +230,7 @@ Optio-New/
 ```
 
 Decision layer: **New Bot**. Pipeline: **BullMQ**. Linear: **out** (SPEC §8).
+
+## Decisions
+
+Caveman Cloud/Platform stays off for V1. Codex stays on local LiteLLM. Eval: [caveman-platform-eval.md](caveman-platform-eval.md) (issue #16).

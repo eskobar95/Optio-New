@@ -39,6 +39,8 @@ describe("update-status.sh", () => {
     expect(text).toContain("npm run status");
     expect(text).toContain(".github/workflows/status.yml");
     expect(text).toContain("docs/observability.md");
+    expect(text).toContain("caveman-platform-eval.md");
+    expect(text).toContain("Caveman Cloud/Platform stays off for V1");
     expect(text).toContain("workflow.step");
     expect(text).toContain("Last refreshed: 2026-01-01 00:00 UTC");
     expect(text).toContain("## Compose smoke (Docker Desktop or Linux)");

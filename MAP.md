@@ -31,6 +31,7 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `src/adapters/cursor/`                                | §13, §14.1        | Cursor CLI headless (subscription only)                                   |
 | `src/adapters/codex/`                                 | §13, §14.1–§14.2  | Codex CLI → LiteLLM, optional Caveman compat mount                        |
 | `src/proxy/`                                          | §14.2             | Optional local Caveman proxy (default off; no Platform/Cloud)             |
+| `docs/caveman-platform-eval.md`                       | §14.2             | Post-V1 eval: keep LiteLLM; do not default to Caveman Cloud               |
 | `gateway/caveman/`                                    | §14.2             | `caveman.yaml.example` LiteLLM compat snippet                             |
 | `src/adapters/coding-agent.ts`                        | §13.1             | Shared CodingAgent interface                                              |
 | `gateway/litellm/`                                    | §14.2             | Example models gpt-4o, claude-sonnet, cache-exact                         |
@@ -67,4 +68,5 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 - Linear product integration (webhooks, GraphQL, Agent Sessions) — SPEC §8 ADR
 - Second agent frameworks (CrewAI, Temporal, AutoGen, LangGraph-as-orchestrator) — §12.7
 - Cursor RPC MITM — §14.1
+- Caveman Cloud/Platform as a V1 dependency — `docs/caveman-platform-eval.md`
 - Merging with or modifying `~/Projects/optio` or `kit-collective`

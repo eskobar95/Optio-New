@@ -203,6 +203,10 @@ trap cleanup EXIT
   echo '```'
   echo
   echo "Decision layer: **New Bot**. Pipeline: **BullMQ**. Linear: **out** (SPEC §8)."
+  echo
+  echo "## Decisions"
+  echo
+  echo "Caveman Cloud/Platform stays off for V1. Codex stays on local LiteLLM. Eval: [caveman-platform-eval.md](caveman-platform-eval.md) (issue #16)."
 } >"$TMP"
 
 PRETTIER="$ROOT/node_modules/.bin/prettier"
