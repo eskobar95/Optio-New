@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 00:34 UTC
+Last refreshed: 2026-09-26 00:40 UTC
 
 ## Bootstrap progress
 
@@ -25,7 +25,7 @@ Actions: https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml
 
 ## Open issues
 
-Open: 17.
+Open: 15.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
@@ -41,8 +41,6 @@ Tracker: https://github.com/eskobar95/Optio-New/issues
 - #12 [P1] Parallel agent sessions: concurrency caps + isolated worktrees (P1, enhancement, orchestration)
 - #11 [P1] LiteLLM gateway + JevRouter plugins (jev / rules / laya) (P1, enhancement, harness, infra)
 - #9 [P1] CodingAgent adapters: Cursor CLI + Codex → LiteLLM (P1, enhancement, orchestration)
-- #8 [P0] kit-harness Compose service: routing, tool gates, loop, split (P0, enhancement, harness, infra)
-- #7 [P0] New Bot intake API: enqueue tasks without Linear (P0, enhancement, orchestration)
 - #6 [P0] Worktree manager: create / isolate / reap per task (P0, enhancement, orchestration, security)
 - #5 [P0] Review gate: Jev/rules completion + CI green before ready (P0, enhancement, harness, orchestration)
 - #4 [P1] Docker Compose full stack: redis, postgres, orchestrator, litellm, kit-harness (P1, enhancement, infra)
