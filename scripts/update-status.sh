@@ -78,3 +78,7 @@ fi
 } > "$OUT"
 
 echo "Updated $OUT"
+
+if command -v npx >/dev/null 2>&1; then
+  npx prettier --write "$OUT" >/dev/null 2>&1 || true
+fi
