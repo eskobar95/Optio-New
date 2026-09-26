@@ -104,7 +104,7 @@ Run from `/opt/optio-new`. The helper prints paths, key counts, and the age publ
    bash scripts/secrets.sh compose up -d
    ```
 
-   The systemd unit sets `COMPOSE_PROFILES` itself. See [deploy/README.md](../deploy/README.md).
+   The systemd unit sets `COMPOSE_PROFILES` itself. See [deploy/README.md](../deploy/README.md). Redis, postgres, and litellm stay in the default set. `docker compose --profile full --profile harness up -d` is the factory data plane and also starts eve-runner.
 
 6. Remove the plaintext only after the stack is healthy:
 
@@ -112,7 +112,7 @@ Run from `/opt/optio-new`. The helper prints paths, key counts, and the age publ
    shred -u .env 2>/dev/null || rm -f .env
    ```
 
-   After that, start the stack only with `scripts/secrets.sh compose` or the systemd unit. A bare `docker compose up` interpolates the `changeme` defaults from `docker-compose.yml` and will not match the Postgres password already stored in the volume.
+   After that, start the stack with `COMPOSE_PROFILES=harness,orchestrator bash scripts/secrets.sh compose up -d` or the systemd unit. `bash scripts/secrets.sh compose --profile full --profile harness up -d` is the factory data plane (it also starts eve-runner). A bare `docker compose` command without the helper's env file interpolates the `changeme` defaults from `docker-compose.yml` and will not match the Postgres password already stored in the volume.
 
 7. Enable boot:
 

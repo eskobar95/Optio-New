@@ -9,6 +9,7 @@ bash scripts/secrets.sh init
 bash scripts/secrets.sh encrypt    # reads the existing .env
 bash scripts/secrets.sh check
 bash scripts/secrets.sh compose up -d
+# Factory data plane (also starts eve-runner): bash scripts/secrets.sh compose --profile full --profile harness up -d
 ```
 
 Infisical is an optional later swap with the same key names. It is not installed on this VPS.

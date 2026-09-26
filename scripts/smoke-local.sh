@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Optio-New local/CI smoke — fast checks; Docker optional.
 #
-# Docker-optional (this script, CI): node, typecheck, vitest, and `docker compose config`
-# when the docker CLI exists. Compose is not started unless SMOKE_COMPOSE_UP=1, and that
-# path only brings up redis + postgres.
+# Docker-optional (this script, CI): node, secrets audit, typecheck, vitest, in-process
+# kit-harness, and `docker compose config` when the CLI exists. Missing Docker is a SKIP.
+# Compose is not started unless SMOKE_COMPOSE_UP=1, and that path only brings up redis + postgres.
 #
-# Docker-required (not run here): `docker compose --profile full up -d --build` for the
-# orchestrator image. Verify with curl http://127.0.0.1:3100/health and POST /intake.
-# See README.md. Eve-runner in that profile is still an intentional stub.
+# Docker-required (not started here): `docker compose --profile full --profile harness up -d`
+# for redis, postgres, orchestrator, litellm, and kit-harness on 127.0.0.1:3200.
+# Orchestrator image: curl http://127.0.0.1:3100/health and POST /intake. Eve-runner stays a stub.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -20,6 +20,9 @@ command -v node >/dev/null || fail "node not found"
 NODE_MAJOR="$(node -p "process.versions.node.split('.')[0]")"
 [[ "$NODE_MAJOR" -ge 20 ]] || fail "need Node >= 20 (got $(node -v))"
 pass "node $(node -v)"
+
+echo "[smoke] Docker-optional path: node, secrets audit, typecheck, vitest, in-process kit-harness. Missing Docker is SKIP."
+echo "[smoke] Docker-required path: docker compose --profile full --profile harness up -d (redis, postgres, orchestrator, litellm, kit-harness on 127.0.0.1:3200)."
 
 # Paths and private-key markers only. Do not print env values.
 bash scripts/secrets.sh audit || fail "secrets audit"
@@ -200,6 +203,34 @@ if command -v docker >/dev/null 2>&1; then
     docker compose --profile harness config | grep -Eq '^  kit-harness:' \
       || fail "docker compose --profile harness missing kit-harness"
     pass "compose profile harness defines kit-harness"
+    # Profile render only. Does not start containers. Default redis/postgres/litellm
+    # stay in this set; profile full adds orchestrator; profile harness adds kit-harness.
+    full_env="$(mktemp)"
+    full_log="$(mktemp)"
+    if ! docker compose --env-file "$full_env" --profile full --profile harness config >"$full_log" 2>&1; then
+      grep -v -E '^[A-Za-z_][A-Za-z0-9_]*=' "$full_log" | head -n 40 >&2 || true
+      rm -f "$full_env" "$full_log"
+      fail "docker compose --profile full --profile harness config"
+    fi
+    for svc in redis postgres orchestrator litellm kit-harness; do
+      if ! grep -Eq "^  ${svc}:" "$full_log"; then
+        rm -f "$full_env" "$full_log"
+        fail "profile full+harness missing ${svc}"
+      fi
+    done
+    for svc in redis postgres orchestrator litellm kit-harness; do
+      if ! awk -v svc="$svc" '
+        $0 ~ "^  " svc ":$" { in_svc=1; next }
+        in_svc && $0 ~ "^  [a-z0-9-]+:$" { exit }
+        in_svc && $0 ~ "healthcheck:" { found=1 }
+        END { exit found ? 0 : 1 }
+      ' "$full_log"; then
+        rm -f "$full_env" "$full_log"
+        fail "profile full+harness missing healthcheck for ${svc}"
+      fi
+    done
+    rm -f "$full_env" "$full_log"
+    pass "compose profiles full+harness define redis postgres orchestrator litellm kit-harness"
   else
     skip "docker compose plugin not available"
   fi

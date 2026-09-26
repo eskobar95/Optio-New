@@ -43,6 +43,8 @@ bash scripts/secrets.sh audit
 | `npm run ci`                      | Full local gate                                            |
 | `npm run status`                  | Refresh `docs/status.md`                                   |
 
+Factory data plane (Docker required): `docker compose --profile full --profile harness up -d`. `scripts/smoke-local.sh` documents that path and does not start it.
+
 ## Good first issue
 
 Start with the labeled **good first issue** on GitHub (agent request-response loop: `src/agent/loop.ts` + Vitest mock). See README → First issue.

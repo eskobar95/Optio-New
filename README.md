@@ -45,14 +45,14 @@ cp .env.example .env   # edit locally; never commit real secrets
 bash scripts/smoke-local.sh
 ```
 
-Optional data plane:
+Factory data plane (Docker required). Default services are redis, postgres, and litellm. `--profile full` adds the orchestrator and eve-runner. `--profile harness` adds kit-harness on `127.0.0.1:3200`:
 
 ```bash
 docker compose up -d redis postgres litellm
+docker compose --profile full --profile harness up -d
 docker compose --profile harness --profile orchestrator up -d
 docker compose --profile laya up -d laya
 docker compose --profile edge up -d caddy
-docker compose --profile harness up -d --build kit-harness
 curl -s http://127.0.0.1:3200/health
 ```
 
@@ -67,6 +67,8 @@ curl -fsS -X POST http://127.0.0.1:3100/intake \
 ```
 
 `GET /health` is 200 when Redis answers. `POST /intake` returns 202 and enqueues queue `optio.plan`. The same listener is what Hetzner starts with `COMPOSE_PROFILES=harness,orchestrator`.
+
+`npm run smoke` stays Docker-optional. It records both paths and, when Docker is present, checks the Compose file. It starts containers only when `SMOKE_COMPOSE_UP=1` (redis and postgres).
 
 Decision sidecar: **[docs/kit-harness.md](docs/kit-harness.md)**. A default `docker compose up` does not start `kit-harness`. Bound to `127.0.0.1:3200`.
 

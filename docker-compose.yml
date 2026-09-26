@@ -4,6 +4,8 @@
 # Default `up` (no profile): redis, postgres, litellm.
 # orchestrator is profiles `full` and `orchestrator`. eve-runner is profile `full` (stub).
 # learning-worker is profile `learn` (queue optio.learn).
+# `--profile harness` adds kit-harness on 127.0.0.1:3200.
+# Factory data plane: docker compose --profile full --profile harness up -d
 # Host ports: OPTIO_NEW_REDIS_HOST_PORT, OPTIO_NEW_POSTGRES_HOST_PORT, OPTIO_NEW_LITELLM_HOST_PORT.
 name: optio-new
 
@@ -20,6 +22,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 5s
 
   postgres:
     image: postgres:16-alpine
@@ -41,6 +44,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
 
   # Intake HTTP (:3100) + BullMQ stage workers.
   # Profile full keeps `docker compose --profile full` working.
