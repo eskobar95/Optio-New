@@ -385,7 +385,7 @@ async function readDiff(
 async function ensureDevDependencies(cwd: string, shell: ShellRunner): Promise<void> {
   const probe = await shell.run(cwd, "node", [
     "--eval",
-    "require(\"fs\").accessSync(\"node_modules/vitest/package.json\")",
+    'require("fs").accessSync("node_modules/vitest/package.json")',
   ]);
   if (probe.exitCode === 0) return;
   await shell.run(cwd, "npm", ["ci", "--ignore-scripts", "--include=dev"]);
