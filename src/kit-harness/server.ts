@@ -37,6 +37,8 @@ const ToolGateBody = z
         agent_id: z.string().optional(),
         command: z.string().optional(),
         path: z.string().optional(),
+        run_id: z.string().min(1).optional(),
+        max_tool_calls: z.number().int().positive().optional(),
         args: z.record(z.unknown()).optional(),
         allowed_tools: z.array(z.string()).optional(),
       })

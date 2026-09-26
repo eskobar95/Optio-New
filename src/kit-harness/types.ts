@@ -57,10 +57,20 @@ export interface ModelRouter {
 export interface ToolContext {
   step_id?: string;
   agent_id?: string;
+  /** Groups calls that share one per-run tool budget. */
+  run_id?: string;
+  /** Cap for `run_id`. Unset means no allowance gate. */
+  max_tool_calls?: number;
   command?: string;
   path?: string;
   args?: Record<string, unknown>;
   allowed_tools?: string[];
+}
+
+export interface ToolAllowance {
+  run_id: string;
+  used: number;
+  max: number;
 }
 
 export interface ToolGateDecision {
@@ -68,6 +78,7 @@ export interface ToolGateDecision {
   hard: boolean;
   reason: string;
   engine: DecisionEngine;
+  allowance?: ToolAllowance;
 }
 
 export interface CompletionEvidence {
@@ -102,6 +113,8 @@ export interface LoopDetectInput {
 
 export interface LoopDetectResult {
   loop_detected: boolean;
+  /** True when the harness says stop. Replan is not a halt. */
+  halt: boolean;
   kind?: "repeated_failure" | "tool_thrash";
   suggestion?: "stop" | "replan";
   fingerprint?: string;

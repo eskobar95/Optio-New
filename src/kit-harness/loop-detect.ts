@@ -4,6 +4,10 @@
  */
 import { normalizeToken, type LoopDetectInput, type LoopDetectResult } from "./types.js";
 
+function pack(partial: Omit<LoopDetectResult, "halt">): LoopDetectResult {
+  return { ...partial, halt: partial.suggestion === "stop" };
+}
+
 const DEFAULT_THRESHOLD = 3;
 const MAX_EVENTS = 200;
 
@@ -36,14 +40,14 @@ export function detectLoop(input: LoopDetectInput): LoopDetectResult {
 
   if (topCount >= failureThreshold) {
     const stop = topCount >= failureThreshold + 2;
-    return {
+    return pack({
       loop_detected: true,
       kind: "repeated_failure",
       suggestion: stop ? "stop" : "replan",
       fingerprint: topFingerprint,
       count: topCount,
       reason: stop ? "failure_fingerprint_stop" : "failure_fingerprint_replan",
-    };
+    });
   }
 
   let streakTool = "";
@@ -66,15 +70,15 @@ export function detectLoop(input: LoopDetectInput): LoopDetectResult {
   }
 
   if (best >= thrashThreshold) {
-    return {
+    return pack({
       loop_detected: true,
       kind: "tool_thrash",
       suggestion: "stop",
       tool: bestTool,
       count: best,
       reason: "tool_thrash_stop",
-    };
+    });
   }
 
-  return { loop_detected: false, reason: "no_loop" };
+  return pack({ loop_detected: false, reason: "no_loop" });
 }

@@ -32,7 +32,7 @@ pass "vitest"
 npx vitest run tests/security-gates.test.ts || fail "security gates"
 pass "security gates (secrets deny, config lock, tool timeout)"
 
-# kit-harness røgtest: start, health, model routing, loop detection, forbidden tool.
+# kit-harness røgtest: health, routing, then three scenarios.
 smoke_kit_harness() {
   local port="${KIT_HARNESS_SMOKE_PORT:-3217}"
   local base="http://127.0.0.1:${port}"
@@ -78,17 +78,19 @@ smoke_kit_harness() {
   pass "model routing"
 
   loop="$(curl -sf "${base}/v1/loop-detect" -H 'content-type: application/json' \
-    -d '{"events":[{"fingerprint":"fp","tool":"run_tests","outcome":"fail"},{"fingerprint":"fp","tool":"run_tests","outcome":"fail"},{"fingerprint":"fp","tool":"run_tests","outcome":"fail"}]}')" \
+    -d '{"events":[{"fingerprint":"loop-1","tool":"shell","outcome":"fail"},{"fingerprint":"loop-2","tool":"shell","outcome":"fail"},{"fingerprint":"loop-3","tool":"shell","outcome":"fail"}]}')" \
     || { cat "${log}" >&2 || true; fail "loop detection request"; }
-  echo "${loop}" | grep -q '"loop_detected":true' || fail "loop detection"
-  pass "loop detection"
+  echo "${loop}" | grep -q '"loop_detected":true' || fail "scenario 2 loop_detected"
+  echo "${loop}" | grep -q '"halt":true' || fail "scenario 2 halt"
+  echo "${loop}" | grep -q '"suggestion":"stop"' || fail "scenario 2 stop"
+  pass "scenario 2 infinite loop halt"
 
   gate="$(curl -sf "${base}/v1/tool-gate" -H 'content-type: application/json' \
     -d '{"tool":"shell","context":{"command":"rm -rf /tmp/optio-smoke","agent_id":"smoke"}}')" \
     || { cat "${log}" >&2 || true; fail "forbidden tool request"; }
   echo "${gate}" | grep -q '"decision":"deny"' || fail "forbidden tool not denied"
   echo "${gate}" | grep -q '"reason":"hard_deny_destructive"' || fail "forbidden tool reason"
-  pass "forbidden tool deny"
+  pass "scenario 1 forbidden tool deny"
 
   audit="$(curl -sf "${base}/v1/audit")" \
     || { cat "${log}" >&2 || true; fail "audit request"; }
@@ -96,7 +98,25 @@ smoke_kit_harness() {
   echo "${audit}" | grep -q '"decision":"deny"' || fail "audit missing deny"
   grep -q '"event":"tool_denied"' "${log}" || fail "structured deny log missing"
   grep -q 'rm -rf /tmp/optio-smoke' "${log}" || fail "structured log missing command"
-  pass "forbidden tool audit log"
+  pass "scenario 1 forbidden tool audit log"
+
+  local allow_body third
+  allow_body='{"tool":"read_file","context":{"path":"README.md","run_id":"smoke-allowance","max_tool_calls":2,"agent_id":"smoke"}}'
+  for _ in 1 2; do
+    local allowed
+    allowed="$(curl -sf "${base}/v1/tool-gate" -H 'content-type: application/json' -d "${allow_body}")" \
+      || { cat "${log}" >&2 || true; fail "scenario 3 allowance request"; }
+    echo "${allowed}" | grep -q '"decision":"allow"' || fail "scenario 3 expected allow inside budget"
+  done
+  third="$(curl -sf "${base}/v1/tool-gate" -H 'content-type: application/json' -d "${allow_body}")" \
+    || { cat "${log}" >&2 || true; fail "scenario 3 over-budget request"; }
+  echo "${third}" | grep -q '"decision":"deny"' || fail "scenario 3 not denied"
+  echo "${third}" | grep -q '"reason":"tool_allowance_exceeded"' || fail "scenario 3 reason"
+  audit="$(curl -sf "${base}/v1/audit")" \
+    || { cat "${log}" >&2 || true; fail "scenario 3 audit request"; }
+  echo "${audit}" | grep -q 'tool_allowance_exceeded' || fail "scenario 3 audit missing allowance deny"
+  grep -q 'tool_allowance_exceeded' "${log}" || fail "scenario 3 structured log missing allowance deny"
+  pass "scenario 3 tool allowance exceeded"
 
   cleanup
   trap - EXIT

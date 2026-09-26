@@ -1,3 +1,4 @@
+export { clearToolAllowances, reserveToolAllowance } from "./allowance.js";
 export { clearToolAudit, readToolAudit, recordDeniedTool, type ToolAuditEntry } from "./audit.js";
 export { consultAdvisor, confidentChoice } from "./advisor.js";
 export { checkCompletion } from "./completion-check.js";
@@ -25,6 +26,7 @@ export {
   type SplitDecision,
   type SplitInput,
   type SuggestedSubtask,
+  type ToolAllowance,
   type ToolContext,
   type ToolGateDecision,
   type ToolVerdict,

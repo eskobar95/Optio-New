@@ -95,7 +95,13 @@ curl -s http://127.0.0.1:3200/health
 docker compose --profile harness stop kit-harness
 ```
 
-`npm run smoke` (also the last step of `npm run ci`) compiles the sidecar, starts it on `127.0.0.1:3217`, and checks health, Hop-1 routing, loop detection, and a forbidden `rm -rf` shell call. That call must come back `deny`, show up on `GET /v1/audit`, and emit one stdout line with `event: "tool_denied"`. When Docker is present, smoke also checks that `kit-harness` is absent from the default project and present with `--profile harness`.
+`npm run smoke` (also the last step of `npm run ci`) compiles the sidecar, starts it on `127.0.0.1:3217`, and checks health plus Hop-1 routing. It then runs three scenarios:
+
+1. Forbidden tool: `shell` + `rm -rf` returns `deny`, is stored on `GET /v1/audit`, and emits `event: "tool_denied"`.
+2. Infinite loop: three `shell` failures with different fingerprints return `loop_detected`, `suggestion: "stop"`, and `halt: true`.
+3. Tool allowance: a run with `max_tool_calls: 2` allows two `read_file` calls and denies the third with `tool_allowance_exceeded`.
+
+When Docker is present, smoke also checks that `kit-harness` is absent from the default project and present with `--profile harness`.
 
 ```bash
 npm run smoke

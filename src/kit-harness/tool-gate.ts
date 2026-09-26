@@ -2,6 +2,7 @@
  * Tool allow / confirm / deny.
  * Hard deny (secrets, destructive ops, allow-list misses) never calls the advisor.
  */
+import { reserveToolAllowance } from "./allowance.js";
 import { recordDeniedTool } from "./audit.js";
 import { confidentChoice, consultAdvisor } from "./advisor.js";
 import {
@@ -140,21 +141,29 @@ async function evaluateTool(
     if (!allowed.has(name)) return ruled("deny", "not_in_allowlist", true);
   }
 
+  const budget = reserveToolAllowance(context);
+  if (budget?.exceeded) {
+    return { ...ruled("deny", "tool_allowance_exceeded", true), allowance: budget.allowance };
+  }
+
   const advice = confidentChoice(
     await consultAdvisor(advisor, "tool_gate", { tool: name, context }),
     ["allow", "confirm", "deny"],
   );
+  const stamp = (decision: ToolGateDecision): ToolGateDecision =>
+    budget && !budget.exceeded ? { ...decision, allowance: budget.allowance } : decision;
+
   if (advice === "allow" || advice === "confirm" || advice === "deny") {
-    return ruled(advice, "advisor", false, "jev");
+    return stamp(ruled(advice, "advisor", false, "jev"));
   }
 
   const command = context.command ?? "";
   if ((name === "shell" || name === "bash") && SAFE_SHELL.test(command.trim())) {
-    return ruled("allow", "safe_command", false);
+    return stamp(ruled("allow", "safe_command", false));
   }
-  if (needsConfirm(name, text)) return ruled("confirm", "confirm_tool", false);
-  if (ALLOW_TOOLS.has(name)) return ruled("allow", "allow_tool", false);
-  return ruled("deny", "unknown_tool", false);
+  if (needsConfirm(name, text)) return stamp(ruled("confirm", "confirm_tool", false));
+  if (ALLOW_TOOLS.has(name)) return stamp(ruled("allow", "allow_tool", false));
+  return stamp(ruled("deny", "unknown_tool", false));
 }
 
 export async function decideTool(

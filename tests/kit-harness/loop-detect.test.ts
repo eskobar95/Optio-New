@@ -12,7 +12,7 @@ describe("detectLoop", () => {
     const result = detectLoop({
       events: [fail("fp-a", "edit_file"), fail("fp-a", "grep"), fail("fp-b", "shell")],
     });
-    expect(result).toEqual({ loop_detected: false, reason: "no_loop" });
+    expect(result).toEqual({ loop_detected: false, halt: false, reason: "no_loop" });
   });
 
   it("suggests replan on three identical failure fingerprints", () => {
