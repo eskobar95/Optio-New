@@ -68,6 +68,7 @@ export async function withAgentRunSpan(
     },
     async (span) => {
       const output = await fn(span);
+      writeUsageSpan(span, output.usage);
       if (output.status !== "succeeded") {
         span.setAttribute("error_class", output.error_class ?? output.status);
         span.fail(output.error_class ?? output.status);
@@ -75,6 +76,20 @@ export async function withAgentRunSpan(
       return output;
     },
   );
+}
+
+function writeUsageSpan(span: ActiveSpan, usage: CodingAgentUsage): void {
+  span.setAttribute("provider", usage.provider);
+  if (usage.model_id) span.setAttribute("model_id", usage.model_id);
+  if (usage.input_tokens !== undefined)
+    span.setAttribute("input_tokens", String(usage.input_tokens));
+  if (usage.output_tokens !== undefined) {
+    span.setAttribute("output_tokens", String(usage.output_tokens));
+  }
+  if (usage.cached_tokens !== undefined) {
+    span.setAttribute("cached_tokens", String(usage.cached_tokens));
+  }
+  if (usage.cost_usd !== undefined) span.setAttribute("cost_usd", String(usage.cost_usd));
 }
 
 const MAX_OUTPUT_CHARS = 1_000_000;

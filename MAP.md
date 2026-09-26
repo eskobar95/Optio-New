@@ -24,6 +24,8 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `docs/learning-worker.md`                             | §10               | Queue `optio.learn`, env, kit-harness profile `learn`                     |
 | `orchestrator/telemetry/`                             | §12.1–§12.4       | OTel helpers, canonical spans; code in `src/orchestrator/telemetry/`      |
 | `docs/observability.md`                               | §12.2–§12.4       | v1 choice: Langfuse (not Phoenix); SigNoz export off by default           |
+| `docs/ops/read-failed-run.md`                         | §12, §13.4        | How to read a failed stage: logs and `GET /tasks/:taskId/actions`         |
+| `state/migrations/003_pipeline_stage_run.sql`         | §12, §13.4        | Per-stage timing, adapter usage, and agent actions                        |
 | `orchestrator/routing/`                               | §14.4             | Hop-1 backend selection                                                   |
 | `src/`                                                | §8, §11, §13, §14 | TypeScript harness (intake, jobs, adapters, gateway, gates)               |
 | `src/agent/`                                          | §9, §13           | Request-response loop; tool calls pass hard gates before effects          |

@@ -123,6 +123,10 @@ Apply `state/migrations/001_pipeline_step_cursor.sql` before using Postgres. `cr
 
 Each `processStageJob` call emits `workflow.step` with `task_id`, `worktree_id` (empty until a worktree exists; later stages read it from `WorktreeManager.status`), `workflow_id=default-task`, and `step_id` set to the stage. The agent handler nests `agent.run` and `skill.load` under that span. A new checkout emits `worktree.create`. Deleting it emits `worktree.remove`. Export to Langfuse or SigNoz stays off unless the env flag is `true`. See `docs/observability.md` and `docs/ops/worktree-isolation.md`.
 
+## Run log
+
+`StageRuntime.runLog` records one row per task, session, and stage (`pipeline_stage_run`, `state/migrations/003_pipeline_stage_run.sql`). The row has `startedAt`, `endedAt`, and `durationMs`. A thrown step stores `status: failed`, the error message as `reason`, and an `error` action for that step. Token or cost figures are stored only when the model adapter or coding agent reported them. `GET /tasks/:taskId/actions` on the orchestrator returns that view. Reading a failed run: `docs/ops/read-failed-run.md`.
+
 ## Tests
 
 `npm test` covers the happy path and crash resume with in-memory and SQL-executor cursors. It does not need Redis, Postgres, or `MODEL_API_KEY`.

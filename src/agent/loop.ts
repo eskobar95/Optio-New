@@ -24,7 +24,7 @@ import {
   getStageTracer,
   type StageTracer,
 } from "../orchestrator/telemetry/index.js";
-import type { ModelAdapter } from "./adapter.js";
+import type { ModelAdapter, ModelUsage } from "./adapter.js";
 import {
   createInstalledSkillLoader,
   DEFAULT_SKILL_BUDGET,
@@ -32,7 +32,13 @@ import {
   type SkillLoader,
 } from "./skills.js";
 
-export type { ModelAdapter, ModelRequest, ModelResponse, ModelToolCall } from "./adapter.js";
+export type {
+  ModelAdapter,
+  ModelRequest,
+  ModelResponse,
+  ModelToolCall,
+  ModelUsage,
+} from "./adapter.js";
 export type { LoadedSkill, SkillBudget, SkillLoader, SkillResolveInput } from "./skills.js";
 export { createInstalledSkillLoader, DEFAULT_SKILL_BUDGET, cavemanRequested } from "./skills.js";
 export type {
@@ -80,6 +86,8 @@ export interface AgentLoopInput {
 export interface AgentLoopResult {
   text: string;
   toolResults?: readonly GuardedToolResult[];
+  /** Copied from the adapter when it reported usage. */
+  usage?: ModelUsage;
 }
 
 export async function runAgentLoop(
@@ -116,7 +124,7 @@ export async function runAgentLoop(
   const toolCalls = response.toolCalls;
   const tools = input.tools;
   if (!tools || !toolCalls || toolCalls.length === 0) {
-    return { text: response.text };
+    return loopResult(response.text, response.usage);
   }
 
   const toolResults: GuardedToolResult[] = [];
@@ -147,5 +155,16 @@ export async function runAgentLoop(
     );
   }
 
-  return { text: response.text, toolResults };
+  return loopResult(response.text, response.usage, toolResults);
+}
+
+function loopResult(
+  text: string,
+  usage: ModelUsage | undefined,
+  toolResults?: GuardedToolResult[],
+): AgentLoopResult {
+  const result: AgentLoopResult = { text };
+  if (toolResults) result.toolResults = toolResults;
+  if (usage) result.usage = usage;
+  return result;
 }

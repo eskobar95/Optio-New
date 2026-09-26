@@ -16,6 +16,7 @@ import {
   readStringField,
   type StageTracer,
 } from "../telemetry/index.js";
+import type { StageRunLog, StageUsageReport } from "../observability/run-log.js";
 import type { WorktreeLifecycle } from "../worktrees/manager.js";
 import { createWorktreeStageHandler } from "../worktrees/stage-hooks.js";
 import type { StepCursor, StepCursorStore } from "./cursor.js";
@@ -57,6 +58,8 @@ export interface StageStepContext {
   title?: string;
   /** Intake description, when the stage job carried it. */
   description?: string;
+  /** Records adapter usage for this stage when the adapter exposed token or cost figures. */
+  recordUsage?: (usage: StageUsageReport) => Promise<void>;
 }
 
 export interface StageStepHandler {
@@ -79,6 +82,10 @@ export interface StageRuntime {
   worktreeId?: string;
   /** When set, review-gate and implementation failures are fingerprinted. */
   learning?: LearningSink;
+  /** When set, stage timing, failures, usage, and step actions are stored for the task. */
+  runLog?: StageRunLog;
+  /** Clock for stage timing. Defaults to `Date`. */
+  now?: () => Date;
   learningContext?: {
     workflowId?: string;
     field?: string;
@@ -131,7 +138,7 @@ export function createAgentStageHandler(
         const block = formatPlannerLearnings(records);
         if (block) prompt = `${prompt}\n\n${block}`;
       }
-      await tracer.runStage(
+      const result = await tracer.runStage(
         CANONICAL_SPAN.agentRun,
         {
           taskId: ctx.taskId,
@@ -156,8 +163,39 @@ export function createAgentStageHandler(
             options?.skillLoader,
           ),
       );
+      if (ctx.recordUsage && result.usage) {
+        await ctx.recordUsage({
+          agentId: `agents/${ctx.stage}`,
+          provider: result.usage.provider,
+          modelId: result.usage.model_id,
+          inputTokens: result.usage.input_tokens,
+          outputTokens: result.usage.output_tokens,
+          cachedTokens: result.usage.cached_tokens,
+          costUsd: result.usage.cost_usd,
+        });
+      }
     },
   };
+}
+
+function logStage(level: "log" | "error", body: Record<string, unknown>): void {
+  const line = JSON.stringify(body);
+  if (level === "error") console.error(line);
+  else console.log(line);
+}
+
+async function safeRunLog<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "run log failed";
+    logStage("error", { msg: "stage.run_log_failed", reason });
+    return fallback;
+  }
+}
+
+function errorReason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function recordLearning(
@@ -208,29 +246,240 @@ async function executeStageJob(
   worktreeId: string,
 ): Promise<StageJobResult> {
   const payload = StageJobPayloadSchema.parse(input);
-  const blockedBy = previousStage(payload.stage);
-  if (blockedBy) {
-    const previous = await deps.cursors.get(payload.taskId, payload.sessionId, blockedBy);
-    if (!previous || previous.status !== "completed") {
-      throw new StageNotReadyError(payload.stage, blockedBy);
+  const clock = deps.now ?? (() => new Date());
+  const runLog = deps.runLog;
+  let timingOpen = false;
+  let startedMs = 0;
+  let activeStep: string | undefined;
+  let failureRecorded = false;
+
+  const identity = {
+    taskId: payload.taskId,
+    sessionId: payload.sessionId,
+    stage: payload.stage,
+  };
+
+  async function openTiming(): Promise<void> {
+    if (timingOpen) return;
+    timingOpen = true;
+    const stamped = clock();
+    let startedAt = stamped.toISOString();
+    if (runLog) {
+      const begun = await safeRunLog(() => runLog.beginStage({ ...identity, startedAt }), {
+        startedAt,
+      });
+      startedAt = begun.startedAt;
     }
+    startedMs = Date.parse(startedAt);
   }
 
-  const steps = STAGE_STEPS[payload.stage];
-  let cursor =
-    (await deps.cursors.get(payload.taskId, payload.sessionId, payload.stage)) ??
-    freshCursor(payload);
-
-  if (cursor.status === "completed" || cursor.nextStepIndex >= steps.length) {
-    const completed: StepCursor = {
-      ...cursor,
-      status: "completed",
-      nextStepIndex: steps.length,
-      updatedAt: nowIso(),
-    };
-    if (cursor.status !== "completed" || cursor.nextStepIndex !== steps.length) {
-      await deps.cursors.save(completed);
+  async function recordFailure(error: unknown, step?: string): Promise<void> {
+    if (failureRecorded) return;
+    failureRecorded = true;
+    await openTiming();
+    const ended = clock();
+    const reason = errorReason(error);
+    const durationMs = ended.getTime() - startedMs;
+    if (runLog && step) {
+      await safeRunLog(
+        () =>
+          runLog.recordAction({
+            ...identity,
+            step,
+            agentId: `agents/${payload.stage}`,
+            name: step,
+            status: "error",
+            reason,
+            at: ended.toISOString(),
+          }),
+        undefined,
+      );
     }
+    if (runLog) {
+      await safeRunLog(
+        () =>
+          runLog.finishStage({
+            ...identity,
+            endedAt: ended.toISOString(),
+            durationMs,
+            status: "failed",
+            reason,
+          }),
+        undefined,
+      );
+    }
+    logStage("error", {
+      msg: "stage.failed",
+      ...identity,
+      ...(step ? { step } : {}),
+      reason,
+      startedAt: new Date(startedMs).toISOString(),
+      endedAt: ended.toISOString(),
+      durationMs,
+    });
+  }
+
+  try {
+    const blockedBy = previousStage(payload.stage);
+    if (blockedBy) {
+      const previous = await deps.cursors.get(payload.taskId, payload.sessionId, blockedBy);
+      if (!previous || previous.status !== "completed") {
+        throw new StageNotReadyError(payload.stage, blockedBy);
+      }
+    }
+
+    const steps = STAGE_STEPS[payload.stage];
+    let cursor =
+      (await deps.cursors.get(payload.taskId, payload.sessionId, payload.stage)) ??
+      freshCursor(payload);
+
+    if (cursor.status === "completed" || cursor.nextStepIndex >= steps.length) {
+      const completed: StepCursor = {
+        ...cursor,
+        status: "completed",
+        nextStepIndex: steps.length,
+        updatedAt: nowIso(),
+      };
+      if (cursor.status !== "completed" || cursor.nextStepIndex !== steps.length) {
+        await deps.cursors.save(completed);
+      }
+      return {
+        taskId: payload.taskId,
+        sessionId: payload.sessionId,
+        stage: payload.stage,
+        status: "completed",
+        nextStepIndex: steps.length,
+      };
+    }
+
+    await openTiming();
+
+    if (payload.stage === "ready" && deps.reviewGate) {
+      const evidence = await deps.reviewGate.loadEvidence({
+        taskId: payload.taskId,
+        sessionId: payload.sessionId,
+      });
+      const decision = await evaluateReviewGate(evidence, deps.reviewGate.advisor);
+      if (decision.verdict !== "pass") {
+        await recordLearning(
+          deps.learning,
+          observationFromReviewGate({
+            taskId: payload.taskId,
+            sessionId: payload.sessionId,
+            reason: decision.reason,
+            attempt: decision.attempt,
+            reviewNotes: decision.review_notes,
+            field: evidence?.field,
+            skillIds: evidence?.skill_ids,
+            specialistIds: evidence?.specialist_ids,
+            workflowId: evidence?.workflow_id,
+          }),
+        );
+        throw new ReviewGateClosedError(decision);
+      }
+    }
+
+    cursor = { ...cursor, status: "running", updatedAt: nowIso() };
+    await deps.cursors.save(cursor);
+
+    const handler: StageStepHandler = deps.worktrees
+      ? createWorktreeStageHandler(deps.worktrees, deps.handler)
+      : deps.handler;
+
+    let activeWorktreeId = worktreeId;
+    for (let index = cursor.nextStepIndex; index < steps.length; index += 1) {
+      const step = steps[index];
+      if (!step) {
+        throw new Error(`missing step ${index} for ${payload.stage}`);
+      }
+      activeStep = step;
+      const ctx: StageStepContext = {
+        taskId: payload.taskId,
+        sessionId: payload.sessionId,
+        stage: payload.stage,
+        step,
+        stepIndex: index,
+        worktreeId: activeWorktreeId || undefined,
+        tracer,
+        title: payload.title,
+        description: payload.description,
+        recordUsage: async (usage) => {
+          if (!runLog) return;
+          await safeRunLog(() => runLog.recordUsage({ ...identity, ...usage }), undefined);
+        },
+      };
+      try {
+        await handler.run(ctx);
+      } catch (error) {
+        if (payload.stage === "implement" || payload.stage === "review") {
+          await recordLearning(
+            deps.learning,
+            observationFromHandlerFailure({
+              taskId: payload.taskId,
+              sessionId: payload.sessionId,
+              stage: payload.stage,
+              step,
+              error,
+              field: deps.learningContext?.field,
+              skillIds: deps.learningContext?.skillIds,
+              specialistIds: deps.learningContext?.specialistIds,
+              workflowId: deps.learningContext?.workflowId,
+            }),
+          );
+        }
+        throw error;
+      }
+      if (ctx.worktreeId) activeWorktreeId = ctx.worktreeId;
+      const actedAt = clock();
+      if (runLog) {
+        await safeRunLog(
+          () =>
+            runLog.recordAction({
+              ...identity,
+              step,
+              agentId: `agents/${payload.stage}`,
+              name: step,
+              status: "ok",
+              at: actedAt.toISOString(),
+            }),
+          undefined,
+        );
+      }
+      activeStep = undefined;
+      const finished = index + 1 >= steps.length;
+      cursor = {
+        ...cursor,
+        nextStepIndex: index + 1,
+        status: finished ? "completed" : "running",
+        updatedAt: nowIso(),
+      };
+      await deps.cursors.save(cursor);
+    }
+
+    const ended = clock();
+    const durationMs = ended.getTime() - startedMs;
+    const startedAt = new Date(startedMs).toISOString();
+    const endedAt = ended.toISOString();
+    if (runLog) {
+      await safeRunLog(
+        () =>
+          runLog.finishStage({
+            ...identity,
+            endedAt,
+            durationMs,
+            status: "completed",
+          }),
+        undefined,
+      );
+    }
+    logStage("log", {
+      msg: "stage.completed",
+      ...identity,
+      startedAt,
+      endedAt,
+      durationMs,
+    });
+
     return {
       taskId: payload.taskId,
       sessionId: payload.sessionId,
@@ -238,96 +487,10 @@ async function executeStageJob(
       status: "completed",
       nextStepIndex: steps.length,
     };
+  } catch (error) {
+    await recordFailure(error, activeStep);
+    throw error;
   }
-
-  if (payload.stage === "ready" && deps.reviewGate) {
-    const evidence = await deps.reviewGate.loadEvidence({
-      taskId: payload.taskId,
-      sessionId: payload.sessionId,
-    });
-    const decision = await evaluateReviewGate(evidence, deps.reviewGate.advisor);
-    if (decision.verdict !== "pass") {
-      await recordLearning(
-        deps.learning,
-        observationFromReviewGate({
-          taskId: payload.taskId,
-          sessionId: payload.sessionId,
-          reason: decision.reason,
-          attempt: decision.attempt,
-          reviewNotes: decision.review_notes,
-          field: evidence?.field,
-          skillIds: evidence?.skill_ids,
-          specialistIds: evidence?.specialist_ids,
-          workflowId: evidence?.workflow_id,
-        }),
-      );
-      throw new ReviewGateClosedError(decision);
-    }
-  }
-
-  cursor = { ...cursor, status: "running", updatedAt: nowIso() };
-  await deps.cursors.save(cursor);
-
-  const handler: StageStepHandler = deps.worktrees
-    ? createWorktreeStageHandler(deps.worktrees, deps.handler)
-    : deps.handler;
-
-  let activeWorktreeId = worktreeId;
-  for (let index = cursor.nextStepIndex; index < steps.length; index += 1) {
-    const step = steps[index];
-    if (!step) {
-      throw new Error(`missing step ${index} for ${payload.stage}`);
-    }
-    const ctx: StageStepContext = {
-      taskId: payload.taskId,
-      sessionId: payload.sessionId,
-      stage: payload.stage,
-      step,
-      stepIndex: index,
-      worktreeId: activeWorktreeId || undefined,
-      tracer,
-      title: payload.title,
-      description: payload.description,
-    };
-    try {
-      await handler.run(ctx);
-    } catch (error) {
-      if (payload.stage === "implement" || payload.stage === "review") {
-        await recordLearning(
-          deps.learning,
-          observationFromHandlerFailure({
-            taskId: payload.taskId,
-            sessionId: payload.sessionId,
-            stage: payload.stage,
-            step,
-            error,
-            field: deps.learningContext?.field,
-            skillIds: deps.learningContext?.skillIds,
-            specialistIds: deps.learningContext?.specialistIds,
-            workflowId: deps.learningContext?.workflowId,
-          }),
-        );
-      }
-      throw error;
-    }
-    if (ctx.worktreeId) activeWorktreeId = ctx.worktreeId;
-    const finished = index + 1 >= steps.length;
-    cursor = {
-      ...cursor,
-      nextStepIndex: index + 1,
-      status: finished ? "completed" : "running",
-      updatedAt: nowIso(),
-    };
-    await deps.cursors.save(cursor);
-  }
-
-  return {
-    taskId: payload.taskId,
-    sessionId: payload.sessionId,
-    stage: payload.stage,
-    status: "completed",
-    nextStepIndex: steps.length,
-  };
 }
 
 export async function runPipeline(
