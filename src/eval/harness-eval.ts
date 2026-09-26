@@ -311,6 +311,16 @@ async function executeFixture(fixture: EvalFixture): Promise<Observed> {
     git: gitRunner(),
     maxTokens: fixture.agent?.maxTokens,
     agentTimeoutMs: fixture.mode === "live" ? liveTimeoutMs() : 1_000,
+    // The eval worktree is a temp directory, not a git checkout. The gate still
+    // runs; this fixture evidence is a clean diff and green checks.
+    loadPrSafety: async () => ({
+      checks: {
+        test: { exitCode: 0 },
+        lint: { exitCode: 0 },
+        typecheck: { exitCode: 0 },
+      },
+      diff: "",
+    }),
   });
 
   try {
