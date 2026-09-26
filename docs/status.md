@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 12:46 UTC
+Last refreshed: 2026-09-26 12:49 UTC
 
 ## Bootstrap progress
 
@@ -19,7 +19,7 @@ Last refreshed: 2026-09-26 12:46 UTC
 
 [![CI](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml/badge.svg)](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml)
 
-Latest conclusion: **success**
+Latest conclusion: **cancelled**
 
 Actions: https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml
 
@@ -50,13 +50,10 @@ Host health after [#76](https://github.com/eskobar95/Optio-New/pull/76): Compose
 
 ## Open issues
 
-Open: 7.
+Open: 4.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
-- #95 CX33 disk and memory guardrails before worktree create (P2, backlog, enhancement, infra)
-- #94 GitHub and Slack intake adapters (Linear deferred) (P2, backlog, enhancement, orchestration)
-- #93 Multi-repo support for worktrees and intake routing (P2, backlog, enhancement, infra, orchestration)
 - #92 Session artifact trail for plans, reviews, and PR links (P1, backlog, enhancement, orchestration)
 - #91 Crash recovery and resume mid-pipeline (P1, backlog, enhancement, infra, orchestration)
 - #87 Cost and token budget caps per task (P1, backlog, enhancement, orchestration)
