@@ -8,10 +8,10 @@ Bookkeeping steps (`ack_session`, `record_*`, `open_pr`, `merge_branch`) are not
 
 Sized for a Hetzner CX33 box (small VPS) in front of Vercel AI Gateway, which bills pass-through model usage:
 
-| Cap    | Default  | Why                                                                                         |
-| ------ | -------- | ------------------------------------------------------------------------------------------- |
+| Cap    | Default  | Why                                                                                                     |
+| ------ | -------- | ------------------------------------------------------------------------------------------------------- |
 | Tokens | `400000` | Cursor CLI baseline context alone is ~15k+; plan/implement/review stage caps leave room for real turns. |
-| USD    | `2`      | About one coding pass at Gateway rates for Sonnet-class models, not a month of CX33 credit. |
+| USD    | `2`      | About one coding pass at Gateway rates for Sonnet-class models, not a month of CX33 credit.             |
 
 Per-stage caps in `workflows/default-task.yaml` add up to those totals: plan 40k / $0.40, implement 120k / $1.20, review 20k / $0.20, ready 10k / $0.10, merge 10k / $0.10. Ready and merge have no agent step, so those stage caps apply only if a later agent step is added on that stage.
 
