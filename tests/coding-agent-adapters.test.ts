@@ -155,6 +155,7 @@ describe("Cursor CodingAgent", () => {
     expect(output.status).toBe("succeeded");
     expect(output.usage).toEqual({
       provider: "cursor",
+      model_id: "gpt-4o",
       input_tokens: 100,
       output_tokens: 7,
       cached_tokens: 12,
@@ -331,6 +332,7 @@ describe("Codex CodingAgent", () => {
       input_tokens: 100,
       output_tokens: 7,
       cached_tokens: 40,
+      cost_usd: 0,
     });
 
     const configPath = "/tmp/optio-codex-home/config.toml";
