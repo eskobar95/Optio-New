@@ -46,6 +46,10 @@ describe("update-status.sh", () => {
     expect(text).toContain("## Compose smoke (Docker Desktop or Linux)");
     expect(text).toContain("kit-harness (Linux) full up/down PASSED 2026-09-26");
     expect(text).toContain("scripts/smoke-compose-mac.sh");
+    expect(text).toContain("127.0.0.1:3210");
+    expect(text).toContain("profiles `harness`, `full`, and `learn`");
+    expect(text).toContain("Hello-world e2e PASS");
+    expect(text).toContain("[STATUS.md](../STATUS.md)");
   });
 
   it("is idempotent when the CI conclusion and issues are unchanged", () => {
