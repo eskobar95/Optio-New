@@ -1,6 +1,8 @@
 /**
- * Human-in-the-loop gates for plan (before implement) and merge (before open_pr).
- * A required gate never approves itself: timeout notifies and stays closed.
+ * Human-in-the-loop gates for plan (before implement) and merge (before merge_branch).
+ * Ready runs open_pr and record_ci_wait without the merge gate, so a Linear task
+ * can move to Review when CI is green. A required gate never approves itself:
+ * timeout notifies and stays closed.
  * High planner confidence may record a policy approval only when the mode allows it.
  * See docs/hitl.md.
  */
@@ -84,7 +86,7 @@ export interface HitlNotifyEvent {
   timeoutAt?: string;
 }
 
-export type HitlResumeStage = "plan" | "implement" | "ready";
+export type HitlResumeStage = "plan" | "implement" | "merge";
 
 export interface HitlQueuePort {
   /** Promote or re-add the stage job so BullMQ runs it again. */
@@ -138,12 +140,12 @@ const HitlYamlSchema = z
 
 export function pointForStage(stage: PipelineStage): HitlPoint | undefined {
   if (stage === "implement") return "plan";
-  if (stage === "ready" || stage === "merge") return "merge";
+  if (stage === "merge") return "merge";
   return undefined;
 }
 
-export function resumeStageForPoint(point: HitlPoint): "implement" | "ready" {
-  return point === "plan" ? "implement" : "ready";
+export function resumeStageForPoint(point: HitlPoint): "implement" | "merge" {
+  return point === "plan" ? "implement" : "merge";
 }
 
 function readOptionalNumber(env: NodeJS.ProcessEnv, key: string): number | undefined {
@@ -561,7 +563,7 @@ export function hitlJobId(sessionId: string, stage: HitlResumeStage): string {
 export function createHitlQueuePort(queues: {
   plan: HitlJobQueue;
   implement: HitlJobQueue;
-  ready: HitlJobQueue;
+  merge: HitlJobQueue;
 }): HitlQueuePort {
   return {
     resumePaused: (stage, identity) => wake(queues[stage], stage, identity),
@@ -586,7 +588,16 @@ async function wake(
     await job.promote();
     return;
   }
-  if (state === "waiting" || state === "paused" || state === "active") return;
+  // waiting-children is the flow parent still blocked on an earlier stage.
+  // Leave that job in place; it reads the approval when its child finishes.
+  if (
+    state === "waiting" ||
+    state === "paused" ||
+    state === "active" ||
+    state === "waiting-children"
+  ) {
+    return;
+  }
   const data =
     job.data && typeof job.data === "object"
       ? (job.data as { taskId: string; sessionId: string; stage: PipelineStage })

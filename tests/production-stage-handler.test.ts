@@ -5,11 +5,15 @@ import { describe, expect, it } from "vitest";
 import type { CodingAgent, CodingAgentInput } from "../src/adapters/coding-agent.js";
 import type { FlowJob } from "bullmq";
 import {
+  ApprovalRequiredError,
+  InMemoryHitlStore,
   InMemoryStepCursorStore,
   PrSafetyClosedError,
   StageCredentialsError,
+  applyHitlDecision,
   createProductionStageHandler,
   enqueueIntakePipeline,
+  loadHitlConfig,
   processStageJob,
   runPipeline,
   type PrSafetyInput,
@@ -756,6 +760,133 @@ describe("production stage handler", () => {
       (call) => call.url.includes("api.linear.app") && call.body?.includes("s-re"),
     );
     expect(reviewUpdate).toBeTruthy();
+  });
+
+  it("moves a Linear issue to Review on green CI before merge approval", async () => {
+    const taskId = "lin-ENG-9";
+    const issueId = "2174add1-f7c8-44e3-bbf3-2d60b5ea8bc9";
+    const { worktrees } = worktreeFixture(taskId, true);
+    const git = gitRunner({ ahead: "1" });
+    const calls: { url: string; method: string; body?: string }[] = [];
+    const handler = createProductionStageHandler({
+      env: handlerEnv({ OPTIO_NEW_LINEAR_API_KEY: "lin_api_testkey12345678" }),
+      worktrees,
+      git: git.git,
+      loadPrSafety: passingSafety,
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        const body = typeof init?.body === "string" ? init.body : undefined;
+        calls.push({ url, method, body });
+        if (url.includes("api.linear.app/graphql")) {
+          const query = body ? ((JSON.parse(body) as { query?: string }).query ?? "") : "";
+          if (query.includes("IssueStates")) {
+            return jsonResponse(200, {
+              data: {
+                issue: {
+                  team: {
+                    states: {
+                      nodes: [
+                        { id: "s-ip", name: "In Progress" },
+                        { id: "s-re", name: "Review" },
+                        { id: "s-me", name: "Merge" },
+                        { id: "s-do", name: "Done" },
+                      ],
+                    },
+                  },
+                },
+              },
+            });
+          }
+          return jsonResponse(200, {
+            data: { commentCreate: { success: true }, issueUpdate: { success: true } },
+          });
+        }
+        if (method === "GET" && url.includes("/pulls?")) return jsonResponse(200, []);
+        if (method === "POST" && url.endsWith("/pulls")) {
+          return jsonResponse(201, {
+            html_url: "https://github.com/acme/widgets/pull/66",
+            number: 66,
+          });
+        }
+        if (method === "GET" && url.endsWith("/status")) {
+          return jsonResponse(200, { state: "success", statuses: [] });
+        }
+        if (method === "GET" && url.endsWith("/reviews")) {
+          return jsonResponse(200, [{ user: { login: "ada" }, state: "APPROVED", body: "" }]);
+        }
+        if (method === "PATCH") return jsonResponse(200, { draft: false });
+        if (method === "PUT" && url.endsWith("/merge")) return jsonResponse(200, { merged: true });
+        return jsonResponse(500, { message: `unexpected ${method} ${url}` });
+      },
+    });
+    const cursors = new InMemoryStepCursorStore();
+    const hitlState = new InMemoryHitlStore();
+    const hitl = {
+      config: loadHitlConfig({ OPTIO_HITL_MERGE: "always" }),
+      store: hitlState,
+      signals: hitlState,
+    };
+    const now = "2026-09-26T12:00:00.000Z";
+    await cursors.save({
+      taskId,
+      sessionId: taskId,
+      stage: "review",
+      nextStepIndex: 2,
+      status: "completed",
+      updatedAt: now,
+    });
+    const payload = {
+      taskId,
+      sessionId: taskId,
+      source: "linear" as const,
+      linearIssueId: issueId,
+      title: "Board status",
+    };
+    const ready = await processStageJob({ ...payload, stage: "ready" }, { cursors, handler, hitl });
+    expect(ready.status).toBe("completed");
+    const linearBodies = calls
+      .filter((call) => call.url.includes("api.linear.app"))
+      .map((call) => call.body ?? "");
+    expect(linearBodies.some((body) => body.includes("[status]") && body.includes("Review"))).toBe(
+      true,
+    );
+    expect(
+      linearBodies.some((body) => body.includes("[ci]") && body.includes("Result: green")),
+    ).toBe(true);
+    expect(linearBodies.some((body) => body.includes("s-re"))).toBe(true);
+    expect(linearBodies.some((body) => body.includes("s-me"))).toBe(false);
+    expect(
+      calls.some((call) => call.method === "PATCH" && call.body?.includes('"draft":false')),
+    ).toBe(true);
+    expect(calls.some((call) => call.method === "PUT" && call.url.endsWith("/merge"))).toBe(false);
+    expect(await hitlState.get(taskId, taskId, "merge")).toBeUndefined();
+
+    await expect(
+      processStageJob({ ...payload, stage: "merge" }, { cursors, handler, hitl }),
+    ).rejects.toBeInstanceOf(ApprovalRequiredError);
+    const beforeApprove = calls
+      .filter((call) => call.url.includes("api.linear.app"))
+      .map((call) => call.body ?? "");
+    expect(calls.some((call) => call.method === "PUT" && call.url.endsWith("/merge"))).toBe(false);
+    expect(beforeApprove.some((body) => body.includes("s-me"))).toBe(false);
+
+    await applyHitlDecision(
+      { taskId, sessionId: taskId, point: "merge", action: "approve" },
+      hitl,
+      cursors,
+    );
+    const merged = await processStageJob(
+      { ...payload, stage: "merge" },
+      { cursors, handler, hitl },
+    );
+    expect(merged.status).toBe("completed");
+    expect(calls.some((call) => call.method === "PUT" && call.url.endsWith("/merge"))).toBe(true);
+    const afterMerge = calls
+      .filter((call) => call.url.includes("api.linear.app"))
+      .map((call) => call.body ?? "");
+    expect(afterMerge.some((body) => body.includes("s-me"))).toBe(true);
+    expect(afterMerge.some((body) => body.includes("s-do"))).toBe(true);
   });
 });
 

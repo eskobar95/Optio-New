@@ -227,17 +227,21 @@ describe("human approval gates", () => {
     await processStageJob({ ...identity, stage: "plan" }, deps);
     await processStageJob({ ...identity, stage: "implement" }, deps);
     await processStageJob({ ...identity, stage: "review" }, deps);
-    await expect(processStageJob({ ...identity, stage: "ready" }, deps)).rejects.toBeInstanceOf(
+    const ready = await processStageJob({ ...identity, stage: "ready" }, deps);
+    expect(ready.status).toBe("completed");
+    expect(calls).toContain("ready:open_pr");
+    expect(calls).toContain("ready:record_ci_wait");
+    await expect(processStageJob({ ...identity, stage: "merge" }, deps)).rejects.toBeInstanceOf(
       ApprovalRequiredError,
     );
-    expect(calls).not.toContain("ready:open_pr");
+    expect(calls).not.toContain("merge:merge_branch");
     expect(treeEvents).toEqual(["create"]);
 
     await applyHitlDecision({ ...identity, point: "merge", action: "reject" }, hitl, cursors);
-    await expect(processStageJob({ ...identity, stage: "ready" }, deps)).rejects.toBeInstanceOf(
+    await expect(processStageJob({ ...identity, stage: "merge" }, deps)).rejects.toBeInstanceOf(
       ApprovalRejectedError,
     );
-    expect(calls).not.toContain("ready:open_pr");
+    expect(calls).not.toContain("merge:merge_branch");
     expect(treeEvents).toEqual(["create"]);
   });
 
@@ -288,21 +292,28 @@ describe("human approval gates", () => {
     expect(treeEvents).toEqual(["create"]);
   });
 
-  it("pauses ready before open_pr until merge is approved", async () => {
+  it("runs ready through CI wait, then pauses merge until merge is approved", async () => {
     const calls: string[] = [];
-    const { hitl } = binding({ env: { OPTIO_HITL_PLAN: "off" } });
+    const resumed: string[] = [];
+    const { hitl } = binding({ env: { OPTIO_HITL_PLAN: "off" }, resumed });
     const cursors = new InMemoryStepCursorStore();
     const deps = { cursors, handler: handler(calls), hitl };
     for (const stage of ["plan", "implement", "review"] as const) {
       await processStageJob({ ...identity, stage }, deps);
     }
-    await expect(processStageJob({ ...identity, stage: "ready" }, deps)).rejects.toBeInstanceOf(
+    const ready = await processStageJob({ ...identity, stage: "ready" }, deps);
+    expect(ready.status).toBe("completed");
+    expect(calls).toContain("ready:open_pr");
+    expect(calls).toContain("ready:record_ci_wait");
+    await expect(processStageJob({ ...identity, stage: "merge" }, deps)).rejects.toBeInstanceOf(
       ApprovalRequiredError,
     );
-    expect(calls).not.toContain("ready:open_pr");
+    expect(calls).not.toContain("merge:merge_branch");
     await applyHitlDecision({ ...identity, point: "merge", action: "approve" }, hitl, cursors);
-    await processStageJob({ ...identity, stage: "ready" }, deps);
-    expect(calls).toContain("ready:open_pr");
+    expect(resumed).toEqual(["merge"]);
+    await processStageJob({ ...identity, stage: "merge" }, deps);
+    expect(calls).toContain("merge:merge_branch");
+    expect(calls).toContain("merge:record_cleanup");
   });
 
   it("serves pause then approve over HTTP", async () => {
@@ -394,13 +405,15 @@ describe("human approval gates", () => {
           added.push(opts.jobId);
         },
       },
-      ready: fakeQueue("waiting", added, "ready"),
+      merge: fakeQueue("waiting-children", added, "merge"),
     };
     const port = createHitlQueuePort(queues);
     await port.requeuePlan(identity);
     expect(added).toEqual(["s-1__plan"]);
     await port.resumePaused("implement", identity);
     expect(implementState).toBe("waiting");
+    expect(added).toEqual(["s-1__plan"]);
+    await port.resumePaused("merge", identity);
     expect(added).toEqual(["s-1__plan"]);
   });
 
@@ -420,7 +433,7 @@ describe("human approval gates", () => {
   });
 });
 
-function fakeQueue(state: string, added: string[], stage: "plan" | "ready"): HitlJobQueue {
+function fakeQueue(state: string, added: string[], stage: "plan" | "merge"): HitlJobQueue {
   let current = state;
   return {
     async getJob() {

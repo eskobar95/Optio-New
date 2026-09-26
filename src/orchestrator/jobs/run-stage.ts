@@ -112,8 +112,8 @@ export interface StageRuntime {
   /** Empty string on the span when omitted (no worktree yet). */
   worktreeId?: string;
   /**
-   * When set, implement waits on plan approval and ready/merge wait before open_pr.
-   * A required gate never approves on timeout.
+   * When set, implement waits on plan approval and merge waits before merge_branch.
+   * Ready (open_pr, record_ci_wait) is not paused. A required gate never approves on timeout.
    */
   hitl?: HitlBinding;
   /** When set, agent steps fail closed with BudgetExceeded once a cap is exceeded. */
