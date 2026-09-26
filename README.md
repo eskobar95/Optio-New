@@ -104,7 +104,7 @@ Postgres backup to Hetzner Storage Box: [docs/ops/postgres-storagebox-backup.md]
   3. `CAVEMAN_MODE=compress CAVE_SSRF_ALLOWLIST=127.0.0.1 caveman start` (listens on `127.0.0.1:8787`).
   4. Set `CAVEMAN_PROXY_ENABLED=true` (see `.env.example`). Codex `base_url` becomes `http://127.0.0.1:8787/compat/litellm/v1`. With the flag false, Codex stays on LiteLLM `http://127.0.0.1:4000/v1`.
 - **Smoke:** `npm run smoke` probes `/health/live` only when the flag is `true` and `caveman` is on `PATH`. Otherwise it skips. The Compose `caveman` profile is a placeholder and does not run the engine.
-- **Skip for V1:** Caveman Platform / Cloud managed gateway.
+- **Skip for V1:** Caveman Platform / Cloud managed gateway. Decision and exit criteria: [docs/caveman-platform-eval.md](docs/caveman-platform-eval.md). Default stays local LiteLLM.
 
 ## First issue / Getting started
 

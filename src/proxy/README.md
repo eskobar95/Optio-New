@@ -2,7 +2,9 @@
 
 **Default: off.** Optio-New does not call Caveman Platform or Cloud. The BSL
 `caveman-proxy` binary is not in this repo. Operators install the MIT CLI
-themselves and point Codex at the loopback listener.
+themselves and point Codex at the loopback listener. Hosted Cloud versus this
+path: [docs/caveman-platform-eval.md](../../docs/caveman-platform-eval.md). V1
+keeps LiteLLM.
 
 MIT skills under `.cursor/skills/caveman*` (from
 [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman)) are a
