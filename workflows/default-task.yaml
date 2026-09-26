@@ -21,17 +21,19 @@ hitl:
 # Per-task spend caps (issue #87). Exceeding them fails the stage with BudgetExceeded.
 # OPTIO_TASK_MAX_TOKENS / OPTIO_TASK_MAX_USD override the task totals. See docs/task-budget.md.
 budget:
-  max_tokens: 200000
+  # Cursor agent CLI baseline context alone is ~15k+ tokens; stage caps must
+  # leave room for a real plan/review turn on the subscription path.
+  max_tokens: 400000
   max_usd: 2
   stages:
     plan:
-      max_tokens: 40000
+      max_tokens: 120000
       max_usd: 0.4
     implement:
-      max_tokens: 120000
+      max_tokens: 200000
       max_usd: 1.2
     review:
-      max_tokens: 20000
+      max_tokens: 80000
       max_usd: 0.2
     ready:
       max_tokens: 10000

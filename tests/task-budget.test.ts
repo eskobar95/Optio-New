@@ -67,7 +67,7 @@ describe("task budget caps", () => {
     expect(result.status).toBe("completed");
     expect(calls).toEqual(["plan:ack_session", "plan:invoke_planner"]);
     const status = await readTaskBudgetStatus(budget, identity);
-    expect(status.caps).toMatchObject({ maxTokens: 200_000, maxUsd: 2 });
+    expect(status.caps).toMatchObject({ maxTokens: 400_000, maxUsd: 2 });
     expect(status.usage).toMatchObject({
       inputTokens: 10,
       outputTokens: 5,
@@ -78,7 +78,7 @@ describe("task budget caps", () => {
     const line = [...logs].reverse().find((entry) => entry.includes("invoke_planner"));
     expect(line).toBeDefined();
     const parsed = JSON.parse(line ?? "{}") as Record<string, unknown>;
-    expect(parsed).toMatchObject({ msg: "task_budget", maxTokens: 200_000, maxUsd: 2, tokens: 15 });
+    expect(parsed).toMatchObject({ msg: "task_budget", maxTokens: 400_000, maxUsd: 2, tokens: 15 });
     expect(JSON.stringify(parsed)).not.toMatch(/api[_-]?key|secret|authorization|bearer|sk-|ghp_/i);
   });
 
@@ -145,7 +145,7 @@ describe("task budget caps", () => {
       { OPTIO_TASK_MAX_TOKENS: "500000", OPTIO_TASK_MAX_USD: "20" },
       yaml,
     );
-    expect(caps.stages?.implement).toEqual({ maxTokens: 120_000, maxUsd: 1.2 });
+    expect(caps.stages?.implement).toEqual({ maxTokens: 200_000, maxUsd: 1.2 });
     const calls: string[] = [];
     const budget = budgetFor(caps);
     const cursors = new InMemoryStepCursorStore();
@@ -155,7 +155,7 @@ describe("task budget caps", () => {
       handler: spend(calls, { inputTokens: 1, outputTokens: 1, costUsd: 0.01 }),
     };
     await processStageJob({ ...identity, stage: "plan" }, deps);
-    deps.handler = spend(calls, { inputTokens: 100_000, outputTokens: 30_000, costUsd: 0.5 });
+    deps.handler = spend(calls, { inputTokens: 180_000, outputTokens: 30_000, costUsd: 0.5 });
     await expect(processStageJob({ ...identity, stage: "implement" }, deps)).rejects.toMatchObject({
       reason: "stage_token_cap",
     });
@@ -163,7 +163,7 @@ describe("task budget caps", () => {
 
   it("lets env override the workflow totals and rejects a bad number", () => {
     const yaml = readFileSync("workflows/default-task.yaml", "utf8");
-    expect(loadTaskBudgetCaps({}, yaml)).toMatchObject({ maxTokens: 200_000, maxUsd: 2 });
+    expect(loadTaskBudgetCaps({}, yaml)).toMatchObject({ maxTokens: 400_000, maxUsd: 2 });
     expect(
       loadTaskBudgetCaps({ OPTIO_TASK_MAX_TOKENS: "50", OPTIO_TASK_MAX_USD: "0.25" }, yaml),
     ).toMatchObject({

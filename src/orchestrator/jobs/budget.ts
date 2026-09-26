@@ -16,7 +16,7 @@ import { PIPELINE_STAGES, type PipelineStage } from "./stages.js";
 import type { SqlExecutor } from "./cursor.js";
 
 /** 200k tokens: one plan+implement slice, not an unbounded agent loop. */
-export const DEFAULT_TASK_MAX_TOKENS = 200_000;
+export const DEFAULT_TASK_MAX_TOKENS = 400_000;
 
 /**
  * USD 2: Vercel AI Gateway is pass-through. At typical coding-model rates this is
