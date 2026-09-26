@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 01:24 UTC
+Last refreshed: 2026-09-26 01:27 UTC
 
 ## Bootstrap progress
 
@@ -48,12 +48,11 @@ HELLO_WORLD_E2E=1 bash scripts/hello-world-e2e.sh
 
 ## Open issues
 
-Open: 5.
+Open: 4.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
 - #60 [EVE-3] Local eve-runner invoked by BullMQ stage (P0, enhancement, orchestration)
-- #45 [e2e] Add a hello-world endpoint to the agent loop (P2, enhancement, good first issue, orchestration)
 - #22 [P2] Caddy TLS edge for optional intake webhook (P2, deploy, infra, security)
 - #21 [P2] Eve phase agents: planner / implementation / review / ready / merge contracts (P2, enhancement, orchestration)
 - #14 [P2] Optional Laya CPU decision service Compose profile (P2, harness, infra)
