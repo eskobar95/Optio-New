@@ -53,6 +53,10 @@ export interface StageStepContext {
   stepIndex: number;
   worktreeId?: string;
   tracer?: StageTracer;
+  /** Intake title, when the stage job carried it. */
+  title?: string;
+  /** Intake description, when the stage job carried it. */
+  description?: string;
 }
 
 export interface StageStepHandler {
@@ -272,6 +276,8 @@ async function executeStageJob(
         stepIndex: index,
         worktreeId: deps.worktreeId,
         tracer,
+        title: payload.title,
+        description: payload.description,
       });
     } catch (error) {
       if (payload.stage === "implement" || payload.stage === "review") {

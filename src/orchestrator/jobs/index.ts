@@ -47,6 +47,14 @@ export {
   type StageStepContext,
   type StageStepHandler,
 } from "./run-stage.js";
+export {
+  StageCredentialsError,
+  createProductionStageHandler,
+  execGit,
+  type GitRunner,
+  type ProductionStageOptions,
+  type ProductionWorktrees,
+} from "./production-handler.js";
 export { enqueueIntakePipeline, type FlowEnqueuer } from "./enqueue-pipeline.js";
 export {
   WorktreeIsolationError,

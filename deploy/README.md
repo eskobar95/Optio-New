@@ -111,6 +111,22 @@ The script refuses to run when the checkout is not `/opt/optio-new`, unless `OPT
 
 If `up --build` fails before containers are replaced, the previous containers keep running. If they were replaced and are unhealthy, check out the previous SHA and run the compose command in step 3 again.
 
+## Intake to a pull request
+
+`orchestrator` and `eve-runner` receive `CURSOR_API_KEY`, `OPTIO_NEW_GITHUB_TOKEN`, `MODEL_API_KEY`, and `MODEL_ENDPOINT` from the sops env file. `OPTIO_NEW_GITHUB_REPO` is `owner/repo`. The orchestrator mounts the checkout at `/opt/optio-new` and keeps worktrees on the `optio_new_worktrees` volume. Both services run as root so git can register worktrees on that checkout.
+
+Planner steps run the Cursor coding agent when `CURSOR_API_KEY` is set. `createEnvModelAdapter` performs no HTTP. With the Cursor key absent, planner throws `StageCredentialsError` when `MODEL_API_KEY` or `MODEL_ENDPOINT` is empty, and also when both are set, because that adapter has no HTTP client.
+
+The image includes `git`. Install the Cursor CLI on the host (or in the image PATH) and set `CURSOR_AGENT_BIN` when the binary is not named `agent`. A missing binary fails the coding step with `cli_not_found`.
+
+```bash
+cd /opt/optio-new
+bash scripts/secrets.sh compose --profile orchestrator up -d --build orchestrator
+INTAKE_PR_E2E=1 bash scripts/secrets.sh run -- bash scripts/intake-pr-e2e.sh
+```
+
+The script posts intake for a task id `e2e-<time>` and polls GitHub for an open pull request with head `task/e2e-<time>`. It does not print the token. `e2e-` tasks are not merged. Close the pull request and delete the remote branch when you are done.
+
 ## Remaining secrets and DNS
 
 Ciphertext, the age key, and plaintext `.env` stay on the host. See [docs/secrets.md](../docs/secrets.md). Before calling the boot set done:
@@ -122,7 +138,9 @@ Ciphertext, the age key, and plaintext `.env` stay on the host. See [docs/secret
 - [ ] `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` are set if LiteLLM should call those providers.
 - [ ] `OPTIO_NEW_GITHUB_TOKEN` and `OPTIO_NEW_GITHUB_WEBHOOK_SECRET` are set when PR and CI signals are required.
 - [ ] `OPTIO_NEW_INTAKE_WEBHOOK_SECRET` is set before `POST /webhooks/intake` should enqueue. IP HTTP mode does not need `OPTIO_NEW_ACME_EMAIL`.
-- [ ] `CURSOR_API_KEY` is set when the Cursor adapter runs on the box.
+- [ ] `CURSOR_API_KEY` is set when the Cursor adapter runs on the box. Compose passes it into `orchestrator` and `eve-runner`.
+- [ ] `MODEL_API_KEY` and `MODEL_ENDPOINT` are present in the same env file. Planner still needs `CURSOR_API_KEY`; the env model adapter performs no HTTP.
+- [ ] `OPTIO_NEW_GITHUB_REPO` is `owner/repo` before intake should open a pull request.
 - [ ] `OPTIO_NEW_BACKUP_REPO` and `OPTIO_NEW_BACKUP_PASSWORD` are set before the Storage Box timer.
 - [ ] `OPTIO_NEW_HARNESS_URL` stays `http://127.0.0.1:3200`. kit-harness has no public name.
 - [ ] DNS: no public record for port `3200`, `3210`, `4000`, `3100`, `5432`, or `6379`.

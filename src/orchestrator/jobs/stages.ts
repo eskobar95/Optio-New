@@ -48,6 +48,10 @@ export type PipelineIdentity = z.infer<typeof PipelineIdentitySchema>;
 
 export const StageJobPayloadSchema = PipelineIdentitySchema.extend({
   stage: z.enum(PIPELINE_STAGES),
+  /** Intake title. Present on jobs enqueued by POST /intake. */
+  title: z.string().min(1).optional(),
+  /** Intake description. Omitted when the brief has none. */
+  description: z.string().optional(),
 });
 
 export type StageJobPayload = z.infer<typeof StageJobPayloadSchema>;
