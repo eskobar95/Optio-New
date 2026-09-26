@@ -101,6 +101,17 @@ export {
   type WorkflowSkillLoaderOptions,
 } from "./orchestrator/skills/index.js";
 export {
+  createEveHttpServer,
+  EveRequestError,
+  EveStepInputSchema,
+  executeCli,
+  runEveStep,
+  startEveHttpServer,
+  type EveStepInput,
+  type EveStepResult,
+} from "./eve/index.js";
+export { runEveStageStep } from "./orchestrator/jobs/stage-worker.js";
+export {
   WorktreeIsolationError,
   WorktreeManager,
   createSkillStageHook,

@@ -20,6 +20,7 @@
     "status": "bash scripts/update-status.sh",
     "kit-harness": "tsc -p tsconfig.kit-harness.json && node dist/main.js",
     "learn-worker": "tsc -p tsconfig.learning-worker.json && node dist/main.js",
+    "eve-runner": "tsc -p tsconfig.eve.json && node dist/src/eve/cli.js",
     "ci": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run smoke"
   },
   "engines": {

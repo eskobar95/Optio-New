@@ -9,5 +9,9 @@ secrets/.env
 *.log
 harness
 specs/harness-working-skills
-.cursor
+.cursor/**
+!.cursor/skills/
+!.cursor/skills/**
+!.cursor/agents/
+!.cursor/agents/**
 .agents

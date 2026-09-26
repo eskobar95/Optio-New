@@ -1,16 +1,22 @@
-# Optio-New Eve runner — intentional stub.
-#
-# agents/{planner,implementation,review,ready,merge}/ are Eve slots
-# (agent.ts policy stub, instructions.md, tools/, skills/ refs).
-# Nothing in this repo starts an Eve session as a process.
-# Intake HTTP and the BullMQ stage graph run in the orchestrator image
-# (Dockerfile.orchestrator). Do not point this service at that server: Compose
-# keeps eve-runner separate, and a second listener on :3100 would collide.
-#
-# Replace the CMD below when an Eve process entrypoint lands in-repo.
-
+# Local eve-runner (HTTP). Not Vercel Workflows.
+# agents/* and specialists/* stay Eve slots. This process loads them, seeds the
+# workflow skill budget via createWorkflowSkillLoader, and runs one CodingAgent step.
+# It does not advance the BullMQ graph.
 FROM node:22-alpine
 WORKDIR /app
-COPY package.json ./
-RUN echo "eve-runner intentional stub — agents/ has no process entrypoint"
-CMD ["node", "-e", "console.log('optio-new eve-runner intentional stub (no process entrypoint in agents/)'); setInterval(()=>{}, 1e9)"]
+COPY package.json package-lock.json tsconfig.json tsconfig.eve.json ./
+ENV HUSKY=0
+RUN npm ci
+COPY src ./src
+COPY agents ./agents
+COPY skills ./skills
+COPY specialists ./specialists
+COPY workflows ./workflows
+COPY .cursor/skills ./.cursor/skills
+COPY .cursor/agents ./.cursor/agents
+RUN npx tsc -p tsconfig.eve.json && npm prune --omit=dev
+ENV EVE_RUNNER_HOST=0.0.0.0
+ENV EVE_RUNNER_PORT=3200
+EXPOSE 3200
+USER node
+CMD ["node", "dist/src/eve/cli.js", "serve"]

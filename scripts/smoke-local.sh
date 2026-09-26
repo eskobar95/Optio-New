@@ -42,6 +42,25 @@ pass "typecheck"
 npm test || fail "vitest"
 pass "vitest"
 
+eve_wt="$(mktemp -d)"
+eve_input="$(mktemp)"
+cat >"$eve_input" <<EOF
+{
+  "taskId": "smoke-eve",
+  "stepId": "implementation",
+  "worktreePath": "${eve_wt}",
+  "agentId": "agents/implementation",
+  "skillBudget": [],
+  "specialistsAllowed": [],
+  "codingBackend": "sandbox"
+}
+EOF
+npx tsc -p tsconfig.eve.json || fail "eve-runner compile"
+eve_out="$(node dist/src/eve/cli.js run --file "$eve_input")" || fail "eve-runner cli"
+node --input-type=module -e 'const r=JSON.parse(process.argv[1]); if (r.graphAdvanced !== false || r.ok !== true) process.exit(1)' "$eve_out" || fail "eve-runner advanced the graph"
+rm -rf "$eve_wt" "$eve_input"
+pass "eve-runner cli"
+
 bash -n "$ROOT/scripts/smoke-compose-mac.sh" || fail "smoke-compose-mac.sh syntax"
 pass "smoke-compose-mac.sh syntax"
 
