@@ -6,11 +6,14 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { z } from "zod";
 import { readToolAudit } from "./audit.js";
 import { checkCompletion } from "./completion-check.js";
+import { runStubbedFlow } from "./flow.js";
 import { detectLoop } from "./loop-detect.js";
 import { routeModel } from "./model-routing.js";
 import { splitOrProceed } from "./split-or-proceed.js";
 import { decideTool } from "./tool-gate.js";
+import { invokeGuardedTool } from "./tool-invoke.js";
 import type { DecisionAdvisor } from "./types.js";
+import { runIsolationProbe } from "./worktree.js";
 
 const BODY_LIMIT_BYTES = 65_536;
 
@@ -75,6 +78,29 @@ const LoopBody = z
       .max(200),
     threshold: z.number().int().min(2).max(50).optional(),
     tool_thrash_threshold: z.number().int().min(2).max(50).optional(),
+  })
+  .strict();
+
+const InvokeBody = z
+  .object({
+    tool: z.string().min(1),
+    timeout_ms: z.number().int().min(10).max(2_000),
+    mode: z.enum(["hang", "ok"]),
+    context: z
+      .object({
+        path: z.string().optional(),
+        command: z.string().optional(),
+        agent_id: z.string().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+const FlowBody = z
+  .object({
+    task_id: z.string().min(1),
+    title: z.string().min(1),
   })
   .strict();
 
@@ -210,6 +236,9 @@ async function handle(
     "/v1/completion-check",
     "/v1/loop-detect",
     "/v1/split-or-proceed",
+    "/v1/tool-invoke",
+    "/v1/flow",
+    "/v1/worktree-isolation",
   ]);
 
   if (!postRoutes.has(path)) {
@@ -274,6 +303,44 @@ async function handle(
       return;
     }
     sendJson(res, 200, detectLoop(body.data));
+    return;
+  }
+  if (path === "/v1/tool-invoke") {
+    const body = InvokeBody.safeParse(parsed);
+    if (!body.success) {
+      sendJson(res, 400, { error: "invalid_request", issues: issuesFrom(body.error) });
+      return;
+    }
+    const result = await invokeGuardedTool({
+      tool: body.data.tool,
+      context: body.data.context,
+      timeout_ms: body.data.timeout_ms,
+      run: (signal) => {
+        if (body.data.mode === "ok") return Promise.resolve({ ok: true });
+        return new Promise((resolve) => {
+          signal.addEventListener("abort", () => resolve({ aborted: true }));
+        });
+      },
+    });
+    sendJson(res, 200, result);
+    return;
+  }
+  if (path === "/v1/flow") {
+    const body = FlowBody.safeParse(parsed);
+    if (!body.success) {
+      sendJson(res, 400, { error: "invalid_request", issues: issuesFrom(body.error) });
+      return;
+    }
+    sendJson(res, 200, await runStubbedFlow(body.data));
+    return;
+  }
+  if (path === "/v1/worktree-isolation") {
+    const body = z.object({}).strict().safeParse(parsed);
+    if (!body.success) {
+      sendJson(res, 400, { error: "invalid_request", issues: issuesFrom(body.error) });
+      return;
+    }
+    sendJson(res, 200, runIsolationProbe());
     return;
   }
 

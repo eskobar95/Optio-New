@@ -2,11 +2,20 @@ export { clearToolAllowances, reserveToolAllowance } from "./allowance.js";
 export { clearToolAudit, readToolAudit, recordDeniedTool, type ToolAuditEntry } from "./audit.js";
 export { consultAdvisor, confidentChoice } from "./advisor.js";
 export { checkCompletion } from "./completion-check.js";
+export { FLOW_STAGES, runStubbedFlow, type FlowResult, type FlowStage } from "./flow.js";
 export { detectLoop } from "./loop-detect.js";
 export { createModelRouter, routeModel } from "./model-routing.js";
 export { createKitHarnessServer, resolveListen } from "./server.js";
 export { splitOrProceed } from "./split-or-proceed.js";
 export { decideTool } from "./tool-gate.js";
+export { invokeGuardedTool, type ToolInvokeResult } from "./tool-invoke.js";
+export {
+  createWorktree,
+  runIsolationProbe,
+  writeScoped,
+  type IsolationProbe,
+  type Worktree,
+} from "./worktree.js";
 export {
   ADVISOR_CONFIDENCE_MIN,
   normalizeToken,

@@ -75,9 +75,29 @@ function isSecret(text: string): boolean {
     /(^|[/\s])credentials\.json\b/m.test(normalized) ||
     /(^|[/\s])\.ssh\//m.test(normalized) ||
     /\.pem\b/m.test(normalized) ||
+    /(^|\/)api[-_]?keys?\.(json|txt|env|yml|yaml)$/im.test(normalized) ||
     /\bprintenv\b/.test(normalized) ||
     /\bexport\s+-p\b/.test(normalized)
   );
+}
+
+const SELF_CONFIG_PATH =
+  /(^|[/\s])AGENTS\.md\b|(^|[/\s])docker-compose\.yml\b|(^|[/\s])Dockerfile\.kit-harness\b|(^|[/\s])tsconfig\.kit-harness\.json\b|(^|\/)src\/kit-harness(\/|$)|(^|\/)\.cursor(\/|$)|(^|\/)workflows(\/|$)/im;
+
+function isSelfConfigMutation(tool: string, context: ToolContext): boolean {
+  const candidates = [context.path ?? "", context.command ?? ""];
+  const args = context.args ?? {};
+  for (const key of ["path", "file", "filename", "target"]) {
+    const value = args[key];
+    if (typeof value === "string") candidates.push(value);
+  }
+  const hit = candidates.some(
+    (value) => value.length > 0 && SELF_CONFIG_PATH.test(value.replace(/\\/g, "/")),
+  );
+  if (!hit) return false;
+  if (tool === "edit_file" || tool === "write_file" || tool === "delete_file") return true;
+  if (tool === "shell" || tool === "bash") return />>?|\btee\b|\bsed\b/.test(candidates.join("\n"));
+  return false;
 }
 
 function isDestructive(text: string): boolean {
@@ -135,6 +155,7 @@ async function evaluateTool(
   if (HARD_DENY_TOOLS.has(name)) return ruled("deny", "hard_deny_tool", true);
   if (isSecret(text)) return ruled("deny", "hard_deny_secret", true);
   if (isDestructive(text)) return ruled("deny", "hard_deny_destructive", true);
+  if (isSelfConfigMutation(name, context)) return ruled("deny", "self_config_mutation", true);
 
   if (context.allowed_tools) {
     const allowed = new Set(context.allowed_tools.map(normalizeToken));

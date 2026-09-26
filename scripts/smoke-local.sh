@@ -118,6 +118,46 @@ smoke_kit_harness() {
   grep -q 'tool_allowance_exceeded' "${log}" || fail "scenario 3 structured log missing allowance deny"
   pass "scenario 3 tool allowance exceeded"
 
+  local secret selfcfg hung flow isolated
+  secret="$(curl -sf "${base}/v1/tool-gate" -H 'content-type: application/json' \
+    -d '{"tool":"read_file","context":{"path":".env","agent_id":"smoke"}}')" \
+    || { cat "${log}" >&2 || true; fail "scenario 4 request"; }
+  echo "${secret}" | grep -q '"decision":"deny"' || fail "scenario 4 not denied"
+  echo "${secret}" | grep -q '"reason":"hard_deny_secret"' || fail "scenario 4 reason"
+  audit="$(curl -sf "${base}/v1/audit")" || { cat "${log}" >&2 || true; fail "scenario 4 audit"; }
+  echo "${audit}" | grep -q 'hard_deny_secret' || fail "scenario 4 audit missing secret deny"
+  grep -q 'hard_deny_secret' "${log}" || fail "scenario 4 structured log missing secret deny"
+  pass "scenario 4 secret read"
+
+  selfcfg="$(curl -sf "${base}/v1/tool-gate" -H 'content-type: application/json' \
+    -d '{"tool":"edit_file","context":{"path":"AGENTS.md","agent_id":"smoke"}}')" \
+    || { cat "${log}" >&2 || true; fail "scenario 5 request"; }
+  echo "${selfcfg}" | grep -q '"decision":"deny"' || fail "scenario 5 not denied"
+  echo "${selfcfg}" | grep -q '"reason":"self_config_mutation"' || fail "scenario 5 reason"
+  grep -q 'self_config_mutation' "${log}" || fail "scenario 5 structured log missing"
+  pass "scenario 5 self-config mutation"
+
+  hung="$(curl -sf "${base}/v1/tool-invoke" -H 'content-type: application/json' \
+    -d '{"tool":"read_file","timeout_ms":40,"mode":"hang","context":{"path":"src/app.ts"}}')" \
+    || { cat "${log}" >&2 || true; fail "scenario 6 request"; }
+  echo "${hung}" | grep -q '"status":"cancel"' || fail "scenario 6 status"
+  echo "${hung}" | grep -q '"reason":"tool_timeout"' || fail "scenario 6 reason"
+  grep -q '"event":"tool_timeout"' "${log}" || fail "scenario 6 structured log missing"
+  pass "scenario 6 hung tool timeout"
+
+  flow="$(curl -sf "${base}/v1/flow" -H 'content-type: application/json' \
+    -d '{"task_id":"t-smoke","title":"stub a change"}')" \
+    || { cat "${log}" >&2 || true; fail "scenario 7 request"; }
+  node -e 'const s=JSON.parse(process.argv[1]); const want=["intake","worktree","implementation","review","pr"]; if(!s.ok||JSON.stringify(s.stages)!==JSON.stringify(want)||s.pr.ready!==true) process.exit(1)' \
+    "${flow}" || fail "scenario 7 stages"
+  pass "scenario 7 end-to-end flow"
+
+  isolated="$(curl -sf "${base}/v1/worktree-isolation" -H 'content-type: application/json' -d '{}')" \
+    || { cat "${log}" >&2 || true; fail "scenario 8 request"; }
+  node -e 'const s=JSON.parse(process.argv[1]); if(!s.isolated||s.agent_a["note.txt"]!=="alpha"||s.agent_b["note.txt"]!=="beta") process.exit(1)' \
+    "${isolated}" || fail "scenario 8 isolation"
+  pass "scenario 8 worktree isolation"
+
   cleanup
   trap - EXIT
 }
