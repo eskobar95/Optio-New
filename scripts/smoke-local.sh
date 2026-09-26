@@ -25,6 +25,9 @@ pass "typecheck"
 npm test || fail "vitest"
 pass "vitest"
 
+npx vitest run tests/security-gates.test.ts || fail "security gates"
+pass "security gates (secrets deny, config lock, tool timeout)"
+
 if command -v docker >/dev/null 2>&1; then
   if docker compose version >/dev/null 2>&1; then
     docker compose config >/dev/null || fail "docker compose config"
