@@ -42,7 +42,7 @@ describe("laya compose profile", () => {
     );
     expect(harness).toContain('profiles: ["harness"]');
     expect(compose).toContain('profiles: ["full", "orchestrator"]');
-    expect(compose).toContain('profiles: ["full"]');
+    expect(compose).toContain('profiles: ["full", "eve"]');
   });
 
   it("documents that the profile is off and that NVIDIA is not required", () => {
