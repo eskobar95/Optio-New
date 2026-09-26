@@ -44,6 +44,33 @@ export {
 } from "./orchestrator/intake/index.js";
 export { processHelloWorld } from "./orchestrator/jobs/hello-world.js";
 export {
+  createPathWorkspacePort,
+  createSessionGate,
+  DEFAULT_SESSION_CONCURRENCY,
+  InMemorySessionTelemetry,
+  loadSessionConcurrencyConfig,
+  readSessionFile,
+  SessionConcurrencyConfigSchema,
+  SessionGateError,
+  SESSION_QUEUE_DEPTH_METRIC,
+  SESSION_QUEUE_SPAN,
+  workspacePortFromWorktreeManager,
+  WorktreeAlreadyExistsError,
+  writeSessionFile,
+  type CodingProvider,
+  type SessionAcquireRequest,
+  type SessionAcquireResult,
+  type SessionConcurrencyConfig,
+  type SessionConcurrencySnapshot,
+  type SessionGate,
+  type SessionLease,
+  type SessionQueueTicket,
+  type SessionTelemetry,
+  type SessionWorkspace,
+  type SessionWorkspacePort,
+  type WorktreeManagerLike,
+} from "./orchestrator/sessions/index.js";
+export {
   PIPELINE_JOB_ATTEMPTS,
   PIPELINE_STAGES,
   STAGE_QUEUES,

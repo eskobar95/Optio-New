@@ -14,6 +14,8 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `orchestrator/jobs/`                                  | §11, §12, §14.0   | BullMQ stage graph; runnable TS in `src/orchestrator/jobs/`               |
 | `state/migrations/001_pipeline_step_cursor.sql`       | §11, §14.0        | Postgres step cursor for crash resume                                     |
 | `orchestrator/worktrees/`                             | §7, §6.5          | Worktree lifecycle keyed by task id                                       |
+| `orchestrator/sessions/`                              | §13.5             | Concurrency caps; workspace port plugs into worktrees                     |
+| `src/orchestrator/sessions/`                          | §13.5             | Session gate, overflow, queue-depth telemetry                             |
 | `orchestrator/jev/`                                   | §9, §14.3         | Decision client; Vercel AI Gateway base URL                               |
 | `orchestrator/learning/`                              | §10               | Failure fingerprints → meta-tasks                                         |
 | `orchestrator/telemetry/`                             | §12.1–§12.4       | OTel helpers, canonical spans                                             |

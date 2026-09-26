@@ -444,18 +444,19 @@ Route orchestrator, webhook, BullMQ worker, and host metrics here. Keep LLM/agen
 
 Bake these span (or observation) names in from the start. Every span **must** carry attributes `task_id` and `worktree_id` (empty string only when not yet created / already removed):
 
-| Span name         | Emitted when                                               |
-| ----------------- | ---------------------------------------------------------- |
-| `workflow.step`   | A workflow step starts / ends (planner, implementation, …) |
-| `agent.run`       | An Eve agent session runs for a step                       |
-| `specialist.call` | A specialist subagent is invoked                           |
-| `skill.load`      | A skill is loaded into context                             |
-| `jev.decision`    | A Jev routing / tool-gate / completion / review decision   |
-| `worktree.create` | Worktree created for an issue                              |
-| `worktree.remove` | Worktree deleted after merge (or abort cleanup)            |
-| `intake.webhook`  | Inbound New Bot / CI intake (or related) webhook handled   |
-| `gate.pass`       | An entry/exit gate succeeds                                |
-| `gate.fail`       | An entry/exit gate fails                                   |
+| Span name         | Emitted when                                                                                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `workflow.step`   | A workflow step starts / ends (planner, implementation, …)                                                                                                         |
+| `agent.run`       | An Eve agent session runs for a step                                                                                                                               |
+| `specialist.call` | A specialist subagent is invoked                                                                                                                                   |
+| `skill.load`      | A skill is loaded into context                                                                                                                                     |
+| `jev.decision`    | A Jev routing / tool-gate / completion / review decision                                                                                                           |
+| `worktree.create` | Worktree created for an issue                                                                                                                                      |
+| `worktree.remove` | Worktree deleted after merge (or abort cleanup)                                                                                                                    |
+| `intake.webhook`  | Inbound New Bot / CI intake (or related) webhook handled                                                                                                           |
+| `gate.pass`       | An entry/exit gate succeeds                                                                                                                                        |
+| `gate.fail`       | An entry/exit gate fails                                                                                                                                           |
+| `session.queue`   | A coding-session slot is granted, queued, rejected, released, or cancelled. Attribute `queue_depth` is the per-provider wait gauge (metric `session.queue_depth`). |
 
 Recommended extra attributes (where applicable): `workflow_id`, `step_id`, `agent_id`, `specialist_id`, `skill_id`, `jev_question`, `gate_id`, `error_class`, `fingerprint`.
 
@@ -576,6 +577,8 @@ Budgets: soft warn in Langfuse/SigNoz; hard stop when step or daily USD/token ca
 | Isolation                | One coding-adapter process per worktree run; no shared cwd                 |
 
 Exhausted quotas surface as `rate_limited` → BullMQ retry with delay or New Bot elicitation if SLA exceeded — not a silent hang.
+
+The semaphore lives in `src/orchestrator/sessions` (`createSessionGate`). Caps: `OPTIO_NEW_CURSOR_MAX_CONCURRENCY` (N) and `OPTIO_NEW_CODEX_MAX_CONCURRENCY` (M). Overflow: `OPTIO_NEW_SESSION_OVERFLOW` = `queue` (oldest `enqueuedAt` first) or `reject` (`codingAgentStatus: rate_limited`, nothing queued). A granted session holds one `SessionWorkspacePort` claim. The worktree manager (SPEC §7) plugs in via `workspacePortFromWorktreeManager`; `release` drops the claim and does not reap. Queue depth is span `session.queue` plus gauge `session.queue_depth` (both carry `task_id` and `worktree_id`).
 
 ### 13.6 Practical VPS concerns for coding CLIs
 
