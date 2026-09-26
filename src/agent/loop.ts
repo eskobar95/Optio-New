@@ -3,11 +3,16 @@
  *
  * Order is fixed: resolve skills, call the adapter, then run hard security gates
  * before any tool effect. A decision sidecar cannot override a deny.
+ * `load_skill` outside `activeSkillBudget` is a hard deny (`skill_budget`).
  * See `skills.ts` and AGENTS.md ("Request-response loop") for which installed
  * skills load. Caveman stays opt-in. This module does not own BullMQ, worktrees, or keys.
  */
 
 import { guardToolCall } from "../harness/gates/guard.js";
+import {
+  createWorkflowSkillLoader,
+  type WorkflowSkillLoader,
+} from "../orchestrator/skills/loader.js";
 import type {
   AuditSink,
   DecisionSidecar,
@@ -58,6 +63,13 @@ export interface AgentLoopInput {
   /** Opt-in Caveman brevity skill. Default off. `/caveman off` wins. */
   caveman?: boolean;
   skillBudget?: SkillBudget;
+  /**
+   * Workflow allow-list for the `load_skill` tool. Ids outside this list are
+   * hard-denied by the harness gate. Omitted means the tool may load nothing.
+   */
+  activeSkillBudget?: readonly string[];
+  /** Defaults to the control-plane SkillLoader (`createWorkflowSkillLoader`). */
+  workflowSkills?: WorkflowSkillLoader;
   tools?: AgentToolRuntime;
   taskId?: string;
   worktreeId?: string;
@@ -102,25 +114,34 @@ export async function runAgentLoop(
   }
   const response = await adapter.complete({ prompt: input.prompt, skills });
   const toolCalls = response.toolCalls;
-  if (!input.tools || !toolCalls || toolCalls.length === 0) {
+  const tools = input.tools;
+  if (!tools || !toolCalls || toolCalls.length === 0) {
     return { text: response.text };
   }
 
   const toolResults: GuardedToolResult[] = [];
+  const activeSkillBudget = input.activeSkillBudget ?? [];
+  const workflowSkills = input.workflowSkills ?? createWorkflowSkillLoader();
   for (const call of toolCalls) {
     toolResults.push(
       await guardToolCall({
         request: {
           ...call,
-          worktreeRoot: input.tools.worktreeRoot,
-          taskId: input.tools.taskId,
-          stepId: input.tools.stepId,
+          worktreeRoot: tools.worktreeRoot,
+          taskId: tools.taskId,
+          stepId: tools.stepId,
+          skillBudget: activeSkillBudget,
         },
-        execute: input.tools.execute,
-        audit: input.tools.audit,
-        sidecar: input.tools.sidecar,
-        timeoutMs: input.tools.timeoutMs,
-        now: input.tools.now,
+        execute: async (gated, signal) => {
+          if (gated.tool === "load_skill") {
+            return workflowSkills.loadSkill(gated.skillId ?? "", activeSkillBudget);
+          }
+          return tools.execute(gated, signal);
+        },
+        audit: tools.audit,
+        sidecar: tools.sidecar,
+        timeoutMs: tools.timeoutMs,
+        now: tools.now,
         tracer: input.tracer,
       }),
     );

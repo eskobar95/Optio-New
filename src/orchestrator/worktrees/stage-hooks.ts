@@ -4,13 +4,20 @@
  * Implement prepares the checkout before `invoke_implementation`.
  * Merge failure calls `reap({ merged: false })` (retain unless configured otherwise).
  * `record_cleanup` calls `reap({ merged: true })` after the branch merge step succeeds.
+ *
+ * Skill seed/reap is {@link createSkillStageHook}, passed as `WorktreeManager`'s
+ * `skillStageHook`. Create seeds when `stepId` is set; delete reaps `.agents/skills`.
  */
-import type { WorktreeLifecycle } from "./manager.js";
+import type { WorkflowSkillLoader } from "../skills/loader.js";
+import type { WorktreeLifecycle, WorktreeSkillStageHook } from "./manager.js";
 
 export interface WorktreeStageStep {
   taskId: string;
   stage: string;
   step: string;
+  /** Workflow step whose skill budget is seeded into the new worktree. */
+  workflowStepId?: string;
+  plannerSelection?: readonly string[];
 }
 
 export interface WorktreeStageStepRunner<T extends WorktreeStageStep = WorktreeStageStep> {
@@ -28,7 +35,10 @@ export function createWorktreeStageHandler<T extends WorktreeStageStep>(
   return {
     async run(ctx) {
       if (ctx.stage === "implement" && ctx.step === IMPLEMENT_CREATE_STEP) {
-        await worktrees.create(ctx.taskId);
+        await worktrees.create(ctx.taskId, {
+          stepId: ctx.workflowStepId,
+          plannerSelection: ctx.plannerSelection,
+        });
       }
       try {
         await inner.run(ctx);
@@ -41,6 +51,23 @@ export function createWorktreeStageHandler<T extends WorktreeStageStep>(
       if (ctx.stage === "merge" && ctx.step === MERGE_CLEANUP_STEP) {
         await worktrees.reap(ctx.taskId, { merged: true });
       }
+    },
+  };
+}
+
+/** Default skill stage hook: seed the step allow-list, reap it on delete. */
+export function createSkillStageHook(loader: WorkflowSkillLoader): WorktreeSkillStageHook {
+  return {
+    async onCreate(ctx) {
+      if (!ctx.stepId) return;
+      const allowList = await loader.computeAllowList({
+        stepId: ctx.stepId,
+        plannerSelection: ctx.plannerSelection,
+      });
+      await loader.seed(ctx.worktreePath, allowList);
+    },
+    async onDelete(ctx) {
+      await loader.reap(ctx.worktreePath);
     },
   };
 }

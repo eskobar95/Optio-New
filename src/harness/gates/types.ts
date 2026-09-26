@@ -7,7 +7,8 @@
 
 export type ToolAction = "read" | "write" | "exec";
 
-export type GateId = "secrets" | "config_lock" | "tool_timeout" | "sidecar" | "none";
+export type GateId =
+  "secrets" | "config_lock" | "tool_timeout" | "sidecar" | "skill_budget" | "none";
 
 export type GateVerdict = "allow" | "deny";
 
@@ -17,12 +18,19 @@ export interface ModelToolCall {
   action: ToolAction;
   path?: string;
   command?: string;
+  /** Harness skill id (`skills/…`) for the `load_skill` tool. */
+  skillId?: string;
 }
 
 export interface ToolCallRequest extends ModelToolCall {
   worktreeRoot?: string;
   taskId?: string;
   stepId?: string;
+  /**
+   * Active skill budget. `load_skill` for an id outside this list is a hard deny.
+   * An omitted budget allows nothing.
+   */
+  skillBudget?: readonly string[];
 }
 
 export interface GateDecision {

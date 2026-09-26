@@ -29,6 +29,20 @@ export class WorktreeIsolationError extends Error {
   }
 }
 
+/** Skill materialization around worktree create and delete. */
+export interface WorktreeSkillStageContext {
+  taskId: string;
+  worktreePath: string;
+  /** Workflow step id. Present on create. */
+  stepId?: string;
+  plannerSelection?: readonly string[];
+}
+
+export interface WorktreeSkillStageHook {
+  onCreate(ctx: WorktreeSkillStageContext): Promise<void>;
+  onDelete(ctx: WorktreeSkillStageContext): Promise<void>;
+}
+
 export interface WorktreeManagerOptions {
   /** Directory that holds `wt-<task>` checkouts. */
   root: string;
@@ -38,10 +52,18 @@ export interface WorktreeManagerOptions {
   baseBranch?: string;
   /** Keep the checkout when merge did not succeed. Default true. */
   retainOnFailure?: boolean;
+  /**
+   * Seeds allowed skills after create and reaps `.agents/skills` before delete.
+   * Omitted: worktree lifecycle is unchanged.
+   */
+  skillStageHook?: WorktreeSkillStageHook;
 }
 
 export interface CreateWorktreeOptions {
   slug?: string;
+  /** When set with `skillStageHook`, seed this workflow step's allow-list. */
+  stepId?: string;
+  plannerSelection?: readonly string[];
 }
 
 export interface WorktreeHandle {
@@ -180,6 +202,7 @@ export class WorktreeManager implements WorktreeLifecycle {
   private readonly repoPath: string;
   private readonly baseBranch: string;
   private readonly retainOnFailure: boolean;
+  private readonly skillStageHook: WorktreeSkillStageHook | undefined;
 
   constructor(options: WorktreeManagerOptions) {
     if (!options.root.trim()) throw new Error("worktree root is required");
@@ -188,6 +211,7 @@ export class WorktreeManager implements WorktreeLifecycle {
     this.repoPath = path.resolve(options.repoPath);
     this.baseBranch = options.baseBranch?.trim() || "development";
     this.retainOnFailure = options.retainOnFailure ?? true;
+    this.skillStageHook = options.skillStageHook;
   }
 
   async create(taskId: string, options?: CreateWorktreeOptions): Promise<WorktreeHandle> {
@@ -202,6 +226,7 @@ export class WorktreeManager implements WorktreeLifecycle {
         );
       }
       if (existing && (await exists(layout.path))) {
+        await this.seedSkills(taskId, layout.path, options);
         return {
           taskId,
           path: layout.path,
@@ -224,6 +249,7 @@ export class WorktreeManager implements WorktreeLifecycle {
 
       try {
         await git(layout.path, ["sparse-checkout", "set", "--no-cone", "/*", ...SOT_EXCLUDES]);
+        await this.seedSkills(taskId, layout.path, options);
       } catch (error) {
         await git(this.repoPath, ["worktree", "remove", "--force", layout.path]).catch(
           () => undefined,
@@ -293,6 +319,7 @@ export class WorktreeManager implements WorktreeLifecycle {
         return { taskId, action: "retained", path: layout.path, reason: "failure" };
       }
       if (present) {
+        await this.skillStageHook?.onDelete({ taskId, worktreePath: layout.path });
         await git(this.repoPath, ["worktree", "remove", "--force", layout.path]);
         await this.deleteBranch(existing?.branch ?? layout.branch);
       }
@@ -303,6 +330,20 @@ export class WorktreeManager implements WorktreeLifecycle {
         path: layout.path,
         reason: outcome.merged ? "merged" : "failure",
       };
+    });
+  }
+
+  private async seedSkills(
+    taskId: string,
+    worktreePath: string,
+    options?: CreateWorktreeOptions,
+  ): Promise<void> {
+    if (!this.skillStageHook || !options?.stepId) return;
+    await this.skillStageHook.onCreate({
+      taskId,
+      worktreePath,
+      stepId: options.stepId,
+      plannerSelection: options.plannerSelection,
     });
   }
 
