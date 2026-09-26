@@ -46,7 +46,6 @@ export {
   handleIntakeRequest,
   handleSlackWebhook,
   IntakeTaskSchema,
-  redactSecrets,
   signIntakeWebhookBody,
   signSlackBody,
   type BotIntakeCreated,
