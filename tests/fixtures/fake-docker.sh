@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Test double for scripts/smoke-compose-mac.sh. Not a Docker CLI.
+IFS=$' \t\n'
 set -euo pipefail
 
 if [[ -n "${FAKE_DOCKER_LOG:-}" ]]; then

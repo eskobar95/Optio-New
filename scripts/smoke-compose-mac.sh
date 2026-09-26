@@ -15,6 +15,8 @@
 # Requires the Docker Compose v2 CLI (`docker compose`). Up/down also needs
 # a running Docker daemon and `curl`. `--config-only` does not start the daemon.
 # CI syntax-checks this file and runs `--config-only` when the CLI is present.
+# `command` skips a shell function named docker or curl so the PATH entry wins.
+IFS=$' \t\n'
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -56,7 +58,13 @@ info() { echo "[smoke-compose] $*"; }
 has_service() {
   local name="$1"
   local list="$2"
-  printf '%s\n' "$list" | grep -qx "$name"
+  local line
+  # A pipe into `grep -q` can return 141 under pipefail when grep exits early,
+  # which the caller treats as "service missing" and aborts before up/down.
+  while IFS= read -r line; do
+    [[ "$line" == "$name" ]] && return 0
+  done <<<"$list"
+  return 1
 }
 
 env_get() {
@@ -111,23 +119,27 @@ if [[ -z "$PG_DB" ]]; then
 fi
 
 compose() {
-  docker compose --env-file "$ENV_FILE" -p "$PROJECT" "$@"
+  command docker compose --env-file "$ENV_FILE" -p "$PROJECT" "$@"
 }
 
 cleanup() {
   local status=$?
-  if [[ "$started" == "1" && "$KEEP" != "1" ]]; then
-    docker compose --env-file "$ENV_FILE" -p "$PROJECT" down -v --remove-orphans >/dev/null 2>&1 || true
+  # Drop the trap and errexit so a cleanup failure cannot replace status 0.
+  trap - EXIT
+  set +e
+  set +u
+  if [[ "${started:-0}" == "1" && "${KEEP:-0}" != "1" ]]; then
+    command docker compose --env-file "${ENV_FILE:-.env.example}" -p "${PROJECT:-optio-new-mac-smoke}" down -v --remove-orphans >/dev/null 2>&1 || true
   fi
-  if [[ -n "$CONFIG_OUT" ]]; then
-    rm -f "$CONFIG_OUT"
+  if [[ -n "${CONFIG_OUT:-}" ]]; then
+    rm -f "$CONFIG_OUT" || true
   fi
   exit "$status"
 }
 trap cleanup EXIT
 
-command -v docker >/dev/null 2>&1 || fail "docker not found. Install Docker Engine or Docker Desktop and start the daemon."
-docker compose version >/dev/null 2>&1 || fail "docker compose plugin not available. Install Compose v2 (the docker compose command)."
+type -P docker >/dev/null 2>&1 || fail "docker not found. Install Docker Engine or Docker Desktop and start the daemon."
+command docker compose version >/dev/null 2>&1 || fail "docker compose plugin not available. Install Compose v2 (the docker compose command)."
 
 CONFIG_OUT="$(mktemp "${TMPDIR:-/tmp}/optio-new-compose-smoke.XXXXXX")"
 chmod 600 "$CONFIG_OUT"
@@ -178,8 +190,8 @@ if [[ "$CONFIG_ONLY" == "1" ]]; then
   exit 0
 fi
 
-docker info >/dev/null 2>&1 || fail "Docker daemon is not reachable. Start Docker Engine or Docker Desktop and wait until the daemon is running."
-command -v curl >/dev/null 2>&1 || fail "curl not found (needed for the LiteLLM liveliness check)"
+command docker info >/dev/null 2>&1 || fail "Docker daemon is not reachable. Start Docker Engine or Docker Desktop and wait until the daemon is running."
+type -P curl >/dev/null 2>&1 || fail "curl not found (needed for the LiteLLM liveliness check)"
 
 info "compose up redis postgres litellm (project ${PROJECT})"
 started=1
@@ -206,9 +218,9 @@ while [[ "$SECONDS" -lt "$deadline" ]]; do
     fi
   fi
   if [[ "$llm_ok" != "1" ]]; then
-    code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:${LITELLM_PORT}/health/liveliness" || true)"
+    code="$(command curl -sS -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:${LITELLM_PORT}/health/liveliness" || true)"
     if [[ "$code" != "200" ]]; then
-      code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:${LITELLM_PORT}/health/liveness" || true)"
+      code="$(command curl -sS -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:${LITELLM_PORT}/health/liveness" || true)"
     fi
     if [[ "$code" == "200" ]]; then
       llm_ok=1
