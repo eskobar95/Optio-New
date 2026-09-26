@@ -7,3 +7,8 @@ export {
   type IntakeHttpRequest,
   type IntakeServerOptions,
 } from "./http.js";
+export {
+  INTAKE_WEBHOOK_PATH,
+  INTAKE_WEBHOOK_SIGNATURE_HEADER,
+  signIntakeWebhookBody,
+} from "./webhook-auth.js";

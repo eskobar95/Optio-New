@@ -62,6 +62,7 @@ services:
         condition: service_healthy
     environment:
       ORCHESTRATOR_PORT: "3100"
+      OPTIO_NEW_INTAKE_WEBHOOK_SECRET: ${OPTIO_NEW_INTAKE_WEBHOOK_SECRET:-}
       OPTIO_NEW_REDIS_URL: redis://redis:6379
       OPTIO_NEW_DATABASE_URL: postgres://${OPTIO_NEW_POSTGRES_USER:-optio}:${OPTIO_NEW_POSTGRES_PASSWORD:-changeme}@postgres:5432/${OPTIO_NEW_POSTGRES_DB:-optio_new}
       JEV_BASE_URL: ${JEV_BASE_URL:-https://ai-gateway.vercel.sh}
@@ -254,9 +255,15 @@ services:
   #   # image: signoz/signoz:latest
   #   profiles: ["observability"]
 
+  # Optional TLS edge for POST /webhooks/intake. Off unless `--profile edge`.
+  # Orchestrator stays on 127.0.0.1:3100. See docs/ops/caddy-tls-edge.md.
   caddy:
     image: caddy:2-alpine
+    profiles: ["edge"]
     restart: unless-stopped
+    environment:
+      OPTIO_NEW_WEBHOOK_HOST: ${OPTIO_NEW_WEBHOOK_HOST:-localhost}
+      OPTIO_NEW_ACME_EMAIL: ${OPTIO_NEW_ACME_EMAIL:-tls-edge@localhost.invalid}
     ports:
       - "80:80"
       - "443:443"
@@ -264,7 +271,6 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - optio_new_caddy_data:/data
       - optio_new_caddy_config:/config
-    profiles: ["edge"]
 
   # Placeholder only (profile: caveman). Does not install or run the BSL engine.
   # Host enable path: caveman setup --install, then

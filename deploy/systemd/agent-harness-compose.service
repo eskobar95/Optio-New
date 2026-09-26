@@ -2,7 +2,8 @@
 # Install one of them, not both. Decrypt path: docs/secrets.md.
 #   sudo cp deploy/systemd/agent-harness-compose.service /etc/systemd/system/optio-new-compose.service
 # The helper decrypts to a mode-0600 tmpfs file. Do not add EnvironmentFile.
-# COMPOSE_PROFILES matches optio-new-compose.service. See deploy/README.md.
+# COMPOSE_PROFILES matches optio-new-compose.service. Profile edge stays off.
+# Optional drop-in: docs/ops/caddy-tls-edge.md. See deploy/README.md.
 
 [Unit]
 Description=Optio-New Docker Compose stack (litellm, harness, orchestrator)

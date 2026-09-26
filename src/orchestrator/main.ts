@@ -62,6 +62,7 @@ export async function startOrchestrator(): Promise<void> {
       add: (job) => flow.add(job),
     },
     readPlanStage: (taskId, sessionId) => readPlanStage(cursors, taskId, sessionId),
+    webhookSecret: process.env.OPTIO_NEW_INTAKE_WEBHOOK_SECRET,
     checkRedis: async () => {
       try {
         return (await redis.ping()) === "PONG";

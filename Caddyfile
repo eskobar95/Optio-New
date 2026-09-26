@@ -1,11 +1,23 @@
-# Optio-New — TLS webhook edge (SPEC §12.5)
-# Replace {$OPTIO_NEW_WEBHOOK_HOST} with your public hostname.
+# Optio-New example TLS edge (SPEC §12.5). Safe to commit: no real host or mailbox.
+# Compose profile `edge` only. Local/dev stays loopback HTTP on 127.0.0.1:3100.
+# Set OPTIO_NEW_WEBHOOK_HOST and OPTIO_NEW_ACME_EMAIL in the host env (sops).
+# See docs/ops/caddy-tls-edge.md.
+
+{
+	email {$OPTIO_NEW_ACME_EMAIL:tls-edge@localhost.invalid}
+}
 
 {$OPTIO_NEW_WEBHOOK_HOST:localhost} {
-	# Intake webhook (optional) for New Bot / CI + GitHub webhooks
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	# Signed intake only. Do not add a route for POST /intake.
 	handle /webhooks/* {
 		reverse_proxy orchestrator:3100
 	}
 
-	respond /healthz 200
+	handle {
+		respond "not found" 404
+	}
 }

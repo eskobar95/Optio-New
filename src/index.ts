@@ -33,10 +33,13 @@ export {
 export { createEnvModelAdapter, readModelEnv, type ModelEnvConfig } from "./agent/env-adapter.js";
 export {
   IntakeHttpSchema,
+  INTAKE_WEBHOOK_PATH,
+  INTAKE_WEBHOOK_SIGNATURE_HEADER,
   buildIntakeJob,
   createIntakeServer,
   handleIntakeRequest,
   IntakeTaskSchema,
+  signIntakeWebhookBody,
   type IntakeAccepted,
   type IntakeHttpRequest,
   type IntakeServerOptions,

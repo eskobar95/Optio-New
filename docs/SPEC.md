@@ -318,7 +318,7 @@ Rules:
 - Accept a task payload (title, description, optional repo/branch hints) from New Bot.
 - ACK fast and enqueue BullMQ work; do not block the chat turn on the full pipeline.
 - Surface elicitations, progress, and failures back to New Bot / the human in chat.
-- Optional later: HTTP intake webhook (Caddy `/webhooks/*`) for New Bot / CI with signature verification.
+- Optional public intake: Compose profile `edge` terminates TLS and proxies `POST /webhooks/intake` only. Loopback `POST /intake` on `127.0.0.1:3100` stays the local/dev path. See `docs/ops/caddy-tls-edge.md`.
 
 **Explicitly out (v1):**
 

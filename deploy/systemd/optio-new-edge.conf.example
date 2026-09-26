@@ -1,0 +1,9 @@
+# Optional TLS edge. Not installed by the default unit.
+# Copy to /etc/systemd/system/optio-new-compose.service.d/edge.conf
+# after DNS, OPTIO_NEW_ACME_EMAIL, and OPTIO_NEW_INTAKE_WEBHOOK_SECRET exist.
+# See docs/ops/caddy-tls-edge.md.
+# This replaces COMPOSE_PROFILES. Keep harness and orchestrator in the list.
+# Do not commit a filled-in copy of this file.
+
+[Service]
+Environment=COMPOSE_PROFILES=harness,orchestrator,edge

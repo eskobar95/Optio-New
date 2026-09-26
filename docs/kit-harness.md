@@ -144,7 +144,7 @@ Workers are not clients of the sidecar yet. Until they are, BullMQ and LiteLLM b
 
 The learning worker is a separate Compose profile (`learn`), not part of this sidecar. It fingerprints failures into Postgres and can open GitHub meta-issues. See [learning-worker.md](learning-worker.md). `docker compose --profile learn up -d --build learning-worker` after redis and postgres are up.
 
-Keep port 3200 on loopback and on the Compose network. Do not put it behind Caddy.
+Keep port 3200 on loopback and on the Compose network. Do not put it behind Caddy. Public intake TLS is profile `edge` ([docs/ops/caddy-tls-edge.md](ops/caddy-tls-edge.md)). kit-harness is not on that proxy.
 
 ## Still needed for a Hetzner deploy
 
