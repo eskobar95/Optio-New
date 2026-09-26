@@ -66,4 +66,4 @@ CI (`.github/workflows/ci.yml`) runs the same checks on every push and every PR 
 ## Optional: Caveman (cost / brevity)
 
 - Skills: `.cursor/skills/caveman*` (MIT). Activate with `/caveman`; disable with `/caveman off`. Default **off** — do not force caveman-speak on every agent. `runAgentLoop` follows the same switch and loads only `caveman`, not the other `caveman-*` skills.
-- Local proxy: `CAVEMAN_PROXY_ENABLED` (default `false`). See `src/proxy/README.md`. Do not require Caveman Cloud/Platform in V1.
+- Local proxy: `CAVEMAN_PROXY_ENABLED` (default `false`). Host path is `caveman setup --install` then `CAVEMAN_MODE=compress CAVE_SSRF_ALLOWLIST=127.0.0.1 caveman start`. See `src/proxy/README.md`. Do not vendor the BSL binary. Do not require Caveman Cloud/Platform in V1.

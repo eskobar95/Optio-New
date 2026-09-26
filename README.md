@@ -63,11 +63,16 @@ Postgres backup example: `scripts/backup-postgres-to-storagebox.sh.example`.
 
 ## Optional: Caveman cost-opt
 
-**Opt-in only** (default off). MIT skills from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) live under `.cursor/skills/caveman*`.
+**Opt-in only** (default off). MIT skills from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) live under `.cursor/skills/caveman*`. Full steps: [src/proxy/README.md](src/proxy/README.md).
 
-- **Skill:** in Cursor, `/caveman` (levels: `lite|full|ultra|…`) · `/caveman off` to disable. Not forced on all agents.
-- **Local proxy:** set `CAVEMAN_PROXY_ENABLED=true` and `CAVEMAN_PROXY_URL=http://127.0.0.1:8787` (see `.env.example`). Install runtime separately: `npm i -g @caveman-ai/cli && caveman setup --install && CAVEMAN_MODE=compress caveman start`. Or `docker compose --profile caveman up -d` (stub). Helps: `src/proxy/caveman.ts` / `src/proxy/README.md`.
-- **Skip for V1:** Caveman Platform / Cloud managed gateway — post-V1.
+- **Skill:** in Cursor, `/caveman` (levels: `lite|full|ultra|…`) · `/caveman off` to disable. Not forced on all agents. This does not start the proxy.
+- **Local proxy (no Platform/Cloud, no vendored BSL binary):**
+  1. `npm i -g @caveman-ai/cli && caveman setup --install`
+  2. Merge `gateway/caveman/caveman.yaml.example` into `~/.caveman/caveman.yaml` (LiteLLM at `http://127.0.0.1:4000`).
+  3. `CAVEMAN_MODE=compress CAVE_SSRF_ALLOWLIST=127.0.0.1 caveman start` (listens on `127.0.0.1:8787`).
+  4. Set `CAVEMAN_PROXY_ENABLED=true` (see `.env.example`). Codex `base_url` becomes `http://127.0.0.1:8787/compat/litellm/v1`. With the flag false, Codex stays on LiteLLM `http://127.0.0.1:4000/v1`.
+- **Smoke:** `npm run smoke` probes `/health/live` only when the flag is `true` and `caveman` is on `PATH`. Otherwise it skips. The Compose `caveman` profile is a placeholder and does not run the engine.
+- **Skip for V1:** Caveman Platform / Cloud managed gateway.
 
 ## First issue / Getting started
 
