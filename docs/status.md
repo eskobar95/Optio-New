@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 00:23 UTC
+Last refreshed: 2026-09-26 00:27 UTC
 
 ## Bootstrap progress
 
@@ -24,7 +24,7 @@ Actions: https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml
 
 ## Open issues
 
-Open: 22.
+Open: 20.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
@@ -34,9 +34,7 @@ Tracker: https://github.com/eskobar95/Optio-New/issues
 - #20 [P1] Hetzner deploy: systemd + Compose beside LiteLLM/BullMQ (P1, deploy, infra)
 - #19 [P2] Learning worker: failure fingerprints → meta GitHub issues (P2, enhancement, orchestration)
 - #18 [P1] Postgres backups to Hetzner Storage Box (P1, deploy, infra, security)
-- #17 [P1] Optional Caveman proxy: enable path for Codex cost-opt (P1, cost-opt, enhancement)
 - #16 [P2] Caveman Cloud/Platform evaluation (post-V1 only) (P2, cost-opt, documentation)
-- #15 [P2] docs/status.md automation in CI (refresh open issues + CI badge) (P2, documentation, good first issue, infra)
 - #14 [P2] Optional Laya CPU decision service Compose profile (P2, harness, infra)
 - #13 [P1] Observability: OTel spans + Langfuse/SigNoz wiring (P1, enhancement, infra)
 - #12 [P1] Parallel agent sessions: concurrency caps + isolated worktrees (P1, enhancement, orchestration)
