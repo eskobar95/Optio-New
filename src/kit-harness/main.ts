@@ -1,7 +1,7 @@
 /**
  * Process entry for Compose / `npm run kit-harness`.
  */
-import { formatStageLog } from "../security/redact.js";
+import { formatStageLog } from "./redact.js";
 import { createKitHarnessServer, resolveListen } from "./server.js";
 
 const { host, port } = resolveListen();

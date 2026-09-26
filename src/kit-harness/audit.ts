@@ -2,7 +2,7 @@
  * Process-local audit of denied tool calls.
  * Stdout gets one JSON line per deny. GET /v1/audit returns the same entries.
  */
-import { redactSecrets } from "../security/redact.js";
+import { redactSecrets } from "./redact.js";
 import type { ToolVerdict } from "./types.js";
 
 const MAX_ENTRIES = 100;

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ExportResultCode } from "@opentelemetry/core";
 import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base";
@@ -250,5 +251,14 @@ describe("secret redaction", () => {
   it("leaves ordinary stage text unchanged", () => {
     const plain = "stage plan step invoke_planner task=t-1";
     expect(redactSecrets(plain)).toBe(plain);
+  });
+
+  it("keeps the kit-harness copy identical to the learning-worker helper", () => {
+    const shared = readFileSync(
+      new URL("../src/orchestrator/learning/redact.ts", import.meta.url),
+      "utf8",
+    );
+    const copy = readFileSync(new URL("../src/kit-harness/redact.ts", import.meta.url), "utf8");
+    expect(copy).toBe(shared);
   });
 });

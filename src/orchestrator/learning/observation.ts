@@ -4,7 +4,7 @@
  */
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { redactSecrets } from "../../security/redact.js";
+import { redactSecrets } from "./redact.js";
 
 export const LEARNING_SOURCES = ["review_gate", "implementation", "review"] as const;
 
