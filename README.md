@@ -51,7 +51,7 @@ Factory data plane (Docker required). Default services are redis, postgres, and 
 docker compose up -d redis postgres litellm
 docker compose --profile full --profile harness up -d
 docker compose --profile harness --profile orchestrator up -d
-docker compose --profile laya up -d laya
+docker compose --profile laya up -d laya   # off by default; CPU placeholder, no NVIDIA toolkit
 docker compose --profile edge up -d caddy
 curl -s http://127.0.0.1:3200/health
 ```
@@ -74,6 +74,8 @@ Learning worker (failure fingerprints → Postgres, optional GitHub meta-issues)
 ```bash
 docker compose --profile learn up -d --build learning-worker
 ```
+
+Optional Laya CPU decisions: **[docs/laya.md](docs/laya.md)**. Profile `laya` is off unless you pass it. `GET /health` on `127.0.0.1:8000`. The NVIDIA Container Toolkit is not required. Set `OPTIO_NEW_JEV_ROUTER=laya` when the Hop 2 plugin should call it.
 
 Docker Desktop or Linux Docker (config check, then isolated up/down of redis, postgres, and litellm):
 

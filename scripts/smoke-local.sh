@@ -205,6 +205,18 @@ if command -v docker >/dev/null 2>&1; then
     docker compose --profile harness config | grep -Eq '^  kit-harness:' \
       || fail "docker compose --profile harness missing kit-harness"
     pass "compose profile harness defines kit-harness"
+    if docker compose config | grep -Eq '^  laya:'; then
+      fail "laya is profile-gated and must not appear in default compose config"
+    fi
+    docker compose --profile laya config | grep -Eq '^  laya:' \
+      || fail "docker compose --profile laya missing laya"
+    if docker compose --profile full config | grep -Eq '^  laya:'; then
+      fail "profile full must not start laya"
+    fi
+    if docker compose --profile harness config | grep -Eq '^  laya:'; then
+      fail "profile harness must not start laya"
+    fi
+    pass "compose profile laya defines laya"
     # Profile render only. Does not start containers. Default redis/postgres/litellm
     # stay in this set; profile full adds orchestrator; profile harness adds kit-harness.
     full_env="$(mktemp)"
@@ -231,6 +243,10 @@ if command -v docker >/dev/null 2>&1; then
         fail "profile full+harness missing healthcheck for ${svc}"
       fi
     done
+    if grep -Eq '^  laya:' "$full_log"; then
+      rm -f "$full_env" "$full_log"
+      fail "profile full+harness must not start laya"
+    fi
     rm -f "$full_env" "$full_log"
     pass "compose profiles full+harness define redis postgres orchestrator litellm kit-harness"
   else

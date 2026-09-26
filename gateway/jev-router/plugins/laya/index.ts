@@ -3,9 +3,10 @@ import { decideViaSystemOne } from "../../systemone.js";
 import type { JevRouter, RoutingDecision, RoutingState } from "../../types.js";
 
 /**
- * Laya local decision service (optional Compose profile `laya`, port 8000 loopback).
+ * Laya local decision service (optional Compose profile `laya`, loopback :8000).
  * Same `/v1/systemone` wire as hosted Jev. The model field is omitted unless
- * `LAYA_MODEL` names a checkpoint, so `laya.serve` can auto-select.
+ * `LAYA_MODEL` names a checkpoint, so a real `laya.serve` can auto-select.
+ * The Compose placeholder always returns `deny` (docs/laya.md). CPU only.
  */
 const DEFAULT_LAYA = "http://127.0.0.1:8000";
 

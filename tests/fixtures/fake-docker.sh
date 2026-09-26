@@ -41,6 +41,14 @@ if [[ "$joined" == *"config --services"* ]]; then
     printf '%s\n' redis postgres litellm orchestrator eve-runner
     exit 0
   fi
+  if [[ "$joined" == *"--profile harness"* ]]; then
+    printf '%s\n' redis postgres litellm kit-harness
+    exit 0
+  fi
+  if [[ "$joined" == *"--profile laya"* ]]; then
+    printf '%s\n' redis postgres litellm laya
+    exit 0
+  fi
   if [[ "$mode" == "missing-litellm" ]]; then
     printf '%s\n' redis postgres
     exit 0

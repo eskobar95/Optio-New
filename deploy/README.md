@@ -23,11 +23,13 @@ COMPOSE_PROFILES=harness,orchestrator
 | `orchestrator`  | orchestrator (BullMQ worker) | yes             |
 | `full`          | orchestrator and eve-runner  | no              |
 | `edge`          | caddy (80/443)               | no              |
-| `laya`          | laya                         | no              |
+| `laya`          | laya (CPU placeholder)       | no              |
 | `caveman`       | caveman-proxy placeholder    | no              |
 | `observability` | otel-collector               | no              |
 
-`orchestrator` is also in profile `full`, so `docker compose --profile full` still starts it together with eve-runner.
+`orchestrator` is also in profile `full`, so `docker compose --profile full` still starts it together with eve-runner. Profile `laya` stays off for that command and for `COMPOSE_PROFILES=harness,orchestrator`.
+
+Laya is a CPU placeholder (`deploy/laya/stub_server.py`) with a Compose healthcheck on `GET /health`. It does not reserve a GPU. The NVIDIA Container Toolkit is not required. Enable, env vars, and the upstream `laya-serve` swap are in [docs/laya.md](../docs/laya.md). Do not commit `LAYA_API_KEY`.
 
 kit-harness is published on `127.0.0.1:3200` (`KIT_HARNESS_PORT`, default 3200). The image is `Dockerfile.kit-harness` and answers `GET /health`. LiteLLM has no profile, so `scripts/smoke-compose-mac.sh` still sees it in the default service set.
 
