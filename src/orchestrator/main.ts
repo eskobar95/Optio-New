@@ -1,11 +1,12 @@
 /**
- * Orchestrator process: POST /intake plus one BullMQ worker per stage queue.
+ * Orchestrator process: POST /intake, GET /hello, and one BullMQ worker per stage queue.
  * Postgres (OPTIO_NEW_DATABASE_URL) stores the step cursor. Redis is the queue.
  * Stage steps are acked here. createEnvModelAdapter does not perform HTTP yet,
  * so this process does not call it. Eve agents stay contracts without a process.
  */
 import { FlowProducer } from "bullmq";
 import { Redis } from "ioredis";
+import { readPlanStage } from "./jobs/hello-world.js";
 import { createIntakeServer } from "./intake/http.js";
 import { createPgStepCursorStore } from "./jobs/cursor.js";
 import type { StageStepContext } from "./jobs/run-stage.js";
@@ -60,6 +61,7 @@ export async function startOrchestrator(): Promise<void> {
     enqueuer: {
       add: (job) => flow.add(job),
     },
+    readPlanStage: (taskId, sessionId) => readPlanStage(cursors, taskId, sessionId),
     checkRedis: async () => {
       try {
         return (await redis.ping()) === "PONG";

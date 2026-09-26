@@ -59,14 +59,11 @@ curl -s http://127.0.0.1:3200/health
 Orchestrator image (profiles `full` and `orchestrator`) serves intake and the BullMQ stage workers. Eve-runner in profile `full` is still an intentional stub: `agents/*` have no process entrypoint.
 
 ```bash
-docker compose --profile full up -d --build orchestrator
-curl -fsS http://127.0.0.1:3100/health
-curl -fsS -X POST http://127.0.0.1:3100/intake \
-  -H 'content-type: application/json' \
-  -d '{"brief":{"title":"hello","description":"smoke"},"metadata":{"taskId":"t-1"}}'
+docker compose --profile full --profile harness up -d --build orchestrator
+HELLO_WORLD_E2E=1 bash scripts/hello-world-e2e.sh
 ```
 
-`GET /health` is 200 when Redis answers. `POST /intake` returns 202 and enqueues queue `optio.plan`. The same listener is what Hetzner starts with `COMPOSE_PROFILES=harness,orchestrator`.
+`GET /hello` returns `{ "hello": "world", "stage": "plan", "queue": "optio.plan" }`. The script posts `POST /intake` and polls `GET /hello/plan` until the plan cursor is `completed`. `GET /health` is the Redis ping. The script skips when nothing listens on `:3100`, so `npm run ci` does not need Docker. `HELLO_WORLD_E2E=1` fails instead of skipping. The command enables profiles `full` and `harness` and rebuilds the orchestrator. The script only calls `:3100`. Hetzner starts that listener with `COMPOSE_PROFILES=harness,orchestrator`. See [docs/kit-harness.md](docs/kit-harness.md).
 
 `npm run smoke` stays Docker-optional. It records both paths and, when Docker is present, checks the Compose file. It starts containers only when `SMOKE_COMPOSE_UP=1` (redis and postgres).
 

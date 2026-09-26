@@ -18,6 +18,8 @@ SPEC §14.0. BullMQ on Redis is the orchestrator. New Bot only decides and enque
 
 `POST /intake` (`createIntakeServer`) is the HTTP entry. It accepts `{ brief, metadata }`, then calls `enqueueIntakePipeline`. The `202` body returns `jobId` `${sessionId}__plan` on queue `optio.plan`. Invalid bodies return `400` and do not enqueue. See `orchestrator/intake/README.md`.
 
+`GET /hello` is the hello-world card for that first stage. `GET /hello/plan` reports the plan cursor (`queued` until a worker writes it, `progressed: true` when status is `completed`). `runHelloWorldPlan` is the same intake → plan path in memory, used by Vitest when Redis is absent. `scripts/hello-world-e2e.sh` posts intake against a live orchestrator and polls `/hello/plan`. On the kit-harness host: `docker compose --profile full --profile harness up -d --build orchestrator`, then `HELLO_WORLD_E2E=1 bash scripts/hello-world-e2e.sh`.
+
 ## Step cursor
 
 Table `pipeline_step_cursor` (`state/migrations/001_pipeline_step_cursor.sql`), keyed by `(task_id, session_id, stage)`.
