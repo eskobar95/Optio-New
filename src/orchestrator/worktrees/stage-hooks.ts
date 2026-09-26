@@ -8,6 +8,7 @@
  * Skill seed/reap is {@link createSkillStageHook}, passed as `WorktreeManager`'s
  * `skillStageHook`. Create seeds when `stepId` is set; delete reaps `.agents/skills`.
  */
+import type { StageStepResult } from "../jobs/stage-result.js";
 import type { WorkflowSkillLoader } from "../skills/loader.js";
 import type { WorktreeLifecycle, WorktreeSkillStageHook } from "./manager.js";
 
@@ -25,7 +26,7 @@ export interface WorktreeStageStep {
 }
 
 export interface WorktreeStageStepRunner<T extends WorktreeStageStep = WorktreeStageStep> {
-  run(ctx: T): Promise<void>;
+  run(ctx: T): Promise<void | StageStepResult>;
 }
 
 const IMPLEMENT_CREATE_STEP = "invoke_implementation";
@@ -46,8 +47,9 @@ export function createWorktreeStageHandler<T extends WorktreeStageStep>(
         });
         if (!ctx.worktreeId) ctx.worktreeId = handle.worktreeId;
       }
+      let result: void | StageStepResult;
       try {
-        await inner.run(ctx);
+        result = await inner.run(ctx);
       } catch (error) {
         if (ctx.stage === "merge" && ctx.step === MERGE_BRANCH_STEP) {
           await worktrees.reap(ctx.taskId, { merged: false });
@@ -57,6 +59,7 @@ export function createWorktreeStageHandler<T extends WorktreeStageStep>(
       if (ctx.stage === "merge" && ctx.step === MERGE_CLEANUP_STEP) {
         await worktrees.reap(ctx.taskId, { merged: true });
       }
+      return result;
     },
   };
 }

@@ -88,6 +88,8 @@ export interface AgentLoopResult {
   toolResults?: readonly GuardedToolResult[];
   /** Copied from the adapter when it reported usage. */
   usage?: ModelUsage;
+  /** Planner confidence in [0, 1]. Copied only when the adapter set it. */
+  confidence?: number;
 }
 
 export async function runAgentLoop(
@@ -124,7 +126,7 @@ export async function runAgentLoop(
   const toolCalls = response.toolCalls;
   const tools = input.tools;
   if (!tools || !toolCalls || toolCalls.length === 0) {
-    return loopResult(response.text, response.usage);
+    return loopResult(response.text, response.usage, response.confidence);
   }
 
   const toolResults: GuardedToolResult[] = [];
@@ -155,16 +157,18 @@ export async function runAgentLoop(
     );
   }
 
-  return loopResult(response.text, response.usage, toolResults);
+  return loopResult(response.text, response.usage, response.confidence, toolResults);
 }
 
 function loopResult(
   text: string,
   usage: ModelUsage | undefined,
+  confidence: number | undefined,
   toolResults?: GuardedToolResult[],
 ): AgentLoopResult {
   const result: AgentLoopResult = { text };
   if (toolResults) result.toolResults = toolResults;
   if (usage) result.usage = usage;
+  if (confidence !== undefined) result.confidence = confidence;
   return result;
 }
