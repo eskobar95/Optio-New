@@ -33,3 +33,27 @@ Default attempt budget is 3 (`attempt` / `max_attempts` on the evidence).
 A closed gate throws `ReviewGateClosedError` (BullMQ `UnrecoverableError`). The ready cursor is not written, and the ready job is not retried in place. The orchestrator follows `decision.path` instead.
 
 Workers that omit `StageRuntime.reviewGate` keep the skeleton graph. Production ready workers must set the binding so a run without evidence cannot enter ready.
+
+## PR safety gate
+
+`createProductionStageHandler` runs `evaluatePrSafetyGate` (`src/orchestrator/jobs/pr-safety-gate.ts`) inside `open_pr` and again inside `merge_branch`, after implement and review have finished and before any push or merge. This is the `pr_safety` entry on the ready and merge steps in `workflows/default-task.yaml`.
+
+The gate fails closed:
+
+| Result                                       | Reason                                               |
+| -------------------------------------------- | ---------------------------------------------------- |
+| Test, lint, or typecheck command did not run | `tests_not_run`, `lint_not_run`, `typecheck_not_run` |
+| One of those commands exited non-zero        | `tests_failed`, `lint_failed`, `typecheck_failed`    |
+| Diff could not be read                       | `diff_not_reviewed`                                  |
+| Added secret file or secret material         | `secret_in_diff`                                     |
+| Destructive command or an unsafe path        | `destructive_path`                                   |
+
+A closed gate throws `PrSafetyClosedError` (BullMQ `UnrecoverableError`). The message is `pr safety gate closed: <reason> <path> (<rule>)`. The path and rule are included. Secret bytes and command output are not. Nothing is pushed and the pull request is not merged.
+
+The default collector reads the worktree diff first (`git diff <base>...HEAD`, unstaged changes, and untracked files). A secret, a destructive change, or an unreadable diff skips `npm test`, `npm run lint`, and `npm run typecheck`, so those commands are not executed against an unreviewed tree. When the diff is clean, those three commands must exit 0. `<base>` is `OPTIO_NEW_BASE_BRANCH` or `development`. The worktree needs installed dependencies; the gate does not install them. An unsafe base ref is not passed to git.
+
+Host proof, without opening a pull request:
+
+```bash
+bash scripts/pr-safety-gate-proof.sh
+```

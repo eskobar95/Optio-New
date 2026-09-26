@@ -39,14 +39,16 @@ steps:
     agent: agents/ready
     skills_allowed: [skills/land, skills/sync-development]
     # review_pass = evaluateReviewGate: tests green + CI success + Jev/rules completion.
-    # Closed gate: rework (implementation) or replan (planner). See docs/review-gate.md.
-    entry_gates: [review_pass]
+    # pr_safety = tests, lint, typecheck, and diff review before open_pr.
+    # A closed pr_safety gate does not push. See docs/review-gate.md.
+    entry_gates: [review_pass, pr_safety]
     exit_gates: [pr_open, ci_pending_or_green]
     on_fail: escalate_bot
 
   - id: merge
     agent: agents/merge
     skills_allowed: [skills/land, skills/reap-worktree]
-    entry_gates: [ci_green, merge_policy_allow]
+    # pr_safety runs again before merge_branch. See docs/review-gate.md.
+    entry_gates: [ci_green, merge_policy_allow, pr_safety]
     exit_gates: [merged_into_development]
     on_success: delete_worktree

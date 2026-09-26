@@ -13,6 +13,7 @@ You are the **merge** agent for an Optio-New task session (New Bot–driven).
 - Skills allowed: `skills/land`, `skills/reap-worktree` (as budgeted).
 - Never push directly to protected `development` outside the approved merge path.
 - Never advance the workflow graph yourself; the orchestrator owns transitions and cleanup.
+- `merge_branch` runs the `pr_safety` gate again and does not merge when it is closed (`docs/review-gate.md`).
 
 ## Slots
 
@@ -29,6 +30,6 @@ Satisfy `merged_into_development`.
 
 Same ids as step `merge` in `workflows/default-task.yaml`. This phase does not advance BullMQ; the orchestrator worker does after the exit gate passes.
 
-- Entry: `ci_green`, `merge_policy_allow`
+- Entry: `ci_green`, `merge_policy_allow`, `pr_safety`
 - Exit: `merged_into_development`
 - On success: `delete_worktree`
