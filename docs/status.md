@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 00:58 UTC
+Last refreshed: 2026-09-26 01:01 UTC
 
 ## Bootstrap progress
 
@@ -39,7 +39,7 @@ Gaps: LiteLLM tag `ghcr.io/berriai/litellm:main-latest` floats; profile `full` (
 
 ## Open issues
 
-Open: 8.
+Open: 7.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
@@ -49,7 +49,6 @@ Tracker: https://github.com/eskobar95/Optio-New/issues
 - #19 [P2] Learning worker: failure fingerprints → meta GitHub issues (P2, enhancement, orchestration)
 - #16 [P2] Caveman Cloud/Platform evaluation (post-V1 only) (P2, cost-opt, documentation)
 - #14 [P2] Optional Laya CPU decision service Compose profile (P2, harness, infra)
-- #13 [P1] Observability: OTel spans + Langfuse/SigNoz wiring (P1, enhancement, infra)
 - #4 [P1] Docker Compose full stack: redis, postgres, orchestrator, litellm, kit-harness (P1, enhancement, infra)
 
 ## Refresh
