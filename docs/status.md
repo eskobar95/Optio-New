@@ -23,6 +23,20 @@ Latest conclusion: **success**
 
 Actions: https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml
 
+## Compose smoke (Docker Desktop or Linux)
+
+Issue [#23](https://github.com/eskobar95/Optio-New/issues/23). Runbook: [mac-compose-smoke.md](mac-compose-smoke.md). Command: `bash scripts/smoke-compose-mac.sh` (repo-root `.env`, or `.env.example` when `.env` is absent). Same path on Mac Docker Desktop and on Linux Docker, including kit-harness.
+
+| Check                                                             | State                                                                                                      |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Compose config for redis, postgres, litellm                       | Scripted. CI runs `--config-only` when the Docker CLI is present, and always syntax-checks the script      |
+| Isolated up/down (`optio-new-mac-smoke`, ports 16379/15432/14000) | Host-agnostic. kit-harness (Linux) full up/down PASSED 2026-09-26. GitHub Actions does not start the stack |
+| Failure issues                                                    | None filed. Mac Docker Desktop remains optional                                                            |
+
+Verified: kit-harness (Linux, Docker Compose) full `bash scripts/smoke-compose-mac.sh` PASSED on 2026-09-26 against `7aa4b2e` (redis PING, postgres pg_isready, litellm `/health/liveliness`, `down -v`). Project `optio-new` on 6379/5432/4000 stayed up. Config-only PASSED.
+
+Gaps: LiteLLM tag `ghcr.io/berriai/litellm:main-latest` floats; profile `full` (orchestrator, eve-runner) stays out of this smoke; provider keys stay empty; the check is `/health/liveliness`, which does not call a model.
+
 ## Open issues
 
 Open: 15.

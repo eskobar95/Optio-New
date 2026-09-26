@@ -67,6 +67,7 @@ npm install          # installs Husky pre-commit
 npm run typecheck
 npm test
 npm run smoke
+# Optional Compose smoke, Mac or Linux (outside npm run ci): bash scripts/smoke-compose-mac.sh
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same checks on every push and every PR to `main`.
