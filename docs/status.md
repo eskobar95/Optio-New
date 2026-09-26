@@ -1,28 +1,30 @@
 # Optio-New — status
 
-Last refreshed: _run `bash scripts/update-status.sh`_
+Last refreshed: 2026-09-26 01:00 WEST
 
 ## Bootstrap progress
 
-| Area                                                                     | Status                              |
-| ------------------------------------------------------------------------ | ----------------------------------- |
-| In-repo `.cursor/skills` + `.cursor/agents` SoT                          | Done                                |
-| Linear stripped → New Bot intake + BullMQ                                | Done                                |
-| TypeScript `src/` + `tests/` + tooling (ESLint, Prettier, Vitest, Husky) | Done                                |
-| Public GitHub + CI on push/PR                                            | In progress / live after first push |
-| Good first issue: `src/agent/loop.ts`                                    | Open after first push               |
-| Full BullMQ hello-world workers                                          | Pending                             |
-| Real model providers / GPU / Vercel key                                  | Pending (secrets local only)        |
+| Area | Status |
+|------|--------|
+| In-repo `.cursor/skills` + `.cursor/agents` SoT | Done |
+| Linear stripped → New Bot intake + BullMQ | Done |
+| TypeScript `src/` + `tests/` + tooling (ESLint, Prettier, Vitest, Husky) | Done |
+| Public GitHub + CI on push/PR | Live |
+| Good first issue: `src/agent/loop.ts` | See open issues |
+| Full BullMQ hello-world workers | Pending |
+| Real model providers / GPU / Vercel key | Pending (secrets local only) |
 
 ## CI
 
 [![CI](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml/badge.svg)](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml)
 
-Latest conclusion: _unknown — refresh with script_
+Latest conclusion: **success**
+
+Actions: https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml
 
 ## Open issues
 
-_Refresh with `bash scripts/update-status.sh` (requires `gh`)._
+- #1 good first issue: request-response agent loop (src/agent/loop.ts) (enhancement, good first issue, orchestration)
 
 ## Structure overview
 
