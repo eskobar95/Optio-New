@@ -48,6 +48,18 @@ export {
 } from "./run-stage.js";
 export { enqueueIntakePipeline, type FlowEnqueuer } from "./enqueue-pipeline.js";
 export {
+  WorktreeIsolationError,
+  WorktreeManager,
+  createWorktreeStageHandler,
+  worktreeKey,
+  type CreateWorktreeOptions,
+  type ReapResult,
+  type WorktreeHandle,
+  type WorktreeLifecycle,
+  type WorktreeManagerOptions,
+  type WorktreeReapOutcome,
+} from "../worktrees/index.js";
+export {
   bullmqStageWorkerFactory,
   startStageGraph,
   type StageWorkerFactory,
