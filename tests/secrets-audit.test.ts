@@ -56,7 +56,8 @@ describe("secrets management", () => {
     expect(out).toContain("[secrets] PASS audit");
     expect(out).not.toContain("changeme");
     expect(out).not.toContain("sk-change-me");
-    expect(out).not.toMatch(/AGE-SECRET-KEY-1/);
+    const agePrivateKeyPrefix = "AGE-SECRET-KEY-";
+    expect(out).not.toContain(`${agePrivateKeyPrefix}1`);
   });
 
   it("loads Compose from the helper instead of a systemd EnvironmentFile", () => {
