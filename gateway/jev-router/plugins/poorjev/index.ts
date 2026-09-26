@@ -1,9 +1,13 @@
+import { decideDeterministic } from "../../deterministic.js";
 import type { JevRouter, RoutingDecision, RoutingState } from "../../types.js";
 
-/** Local/lightweight Jev-compatible stub. */
+/**
+ * Local lightweight router. Same budget and exact-cache rules as `rules`,
+ * but a missing quota snapshot defaults to the subscription example model.
+ */
 export const poorjevRouter: JevRouter = {
-  async decide(_state: RoutingState): Promise<RoutingDecision> {
-    throw new Error("gateway/jev-router/plugins/poorjev: not implemented (skeleton stub)");
+  async decide(state: RoutingState): Promise<RoutingDecision> {
+    return decideDeterministic(state, "poorjev");
   },
 };
 

@@ -16,6 +16,12 @@
     "noImplicitAny": true,
     "strictNullChecks": true
   },
-  "include": ["src/**/*.ts", "agents/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
+  "include": [
+    "src/**/*.ts",
+    "agents/**/*.ts",
+    "gateway/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.config.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }

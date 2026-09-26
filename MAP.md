@@ -30,7 +30,7 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `src/proxy/`                                          | §14.2             | Optional local Caveman proxy (default off; no Platform/Cloud)             |
 | `gateway/caveman/`                                    | §14.2             | `caveman.yaml.example` LiteLLM compat snippet                             |
 | `src/adapters/coding-agent.ts`                        | §13.1             | Shared CodingAgent interface                                              |
-| `gateway/litellm/`                                    | §14.2             | `config.yaml.example` model_list                                          |
+| `gateway/litellm/`                                    | §14.2             | Example models gpt-4o, claude-sonnet, cache-exact                         |
 | `gateway/jev-router/`                                 | §14.3–§14.4       | Plugins: jev, poorjev, laya, rules                                        |
 | `state/`                                              | §11, §10          | Postgres migrations / session state                                       |
 | `docs/SPEC.md`                                        | (this document)   | Full skeleton specification                                               |

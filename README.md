@@ -100,7 +100,7 @@ License: [MIT](LICENSE).
 
 ## Jev (v1)
 
-`jev` router base URL → **Vercel AI Gateway** (`JEV_BASE_URL` / `VERCEL_AI_GATEWAY_URL`, default `https://ai-gateway.vercel.sh`). Not TypeSafe direct.
+`jev` router base URL → **Vercel AI Gateway** (`JEV_BASE_URL` / `VERCEL_AI_GATEWAY_URL`, default `https://ai-gateway.vercel.sh`). Not TypeSafe direct. The plugin posts `{base}/v1/systemone`. Hop 2 plugins are `jev`, `poorjev`, `laya`, and `rules` (`OPTIO_NEW_JEV_ROUTER`). Cache returns the stored completion; deny is HTTP 429. See [gateway/jev-router/README.md](gateway/jev-router/README.md).
 
 ## Status
 

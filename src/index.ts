@@ -160,3 +160,21 @@ export {
   type SplitDecision,
   type ToolGateDecision,
 } from "./kit-harness/index.js";
+export {
+  applyHop2Decision,
+  createJevRouter,
+  createLayaRouter,
+  loadConfiguredHop2Router,
+  loadHop2Router,
+  resolveJevBaseUrl,
+  resolveLayaBaseUrl,
+  type CachedCompletion,
+  type ExactPromptCache,
+  type FetchLike,
+  type Hop2PluginId,
+  type Hop2Result,
+  type JevRouter,
+  type RoutingChoice,
+  type RoutingDecision,
+  type RoutingState,
+} from "./gateway/jev-router/index.js";
