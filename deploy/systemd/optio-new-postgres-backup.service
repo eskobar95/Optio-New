@@ -1,0 +1,21 @@
+# Optio-New — Postgres dump to Hetzner Storage Box (SPEC §12.5)
+# Install the timer, not this unit:
+#   sudo cp deploy/systemd/optio-new-postgres-backup.service /etc/systemd/system/
+#   sudo cp deploy/systemd/optio-new-postgres-backup.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now optio-new-postgres-backup.timer
+# secrets.sh run decrypts to a mode-0600 tmpfs file. Do not add EnvironmentFile:
+# systemd would expose those values through systemctl show.
+# Infisical is not installed on this host. See docs/ops/postgres-storagebox-backup.md.
+
+[Unit]
+Description=Optio-New Postgres backup to Hetzner Storage Box
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/optio-new
+Environment=SOPS_AGE_KEY_FILE=/opt/optio-new/secrets/age/key.txt
+ExecStart=/opt/optio-new/scripts/secrets.sh run /opt/optio-new/scripts/backup-postgres-to-storagebox.sh
+Nice=10

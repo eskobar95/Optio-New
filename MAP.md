@@ -45,7 +45,12 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `deploy/systemd/*.service`                            | §12.5             | Compose on boot                                                           |
 | `deploy/otel-collector-config.yaml`                   | §12.1             | Collector stub                                                            |
 | `secrets/`                                            | §12.5, §14.5      | sops+age examples; runbook is `docs/secrets.md`                           |
-| `scripts/secrets.sh`                                  | §12.5             | init, encrypt, check, compose, audit                                      |
+| `scripts/secrets.sh`                                  | §12.5             | init, encrypt, check, compose, run, audit                                 |
+| `docs/ops/postgres-storagebox-backup.md`              | §12.5             | Storage Box backup, retention, restore dry-run                            |
+| `scripts/backup-postgres-to-storagebox.sh`            | §12.5             | pg_dump to restic, borg, sftp, or rsync                                   |
+| `scripts/restore-postgres-storagebox-dry-run.sh`      | §12.5             | Restore drill; does not write to Postgres                                 |
+| `deploy/systemd/optio-new-postgres-backup.timer`      | §12.5             | Daily backup; secrets via `scripts/secrets.sh run`                        |
+| `deploy/cron/optio-new-postgres-backup`               | §12.5             | Cron alternative; do not enable together with the timer                   |
 | `scripts/smoke-local.sh`                              | —                 | Local/CI smoke (compose up stays off)                                     |
 | `scripts/smoke-compose-mac.sh`                        | §12.6             | Compose up/down of redis, postgres, litellm (Mac or Linux)                |
 | `docs/mac-compose-smoke.md`                           | §12.6             | Mac runbook for issue #23                                                 |

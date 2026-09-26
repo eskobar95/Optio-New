@@ -1,0 +1,14 @@
+# Fires at 03:15 in the host timezone. Keep the VPS in UTC.
+# Do not also install deploy/cron/optio-new-postgres-backup.
+
+[Unit]
+Description=Daily Optio-New Postgres backup to Hetzner Storage Box
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+RandomizedDelaySec=15min
+Unit=optio-new-postgres-backup.service
+
+[Install]
+WantedBy=timers.target
