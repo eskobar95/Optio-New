@@ -4,11 +4,16 @@ Plan and merge can wait for an explicit approve, reject, or replan. The orchestr
 
 ## Pause points
 
-| Point   | When it runs                            | Default mode           |
-| ------- | --------------------------------------- | ---------------------- |
-| `plan`  | Start of `implement`, after plan        | `when_confidence_low`  |
-| `merge` | Start of `ready`, before `open_pr`      | `always`               |
-| `merge` | Start of `merge`, before `merge_branch` | same decision as ready |
+| Point   | When it runs                            | Default mode          |
+| ------- | --------------------------------------- | --------------------- |
+| `plan`  | Start of `implement`, after plan        | `when_confidence_low` |
+| `merge` | Start of `merge`, before `merge_branch` | `always`              |
+
+`ready` (`open_pr`, then `record_ci_wait`) does not open the merge gate. A Linear-sourced task can move to **Review** when CI is green, undraft the pull request, and post `[status]` and `[ci]` before anyone approves the merge. The same merge decision still blocks `merge_branch`. Plan approval is unchanged.
+
+Order for a Linear task: draft pull request and **In Progress** → CI wait → **Review** on green → merge approval → merge.
+
+A merge row that is already `pending` does not block `ready`. The next delivery of a delayed `ready` job runs `open_pr` and `record_ci_wait`. The merge job then pauses on that same decision before `merge_branch`.
 
 `when_confidence_low` pauses unless planner confidence is a finite number in `[0, 1]` and at least the threshold (default **0.8**). A missing confidence pauses. `always` pauses even when confidence is 1. `off` does not pause.
 
@@ -26,7 +31,7 @@ A high-confidence continue writes an approval row with `source: policy` and `rea
 
 | Action    | Effect                                                                                   |
 | --------- | ---------------------------------------------------------------------------------------- |
-| `approve` | Marks the row approved and promotes the paused stage job (`implement` or `ready`).       |
+| `approve` | Marks the row approved and promotes the paused stage job (`implement` or `merge`).       |
 | `reject`  | Marks the row rejected. The stage fails closed. The worktree is not reaped.              |
 | `replan`  | Marks the row replan, resets the plan cursor to pending, and queues plan again. No reap. |
 

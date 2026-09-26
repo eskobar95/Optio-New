@@ -88,7 +88,7 @@ const workers = startStageGraph(
 
 ## Human approval and task caps
 
-`StageRuntime.hitl` pauses `implement` until plan is approved, and pauses `ready` before `open_pr` (the same decision also covers `merge`). Default modes are `when_confidence_low` for plan and `always` for merge. Timeout notifies once and does not approve. `POST /approvals` with `approve`, `reject`, or `replan` wakes the BullMQ job. Reject and replan do not reap the worktree. See [hitl.md](hitl.md).
+`StageRuntime.hitl` pauses `implement` until plan is approved, and pauses `merge` before `merge_branch`. `ready` (`open_pr`, `record_ci_wait`) is not paused, so a Linear task can move to Review when CI is green. Default modes are `when_confidence_low` for plan and `always` for merge. Timeout notifies once and does not approve. `POST /approvals` with `approve`, `reject`, or `replan` wakes the BullMQ job (`implement` or `merge`). Reject and replan do not reap the worktree. See [hitl.md](hitl.md).
 
 `StageRuntime.budget` checks token and USD caps before and after `invoke_planner`, `invoke_implementation`, and `invoke_review`. A miss or an overage throws `BudgetExceeded` and does not start later stages. Defaults are 200000 tokens and USD 2. `GET /budget` shows the caps and the ledger. See [task-budget.md](task-budget.md).
 

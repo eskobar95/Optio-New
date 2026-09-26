@@ -7,6 +7,8 @@ base_branch: development
 # repo_id: optio-new
 
 # Human approval (issue #86). Timeout notifies and stays paused. See docs/hitl.md.
+# plan pauses at the start of implement. merge pauses at the start of merge,
+# after ready (open_pr and record_ci_wait), not before the pull request or CI wait.
 # OPTIO_HITL_PLAN / OPTIO_HITL_MERGE override these modes.
 hitl:
   plan:

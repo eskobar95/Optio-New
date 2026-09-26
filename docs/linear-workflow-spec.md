@@ -70,7 +70,15 @@ Humans intervene at the review step itself: they read and approve the undrafted 
 
 That autonomy is the default from **In Progress** through **Merge**, not an absolute. The only required stops for human help are the two escape hatches in [Human-assistance escape hatches](#5-human-assistance-escape-hatches).
 
-The orchestrator still has its own approval pause ([hitl.md](hitl.md)). This document does not retune that pause. See open questions.
+The orchestrator merge approval ([hitl.md](hitl.md)) is the human gate immediately before `merge_branch`. It does not pause `ready`, so `record_ci_wait` can move the issue when CI is green. Plan approval is unchanged: it still pauses at the start of `implement` when planner confidence is low.
+
+Linear order:
+
+1. `record_diff` opens a draft pull request and sets **In Progress**.
+2. `ready` runs `open_pr` (reuses that draft) and `record_ci_wait` with no merge approval.
+3. Green CI and clear review feedback in `record_ci_wait` set **Review**, undraft the pull request, and post `[status]` (trigger `ci`) and `[ci]` (result green).
+4. The merge gate then pauses until a person approves.
+5. `merge_branch` merges only after that approval, and only when CI is still green and a GitHub review is approved.
 
 ## 5. Human-assistance escape hatches
 
@@ -192,6 +200,8 @@ For a task whose intake `source` is `linear`, the production handler drives the 
 
 `open_pr` still runs at ready for every task. On a Linear task it reuses the draft already opened and does not undraft it. Other intake sources keep the catalog `defaultBranch` and a non-draft pull request. Phase 1 intake does not itself open or merge a pull request.
 
+Merge approval does not sit in front of `record_ci_wait`. The pause is the start of `merge`, before `merge_branch`, after a green result has already set **Review**.
+
 ## 8. Out of scope
 
 - Creating or renaming Linear columns. The board must already contain the names this workflow sets. **Needs Human** is optional; escalation falls back to **In Progress**.
@@ -200,13 +210,12 @@ For a task whose intake `source` is `linear`, the production handler drives the 
 - Calling `issueUpdate` from the Phase 1 ack. That path still posts only `queued`. Status writes belong to the workflow module.
 - Using these status names as BullMQ queues or as factory stage ids.
 - Linear Agent Sessions, OAuth agent scopes, Agent Activities, backlog polling, and any create, delete, or archive of issues.
-- Retuning the HITL pause, the review gate, or `open_pr`.
+- Retuning the review gate or `open_pr`. Merge approval stays before `merge_branch` ([hitl.md](hitl.md)).
 
 ## 9. Open questions
 
 - Linear-sourced pull requests use base `main`. Other sources still use the catalog `defaultBranch`. A task branch that was not cut from `main` can fail the draft open.
 - A later `issueUpdate` of `stateId` on a FIN issue will hit the Phase 1 webhook again. That delivery must keep the existing task id and must not start a second pipeline. The `queued` comment on a reused job id is the current ack.
-- [hitl.md](hitl.md) still pauses `ready` before `open_pr` (default `always`). This board treats human approval as a review of the GitHub pull request. Wiring or skipping that pause for Linear-sourced tasks is undecided.
 
 ## Related
 

@@ -71,7 +71,7 @@ export async function startOrchestrator(): Promise<void> {
   const usage = await createPgUsageStore(databaseUrl);
   const planQueue = new Queue(STAGE_QUEUES.plan, { connection });
   const implementQueue = new Queue(STAGE_QUEUES.implement, { connection });
-  const readyQueue = new Queue(STAGE_QUEUES.ready, { connection });
+  const mergeQueue = new Queue(STAGE_QUEUES.merge, { connection });
   const hitl = {
     config: hitlConfig,
     store: hitlState,
@@ -79,7 +79,7 @@ export async function startOrchestrator(): Promise<void> {
     queue: createHitlQueuePort({
       plan: planQueue,
       implement: implementQueue,
-      ready: readyQueue,
+      merge: mergeQueue,
     }),
   };
   const budget = { caps, usage };
@@ -183,7 +183,7 @@ export async function startOrchestrator(): Promise<void> {
     server.close();
     await Promise.all(workers.map((worker) => worker.close()));
     await flow.close();
-    await Promise.all([planQueue.close(), implementQueue.close(), readyQueue.close()]);
+    await Promise.all([planQueue.close(), implementQueue.close(), mergeQueue.close()]);
     await database.close();
     await stageRuns.close();
     await hitlState.close();
