@@ -91,7 +91,7 @@ describe("smoke-compose-mac", () => {
       FAKE_DOCKER_MODE: "ok",
       OPTIO_NEW_SMOKE_WAIT_SECS: "5",
     });
-    expect(result.status).toBe(0);
+    expect(result.status, `${result.stdout ?? ""}\n${result.stderr ?? ""}`).toBe(0);
     expect(result.stdout).toContain("PASS: redis ping");
     expect(result.stdout).toContain("PASS: postgres pg_isready");
     expect(result.stdout).toContain("PASS: litellm /health/liveliness");

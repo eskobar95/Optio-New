@@ -190,7 +190,10 @@ llm_ok=0
 deadline=$((SECONDS + WAIT_SECS))
 while [[ "$SECONDS" -lt "$deadline" ]]; do
   if [[ "$redis_ok" != "1" ]]; then
-    if compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
+    # Capture ping output. A pipe into `grep -q` can raise SIGPIPE under
+    # `pipefail` and abort the script before the health wait finishes.
+    redis_out="$(compose exec -T redis redis-cli ping 2>/dev/null || true)"
+    if [[ "$redis_out" == *PONG* ]]; then
       redis_ok=1
       pass "redis ping"
     fi
