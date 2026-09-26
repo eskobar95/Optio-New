@@ -132,17 +132,6 @@ export {
   type SpecialistRunRequest,
 } from "./orchestrator/specialists/index.js";
 export {
-  EveSkillLoader,
-  EveWorktreeSkillSeed,
-  SkillBudgetDeniedError,
-  SkillNotIndexedError,
-  parseSkillIndex,
-  type EveSkillBody,
-  type EveSkillIndexEntry,
-  type EveSkillLoaderOptions,
-  type SkillAllowListInput,
-} from "./eve/index.js";
-export {
   PIPELINE_JOB_ATTEMPTS,
   PIPELINE_STAGES,
   STAGE_QUEUES,
