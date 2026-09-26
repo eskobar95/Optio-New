@@ -6,6 +6,7 @@ base_branch: development
 
 steps:
   - id: planner
+    permission_tier: read-only
     agent: agents/planner
     skill_budget_mode: short_term # see SPEC §6
     specialists_allowed: []
@@ -15,6 +16,7 @@ steps:
     on_fail: escalate_bot
 
   - id: implementation
+    permission_tier: edit-worktree
     agent: agents/implementation
     skill_budget_mode: short_term # later: orchestrator_restricted
     specialists_allowed:
@@ -28,6 +30,7 @@ steps:
     on_fail: retry_then_replan
 
   - id: review
+    permission_tier: read-only
     agent: agents/review
     specialists_allowed: []
     skills_allowed: [skills/code-review]
@@ -36,6 +39,7 @@ steps:
     on_fail: return_to_implementation
 
   - id: ready
+    permission_tier: git-push
     agent: agents/ready
     skills_allowed: [skills/land, skills/sync-development]
     # review_pass = evaluateReviewGate: tests green + CI success + Jev/rules completion.
@@ -45,6 +49,7 @@ steps:
     on_fail: escalate_bot
 
   - id: merge
+    permission_tier: git-push
     agent: agents/merge
     skills_allowed: [skills/land, skills/reap-worktree]
     entry_gates: [ci_green, merge_policy_allow]

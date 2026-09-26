@@ -6,11 +6,16 @@
 
 import type { CodingAgent, CodingAgentInput, CodingAgentOutput } from "../coding-agent.js";
 import {
-  allowsMutation,
+  authorizeAgentRun,
+  cursorSandboxArgs,
+  type AgentSandbox,
+} from "../../kit-harness/permissions.js";
+import {
   childEnv,
   credentialsFailure,
   invokeCli,
   mapCliToOutput,
+  permissionDeniedRun,
   spawnCli,
   withAgentRunSpan,
   type CliRunRequest,
@@ -33,7 +38,11 @@ const STRIP_FROM_CURSOR = [
   "CAVEMAN_PROXY_URL",
 ] as const;
 
-function cursorRequest(input: CodingAgentInput, env: NodeJS.ProcessEnv): CliRunRequest {
+function cursorRequest(
+  input: CodingAgentInput,
+  env: NodeJS.ProcessEnv,
+  sandbox: AgentSandbox,
+): CliRunRequest {
   const command = env.CURSOR_AGENT_BIN?.trim() || "agent";
   const args = [
     "--print",
@@ -42,9 +51,8 @@ function cursorRequest(input: CodingAgentInput, env: NodeJS.ProcessEnv): CliRunR
     "--trust",
     "--workspace",
     input.worktree_path,
+    ...cursorSandboxArgs(sandbox),
   ];
-  if (allowsMutation(input.allowed_tools)) args.push("--force");
-  else args.push("--sandbox", "enabled");
   const model = input.metadata.model_id?.trim();
   if (model) args.push("--model", model);
   args.push(cursorImplementPrompt(input));
@@ -63,12 +71,22 @@ export function createCursorAdapter(deps: CodingAgentDeps = {}): CodingAgent {
     id: "cursor",
     async run(input: CodingAgentInput): Promise<CodingAgentOutput> {
       return withAgentRunSpan(input, "cursor", deps.tracer, async () => {
+        const auth = authorizeAgentRun({
+          allowedTools: input.allowed_tools,
+          permissionTier: input.permission_tier,
+          stepId: input.metadata.step_id,
+        });
+        if (!auth.ok) return permissionDeniedRun("cursor", input, auth.observation);
+
         const env = deps.env ?? process.env;
         const apiKey = env.CURSOR_API_KEY?.trim() ?? "";
         if (!apiKey) {
           return credentialsFailure("cursor", input, "missing_credentials");
         }
-        const result = await invokeCli(deps.runner ?? spawnCli, cursorRequest(input, env));
+        const result = await invokeCli(
+          deps.runner ?? spawnCli,
+          cursorRequest(input, env, auth.sandbox),
+        );
         return mapCliToOutput({
           provider: "cursor",
           input,

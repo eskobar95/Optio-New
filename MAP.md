@@ -30,6 +30,8 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `src/`                                                | §8, §11, §13, §14 | TypeScript harness (intake, jobs, adapters, gateway, gates)               |
 | `src/agent/`                                          | §9, §13           | Request-response loop; tool calls pass hard gates before effects          |
 | `src/harness/gates/`                                  | §9.1, §13         | Secrets deny, harness config lock, tool timeout; sidecar cannot override  |
+| `src/kit-harness/permissions.ts`                      | §13.8             | Permission tiers for shell, git, and host actions                         |
+| `docs/permission-tiers.md`                            | §13.8             | Tier matrix and stage defaults                                            |
 | `tests/`                                              | —                 | Unit/smoke tests (`tsx --test`)                                           |
 | `tests/eval/`                                         | —                 | Harness regression fixtures: intake → stages → mocked pull request        |
 | `src/eval/`                                           | §11, §14.0        | Eval runner for the factory path                                          |

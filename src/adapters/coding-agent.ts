@@ -18,6 +18,11 @@ export interface CodingAgentInput {
   prompt: string;
   instructions?: string;
   allowed_tools: string[];
+  /**
+   * Explicit ceiling. Omitted means the stage default for `metadata.step_id`
+   * (`read-only` when the step is unknown). `host-admin` is never implied.
+   */
+  permission_tier?: "read-only" | "edit-worktree" | "git-push" | "host-admin";
   budget: CodingAgentBudget;
   metadata: {
     task_id: string;
@@ -43,6 +48,8 @@ export interface CodingAgentOutput {
   diff_summary?: string;
   pr_ready: boolean;
   logs?: string;
+  /** Set when a permission tier blocks the run. The agent can read this directly. */
+  observation?: string;
   usage: CodingAgentUsage;
   status: CodingAgentStatus;
   error_class?: string;

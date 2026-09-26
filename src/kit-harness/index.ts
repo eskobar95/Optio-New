@@ -26,6 +26,7 @@ export {
   type DecisionAdvisor,
   type DecisionEngine,
   type Hop1Choice,
+  type PermissionTier,
   type LoopDetectInput,
   type LoopDetectResult,
   type LoopEvent,

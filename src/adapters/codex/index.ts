@@ -7,15 +7,20 @@
 import path from "node:path";
 import os from "node:os";
 
+import {
+  authorizeAgentRun,
+  codexSandboxMode,
+  type AgentSandbox,
+} from "../../kit-harness/permissions.js";
 import { loadCavemanProxyConfig, resolveCodexUpstreamBaseUrl } from "../../proxy/index.js";
 import type { CodingAgent, CodingAgentInput, CodingAgentOutput } from "../coding-agent.js";
 import {
-  allowsMutation,
   buildAgentPrompt,
   childEnv,
   credentialsFailure,
   invokeCli,
   mapCliToOutput,
+  permissionDeniedRun,
   spawnCli,
   withAgentRunSpan,
   type CliRunRequest,
@@ -37,7 +42,7 @@ export function codexOpenAiBaseUrl(env: NodeJS.ProcessEnv = process.env): string
 
 export interface CodexGatewayConfigOptions {
   modelId?: string;
-  sandbox: "workspace-write" | "read-only";
+  sandbox: "workspace-write" | "read-only" | "danger-full-access";
 }
 
 /** Runner-profile config. `env_key` names `LITELLM_MASTER_KEY`; the value stays in the environment. */
@@ -77,9 +82,10 @@ function codexRequest(
   env: NodeJS.ProcessEnv,
   codexHome: string,
   baseUrl: string,
+  sandbox: AgentSandbox,
 ): CliRunRequest {
   const command = env.CODEX_BIN?.trim() || "codex";
-  const sandbox = allowsMutation(input.allowed_tools) ? "workspace-write" : "read-only";
+  const sandboxMode = codexSandboxMode(sandbox);
   const args = [
     "exec",
     "--json",
@@ -87,7 +93,7 @@ function codexRequest(
     "-c",
     'approval_policy="never"',
     "--sandbox",
-    sandbox,
+    sandboxMode,
   ];
   const model = input.metadata.model_id?.trim();
   if (model) args.push("-m", model);
@@ -120,6 +126,13 @@ export function createCodexAdapter(deps: CodingAgentDeps = {}): CodingAgent {
     id: "codex",
     async run(input: CodingAgentInput): Promise<CodingAgentOutput> {
       return withAgentRunSpan(input, "codex", deps.tracer, async () => {
+        const auth = authorizeAgentRun({
+          allowedTools: input.allowed_tools,
+          permissionTier: input.permission_tier,
+          stepId: input.metadata.step_id,
+        });
+        if (!auth.ok) return permissionDeniedRun("codex", input, auth.observation);
+
         const env = deps.env ?? process.env;
         const virtualKey = env.LITELLM_MASTER_KEY?.trim() ?? "";
         if (!virtualKey) {
@@ -139,7 +152,7 @@ export function createCodexAdapter(deps: CodingAgentDeps = {}): CodingAgent {
           };
         }
 
-        const sandbox = allowsMutation(input.allowed_tools) ? "workspace-write" : "read-only";
+        const sandbox = codexSandboxMode(auth.sandbox);
         const codexHome = codexHomeFor(input, deps);
         const configPath = path.join(codexHome, "config.toml");
         const config = buildCodexGatewayConfig(baseUrl, {
@@ -161,7 +174,7 @@ export function createCodexAdapter(deps: CodingAgentDeps = {}): CodingAgent {
 
         const result = await invokeCli(
           deps.runner ?? spawnCli,
-          codexRequest(input, env, codexHome, baseUrl),
+          codexRequest(input, env, codexHome, baseUrl, auth.sandbox),
         );
         return mapCliToOutput({
           provider: "codex",
