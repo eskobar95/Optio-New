@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 12:40 UTC
+Last refreshed: 2026-09-26 12:45 UTC
 
 ## Bootstrap progress
 
@@ -19,7 +19,7 @@ Last refreshed: 2026-09-26 12:40 UTC
 
 [![CI](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml/badge.svg)](https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml)
 
-Latest conclusion: **success**
+Latest conclusion: **cancelled**
 
 Actions: https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml
 
@@ -50,7 +50,7 @@ Host health after [#76](https://github.com/eskobar95/Optio-New/pull/76): Compose
 
 ## Open issues
 
-Open: 10.
+Open: 7.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
@@ -59,11 +59,8 @@ Tracker: https://github.com/eskobar95/Optio-New/issues
 - #93 Multi-repo support for worktrees and intake routing (P2, backlog, enhancement, infra, orchestration)
 - #92 Session artifact trail for plans, reviews, and PR links (P1, backlog, enhancement, orchestration)
 - #91 Crash recovery and resume mid-pipeline (P1, backlog, enhancement, infra, orchestration)
-- #90 Permission tiers for agent shell, git, and host actions (P1, backlog, enhancement, orchestration, security)
-- #88 Secrets redaction in logs, traces, and agent dumps (P1, backlog, enhancement, security)
 - #87 Cost and token budget caps per task (P1, backlog, enhancement, orchestration)
 - #86 Human-in-the-loop approval stage for plan and merge (P1, backlog, enhancement, orchestration)
-- #81 Review-gate: tests, lint, and security/diff review before PR merge (P1, enhancement, orchestration, security)
 
 ## Refresh
 
