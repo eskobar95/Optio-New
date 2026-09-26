@@ -14,6 +14,11 @@ import type {
   GuardedToolResult,
   ModelToolCall,
 } from "../harness/gates/types.js";
+import {
+  CANONICAL_SPAN,
+  getStageTracer,
+  type StageTracer,
+} from "../orchestrator/telemetry/index.js";
 import type { ModelAdapter } from "./adapter.js";
 import {
   createInstalledSkillLoader,
@@ -54,6 +59,10 @@ export interface AgentLoopInput {
   caveman?: boolean;
   skillBudget?: SkillBudget;
   tools?: AgentToolRuntime;
+  taskId?: string;
+  worktreeId?: string;
+  stepId?: string;
+  tracer?: StageTracer;
 }
 
 export interface AgentLoopResult {
@@ -71,6 +80,26 @@ export async function runAgentLoop(
     { prompt: input.prompt, caveman: input.caveman },
     budget,
   );
+  if (skills.length > 0) {
+    const tracer = input.tracer ?? getStageTracer();
+    const taskId = input.taskId ?? input.tools?.taskId ?? "";
+    const worktreeId = input.worktreeId ?? "";
+    const stepId = input.stepId ?? input.tools?.stepId;
+    for (const skill of skills) {
+      await tracer.runStage(
+        CANONICAL_SPAN.skillLoad,
+        {
+          taskId,
+          worktreeId,
+          attributes: {
+            skill_id: skill.id,
+            ...(stepId ? { step_id: stepId } : {}),
+          },
+        },
+        async () => undefined,
+      );
+    }
+  }
   const response = await adapter.complete({ prompt: input.prompt, skills });
   const toolCalls = response.toolCalls;
   if (!input.tools || !toolCalls || toolCalls.length === 0) {
@@ -92,6 +121,7 @@ export async function runAgentLoop(
         sidecar: input.tools.sidecar,
         timeoutMs: input.tools.timeoutMs,
         now: input.tools.now,
+        tracer: input.tracer,
       }),
     );
   }

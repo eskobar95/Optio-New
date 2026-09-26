@@ -24,6 +24,10 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-trace-base": "^2.11.0",
     "bullmq": "^5.34.0",
     "ioredis": "^5.4.2",
     "pg": "^8.23.0",

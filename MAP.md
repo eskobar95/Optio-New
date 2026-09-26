@@ -18,7 +18,8 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `src/orchestrator/sessions/`                          | §13.5             | Session gate, overflow, queue-depth telemetry                             |
 | `orchestrator/jev/`                                   | §9, §14.3         | Decision client; Vercel AI Gateway base URL                               |
 | `orchestrator/learning/`                              | §10               | Failure fingerprints → meta-tasks                                         |
-| `orchestrator/telemetry/`                             | §12.1–§12.4       | OTel helpers, canonical spans                                             |
+| `orchestrator/telemetry/`                             | §12.1–§12.4       | OTel helpers, canonical spans; code in `src/orchestrator/telemetry/`      |
+| `docs/observability.md`                               | §12.2–§12.4       | v1 choice: Langfuse (not Phoenix); SigNoz export off by default           |
 | `orchestrator/routing/`                               | §14.4             | Hop-1 backend selection                                                   |
 | `src/`                                                | §8, §11, §13, §14 | TypeScript harness (intake, jobs, adapters, gateway, gates)               |
 | `src/agent/`                                          | §9, §13           | Request-response loop; tool calls pass hard gates before effects          |

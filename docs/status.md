@@ -64,6 +64,141 @@ The script is idempotent: this file is rewritten only when the latest CI conclus
 
 Automation: `.github/workflows/status.yml` runs the same script on a daily schedule, on `workflow_dispatch`, and after the CI workflow completes on `main`.
 
+## Observability
+
+v1 agent UI is Langfuse; Phoenix is not wired. SigNoz is the infra OTLP sink. Both exporters default off. Decision: `docs/observability.md`.
+
+Local pipeline trace (in-process OTel, exporters off):
+
+```json
+{
+  "exporters": [],
+  "intake": {
+    "name": "intake.webhook",
+    "task_id": "t-local",
+    "worktree_id": "",
+    "session_id": "s-local",
+    "status": "ok",
+    "traceId": "148a857035e3b0c0df81bdfd75d77d3f",
+    "spanId": "edd3e0f74117fbc8"
+  },
+  "stages": [
+    {
+      "step_id": "plan",
+      "task_id": "t-local",
+      "worktree_id": "",
+      "status": "ok",
+      "traceId": "41f6fea246a153f9789ba0ffcda19de7",
+      "spanId": "eb011a82fb883aca"
+    },
+    {
+      "step_id": "implement",
+      "task_id": "t-local",
+      "worktree_id": "",
+      "status": "ok",
+      "traceId": "be4b64111fbf0f0fd2c7fce6eeb5ec47",
+      "spanId": "90e8864b2610fef6"
+    },
+    {
+      "step_id": "review",
+      "task_id": "t-local",
+      "worktree_id": "",
+      "status": "ok",
+      "traceId": "fb53987aa6c74292d7166d157988da10",
+      "spanId": "d2b065dd14d26251"
+    },
+    {
+      "step_id": "ready",
+      "task_id": "t-local",
+      "worktree_id": "",
+      "status": "ok",
+      "traceId": "c7d46763effb378a47c8b0df618a9393",
+      "spanId": "9b7bfa6bed3db01f"
+    },
+    {
+      "step_id": "merge",
+      "task_id": "t-local",
+      "worktree_id": "",
+      "status": "ok",
+      "traceId": "aa3cccfa86f1e41924b1ea10980e3c74",
+      "spanId": "f760cba22062af6d"
+    }
+  ],
+  "planTrace": [
+    {
+      "name": "skill.load",
+      "traceId": "28eb83579bfd2402651df3ace69e3e30",
+      "spanId": "15c9a81cfba9a5cf",
+      "parentSpanId": "1211092309eb6bfa",
+      "status": "ok",
+      "attributes": {
+        "task_id": "t-local",
+        "worktree_id": "",
+        "skill_id": "bot-session",
+        "step_id": "ack_session"
+      }
+    },
+    {
+      "name": "agent.run",
+      "traceId": "28eb83579bfd2402651df3ace69e3e30",
+      "spanId": "1211092309eb6bfa",
+      "parentSpanId": "311a3f1bb24fbe36",
+      "status": "ok",
+      "attributes": {
+        "task_id": "t-local",
+        "worktree_id": "",
+        "workflow_id": "default-task",
+        "step_id": "ack_session",
+        "agent_id": "agents/plan",
+        "session_id": "s-local"
+      }
+    },
+    {
+      "name": "skill.load",
+      "traceId": "28eb83579bfd2402651df3ace69e3e30",
+      "spanId": "3d0ef97c7e5c0c56",
+      "parentSpanId": "eb3c160a682310f1",
+      "status": "ok",
+      "attributes": {
+        "task_id": "t-local",
+        "worktree_id": "",
+        "skill_id": "bot-session",
+        "step_id": "invoke_planner"
+      }
+    },
+    {
+      "name": "agent.run",
+      "traceId": "28eb83579bfd2402651df3ace69e3e30",
+      "spanId": "eb3c160a682310f1",
+      "parentSpanId": "311a3f1bb24fbe36",
+      "status": "ok",
+      "attributes": {
+        "task_id": "t-local",
+        "worktree_id": "",
+        "workflow_id": "default-task",
+        "step_id": "invoke_planner",
+        "agent_id": "agents/plan",
+        "session_id": "s-local"
+      }
+    },
+    {
+      "name": "workflow.step",
+      "traceId": "28eb83579bfd2402651df3ace69e3e30",
+      "spanId": "311a3f1bb24fbe36",
+      "parentSpanId": null,
+      "status": "ok",
+      "attributes": {
+        "task_id": "t-local",
+        "worktree_id": "",
+        "workflow_id": "default-task",
+        "step_id": "plan",
+        "session_id": "s-local"
+      }
+    }
+  ]
+}
+```
+
 ## Structure overview
 
 ```text

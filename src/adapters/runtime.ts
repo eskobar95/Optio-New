@@ -5,6 +5,12 @@
 
 import { spawn } from "node:child_process";
 
+import {
+  CANONICAL_SPAN,
+  getStageTracer,
+  type ActiveSpan,
+  type StageTracer,
+} from "../orchestrator/telemetry/index.js";
 import type {
   CodingAgentInput,
   CodingAgentOutput,
@@ -37,6 +43,38 @@ export interface CodingAgentDeps {
   writeTextFile?: (filePath: string, contents: string) => Promise<void>;
   /** User-level CODEX_HOME. Project `.codex/config.toml` ignores `openai_base_url`. */
   codexHome?: string;
+  /** Defaults to the process tracer. Export stays off unless the env flags are true. */
+  tracer?: StageTracer;
+}
+
+/** `agent.run` around one CodingAgent call. A non-succeeded status fails the span and still returns. */
+export async function withAgentRunSpan(
+  input: CodingAgentInput,
+  agentId: string,
+  tracer: StageTracer | undefined,
+  fn: (span: ActiveSpan) => Promise<CodingAgentOutput>,
+): Promise<CodingAgentOutput> {
+  const active = tracer ?? getStageTracer();
+  return active.runStage(
+    CANONICAL_SPAN.agentRun,
+    {
+      taskId: input.metadata.task_id,
+      worktreeId: input.metadata.worktree_id,
+      attributes: {
+        agent_id: agentId,
+        workflow_id: input.metadata.workflow_id,
+        step_id: input.metadata.step_id,
+      },
+    },
+    async (span) => {
+      const output = await fn(span);
+      if (output.status !== "succeeded") {
+        span.setAttribute("error_class", output.error_class ?? output.status);
+        span.fail(output.error_class ?? output.status);
+      }
+      return output;
+    },
+  );
 }
 
 const MAX_OUTPUT_CHARS = 1_000_000;

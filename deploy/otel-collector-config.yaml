@@ -1,4 +1,7 @@
-# Optio-New OTel Collector stub — replace exporters when Langfuse/SigNoz are enabled
+# Optio-New OTel Collector stub.
+# Local debug sink for traces. Langfuse and SigNoz export stays off until
+# OPTIO_OTEL_LANGFUSE / OPTIO_OTEL_SIGNOZ are the string "true".
+# Point OPTIO_SIGNOZ_OTLP_ENDPOINT at this collector (:4318) or at SigNoz.
 receivers:
   otlp:
     protocols:
@@ -9,11 +12,11 @@ receivers:
 processors:
   batch: {}
 exporters:
-  logging:
-    loglevel: info
+  debug:
+    verbosity: basic
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [logging]
+      exporters: [debug]

@@ -1,0 +1,32 @@
+# Observability (SPEC §12)
+
+v1 uses one OpenTelemetry path. Spans are always recorded in-process. Export is off until an env flag is the string `true`.
+
+## Langfuse, not Phoenix, for the agent UI
+
+**Langfuse** (MIT, self-hosted) is the v1 agent UI. Sessions are keyed by `task_id`. Phoenix (Arize, ELv2) stays the fallback if Langfuse’s ClickHouse + Postgres + Redis stack is too heavy for a small VPS. Phoenix is not wired. SPEC §12.6 says not to run two agent UIs in v1.
+
+**SigNoz** (MIT) is the infra OTLP sink for orchestrator traces, logs, and metrics. It is also off by default. Do not send the agent deep-dive to both Langfuse and SigNoz as two competing UIs; SigNoz receives the same OTLP spans when its flag is on so queue and host traces have a home.
+
+## Flags
+
+| Variable                                      | Default                           | Effect                                                |
+| --------------------------------------------- | --------------------------------- | ----------------------------------------------------- |
+| `OPTIO_OTEL_LANGFUSE`                         | `false`                           | `true` exports OTLP to Langfuse                       |
+| `OPTIO_OTEL_SIGNOZ`                           | `false`                           | `true` exports OTLP to SigNoz or the collector        |
+| `LANGFUSE_HOST`                               | `http://127.0.0.1:3000`           | Host used to build `/api/public/otel/v1/traces`       |
+| `OPTIO_LANGFUSE_OTLP_ENDPOINT`                | empty                             | Full traces URL; overrides `LANGFUSE_HOST`            |
+| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | empty                             | Basic auth on the Langfuse exporter when both are set |
+| `OPTIO_SIGNOZ_OTLP_ENDPOINT`                  | `http://127.0.0.1:4318/v1/traces` | Collector or SigNoz OTLP/HTTP traces URL              |
+
+## Spans
+
+`processStageJob` emits `workflow.step` for plan → implement → review → ready → merge. Each span has `task_id` and `worktree_id` (`""` until a worktree exists). `agent.run` and `skill.load` nest under the stage. `enqueueIntakePipeline` emits `intake.webhook`. Kit-harness tool gates emit `gate.pass` or `gate.fail`. Cursor and Codex `run` emit `agent.run` around the CLI call; a non-succeeded status fails the span and still returns the adapter result.
+
+`session.queue` stays on `SessionTelemetry` (`src/orchestrator/sessions`). The session gate does not require an exporter.
+
+`specialist.call`, `jev.decision`, `worktree.create`, and `worktree.remove` are reserved names. Those call sites are not in the tree yet.
+
+The collector stub is `deploy/otel-collector-config.yaml` (Compose profile `observability`, loopback `4317`/`4318`, debug exporter).
+
+Regenerate the sample trace with `npx tsx scripts/emit-local-trace.ts`, then `npm run status`.

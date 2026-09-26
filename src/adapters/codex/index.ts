@@ -17,6 +17,7 @@ import {
   invokeCli,
   mapCliToOutput,
   spawnCli,
+  withAgentRunSpan,
   type CliRunRequest,
   type CodingAgentDeps,
 } from "../runtime.js";
@@ -118,54 +119,56 @@ export function createCodexAdapter(deps: CodingAgentDeps = {}): CodingAgent {
   return {
     id: "codex",
     async run(input: CodingAgentInput): Promise<CodingAgentOutput> {
-      const env = deps.env ?? process.env;
-      const virtualKey = env.LITELLM_MASTER_KEY?.trim() ?? "";
-      if (!virtualKey) {
-        return credentialsFailure("codex", input, "missing_credentials");
-      }
+      return withAgentRunSpan(input, "codex", deps.tracer, async () => {
+        const env = deps.env ?? process.env;
+        const virtualKey = env.LITELLM_MASTER_KEY?.trim() ?? "";
+        if (!virtualKey) {
+          return credentialsFailure("codex", input, "missing_credentials");
+        }
 
-      let baseUrl: string;
-      try {
-        baseUrl = codexOpenAiBaseUrl(env);
-      } catch (error) {
-        return {
-          pr_ready: false,
-          status: "failed",
-          error_class: "gateway_url",
-          logs: error instanceof Error ? error.message : "codex upstream base URL is empty",
-          usage: { provider: "codex", model_id: input.metadata.model_id },
-        };
-      }
+        let baseUrl: string;
+        try {
+          baseUrl = codexOpenAiBaseUrl(env);
+        } catch (error) {
+          return {
+            pr_ready: false,
+            status: "failed",
+            error_class: "gateway_url",
+            logs: error instanceof Error ? error.message : "codex upstream base URL is empty",
+            usage: { provider: "codex", model_id: input.metadata.model_id },
+          };
+        }
 
-      const sandbox = allowsMutation(input.allowed_tools) ? "workspace-write" : "read-only";
-      const codexHome = codexHomeFor(input, deps);
-      const configPath = path.join(codexHome, "config.toml");
-      const config = buildCodexGatewayConfig(baseUrl, {
-        modelId: input.metadata.model_id,
-        sandbox,
-      });
-      const write = deps.writeTextFile ?? defaultWriteTextFile;
-      try {
-        await write(configPath, config);
-      } catch (error) {
-        return {
-          pr_ready: false,
-          status: "failed",
-          error_class: "config_write",
-          logs: error instanceof Error ? error.message : "failed to write codex config",
-          usage: { provider: "codex", model_id: input.metadata.model_id },
-        };
-      }
+        const sandbox = allowsMutation(input.allowed_tools) ? "workspace-write" : "read-only";
+        const codexHome = codexHomeFor(input, deps);
+        const configPath = path.join(codexHome, "config.toml");
+        const config = buildCodexGatewayConfig(baseUrl, {
+          modelId: input.metadata.model_id,
+          sandbox,
+        });
+        const write = deps.writeTextFile ?? defaultWriteTextFile;
+        try {
+          await write(configPath, config);
+        } catch (error) {
+          return {
+            pr_ready: false,
+            status: "failed",
+            error_class: "config_write",
+            logs: error instanceof Error ? error.message : "failed to write codex config",
+            usage: { provider: "codex", model_id: input.metadata.model_id },
+          };
+        }
 
-      const result = await invokeCli(
-        deps.runner ?? spawnCli,
-        codexRequest(input, env, codexHome, baseUrl),
-      );
-      return mapCliToOutput({
-        provider: "codex",
-        input,
-        result,
-        secrets: [virtualKey],
+        const result = await invokeCli(
+          deps.runner ?? spawnCli,
+          codexRequest(input, env, codexHome, baseUrl),
+        );
+        return mapCliToOutput({
+          provider: "codex",
+          input,
+          result,
+          secrets: [virtualKey],
+        });
       });
     },
   };

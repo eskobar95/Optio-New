@@ -42,6 +42,19 @@ export {
   type IntakeServerOptions,
   type IntakeTask,
 } from "./orchestrator/intake/index.js";
+export {
+  CANONICAL_SPAN,
+  createStageTracer,
+  getStageTracer,
+  loadTelemetryExportConfig,
+  resolveExporterTargets,
+  type ActiveSpan,
+  type ExporterTarget,
+  type FinishedSpan,
+  type SpanFields,
+  type StageTracer,
+  type TelemetryExportConfig,
+} from "./orchestrator/telemetry/index.js";
 export { processHelloWorld } from "./orchestrator/jobs/hello-world.js";
 export {
   createPathWorkspacePort,
