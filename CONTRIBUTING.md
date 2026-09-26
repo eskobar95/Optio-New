@@ -34,6 +34,7 @@ npm run ci             # format:check + lint + typecheck + test + smoke
 | `npm test` / `test:watch`         | Vitest                           |
 | `npm run smoke`                   | Local/CI smoke (Docker optional) |
 | `npm run ci`                      | Full local gate                  |
+| `npm run status`                  | Refresh `docs/status.md`         |
 
 ## Good first issue
 
@@ -47,10 +48,16 @@ Start with the labeled **good first issue** on GitHub (agent request-response lo
 
 ## Status page
 
-Refresh bootstrap/CI/issues snapshot:
+`docs/status.md` is the bootstrap snapshot: CI badge, latest CI conclusion, and open issues.
+
+Refresh it manually (requires [GitHub CLI](https://cli.github.com/) and `gh auth login`):
 
 ```bash
-bash scripts/update-status.sh
+npm run status
 ```
+
+`scripts/update-status.sh` is idempotent. It rewrites `docs/status.md` only when the latest CI conclusion or the open-issue list changes, so running it twice leaves the file untouched.
+
+CI does not refresh the page inside `npm run ci`. [`.github/workflows/status.yml`](.github/workflows/status.yml) runs the same script on a daily schedule, on **Actions → Status → Run workflow**, and after the CI workflow completes on `main`. That job commits `docs/status.md` only when the snapshot changed.
 
 See [docs/status.md](docs/status.md).

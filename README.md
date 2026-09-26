@@ -59,7 +59,7 @@ Postgres backup example: `scripts/backup-postgres-to-storagebox.sh.example`.
 
 - **GitHub Actions:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on **every push** and **every pull_request** (any branch for push; PRs targeting `main`). Runs `format:check`, `lint`, `typecheck`, `test` (Vitest), and `smoke`. Failures fail the workflow.
 - **Pre-commit:** Husky + lint-staged (`.husky/pre-commit`) installs via `npm install` (`prepare` → `husky`). Formats/lints staged files and runs `typecheck` (no Docker required).
-- **Tooling:** ESLint + Prettier + Vitest + `tsc --noEmit`. Scripts: `lint`, `lint:fix`, `format`, `format:check`, `typecheck`, `test`, `test:watch`, `smoke`, `ci`.
+- **Tooling:** ESLint + Prettier + Vitest + `tsc --noEmit`. Scripts: `lint`, `lint:fix`, `format`, `format:check`, `typecheck`, `test`, `test:watch`, `smoke`, `ci`, `status`.
 
 ## Optional: Caveman cost-opt
 
@@ -86,4 +86,12 @@ License: [MIT](LICENSE).
 
 ## Status
 
-Live bootstrap snapshot: **[docs/status.md](docs/status.md)**. Refresh with `bash scripts/update-status.sh` (uses `gh`).
+Live bootstrap snapshot: **[docs/status.md](docs/status.md)** (CI badge and open issues).
+
+Refresh it locally with GitHub CLI (`gh auth login`), then:
+
+```bash
+npm run status
+```
+
+The script is idempotent: a second run does not rewrite the file when the CI conclusion and the open-issue list are unchanged. [`.github/workflows/status.yml`](.github/workflows/status.yml) runs the same command daily, on manual dispatch, and after CI completes on `main`. `npm run ci` does not call it.
