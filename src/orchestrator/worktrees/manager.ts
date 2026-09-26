@@ -72,6 +72,8 @@ export interface CreateWorktreeOptions {
   /** When set with `skillStageHook`, seed this workflow step's allow-list. */
   stepId?: string;
   plannerSelection?: readonly string[];
+  /** Catalog repo. The single-repo manager ignores it; the router selects with it. */
+  repoId?: string;
 }
 
 export interface WorktreeHandle {

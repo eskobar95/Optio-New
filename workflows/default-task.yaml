@@ -3,6 +3,8 @@
 name: default-task
 trigger: bot.intake.created
 base_branch: development
+# Optional catalog selector. Omit repo_id to use OPTIO_NEW_DEFAULT_REPO_ID.
+# repo_id: optio-new
 
 steps:
   - id: planner

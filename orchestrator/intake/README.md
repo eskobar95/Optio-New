@@ -19,22 +19,29 @@
     "taskId": "t-1",
     "sessionId": "s-1",
     "repo": "eskobar95/Optio-New",
-    "baseBranch": "development"
+    "baseBranch": "development",
+    "repoId": "optio-new"
   }
 }
 ```
 
-`title` and `taskId` are required. `sessionId` defaults to `taskId`. `repo` and `baseBranch` are optional hints. Ids must not contain `:`.
+`title` and `taskId` are required. `sessionId` defaults to `taskId`. `repo` and `baseBranch` are optional hints. `repoId` is an optional catalog selector; omitted uses the workflow `repo_id`, then the catalog default (`default` when `OPTIO_NEW_REPOS` is empty). Ids must not contain `:`. An unknown `repoId` returns `400` `unknown_repo` and does not enqueue.
 
 A valid body returns `202`:
 
 ```json
-{ "taskId": "t-1", "sessionId": "s-1", "jobId": "s-1__plan", "queue": "optio.plan" }
+{
+  "taskId": "t-1",
+  "sessionId": "s-1",
+  "jobId": "s-1__plan",
+  "queue": "optio.plan",
+  "repoId": "default"
+}
 ```
 
 `jobId` is the first stage job. `enqueueIntakePipeline` adds the whole flow; BullMQ runs `optio.plan` first. Malformed JSON returns `400` with `error: "invalid_json"`. A payload that fails validation returns `400` with `error: "invalid_intake"` and `issues` (`path`, `message`). Nothing is enqueued in either case.
 
-The stage job payload from the pipeline graph is still `{ taskId, sessionId, stage }`. Repo and branch hints are validated here and are not copied onto that payload.
+The stage job payload includes `taskId`, `sessionId`, `stage`, the brief `title` / `description`, and `repoId` when intake resolved one. `repo` and `baseBranch` stay hints and are not copied.
 
 ## Public webhook
 
@@ -42,10 +49,13 @@ The stage job payload from the pipeline graph is still `{ taskId, sessionId, sta
 
 `POST /intake` does not check that header. Keep it on `127.0.0.1:3100`. Caddy profile `edge` proxies `/webhooks/*` on `:80` and does not proxy `/intake`. Enable steps: [docs/ops/caddy-tls-edge.md](../../docs/ops/caddy-tls-edge.md).
 
+## GitHub and Slack
+
+`POST /webhooks/github` and `POST /webhooks/slack` verify HMAC and enqueue the same `bot.intake.created` flow. See [docs/ops/intake-adapters.md](../../docs/ops/intake-adapters.md). Repo routing: [docs/ops/multi-repo-cx33.md](../../docs/ops/multi-repo-cx33.md).
+
 ## Explicitly out (v1)
 
-- Linear webhooks, GraphQL, OAuth agent scopes, Agent Activities.
+- Linear webhooks, GraphQL, OAuth agent scopes, Agent Activities. `POST /webhooks/linear` is `404` `linear_deferred` (SPEC ADR). No Linear adapter.
 - Backlog polling of any issue tracker as the control plane.
-- A GitHub webhook receiver on this edge. PR/CI signals stay on `OPTIO_NEW_GITHUB_WEBHOOK_SECRET`.
 
 See `docs/SPEC.md` §8 (intake) and §14.0 (BullMQ).

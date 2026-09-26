@@ -156,7 +156,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     if (backend === "cursor" && !env.CURSOR_API_KEY?.trim()) {
       throw new StageCredentialsError("CURSOR_API_KEY is required for the Cursor coding agent");
     }
-    const handle = await ensureWorktree(ctx.taskId);
+    const handle = await ensureWorktree(ctx);
     const agent = options.codingAgent ?? createCodingAgent(backend, { env });
     const output = await agent.run(codingInput(ctx, handle, timeoutMs, options.maxTokens));
     if (ctx.recordUsage) {
@@ -182,10 +182,10 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     );
   }
 
-  async function ensureWorktree(taskId: string): Promise<WorktreeHandle> {
-    const existing = await worktrees.status(taskId);
+  async function ensureWorktree(ctx: StageStepContext): Promise<WorktreeHandle> {
+    const existing = await worktrees.status(ctx.taskId);
     if (existing) return existing;
-    return worktrees.create(taskId);
+    return worktrees.create(ctx.taskId, { repoId: ctx.repoId });
   }
 
   async function recordGitSummary(ctx: StageStepContext): Promise<void> {

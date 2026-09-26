@@ -29,10 +29,12 @@ export async function enqueueIntakePipeline(
       const identity = { taskId: task.taskId, sessionId: sessionId ?? task.taskId };
       span.setAttribute("task_id", identity.taskId);
       span.setAttribute("session_id", identity.sessionId);
+      if (task.source) span.setAttribute("intake_source", task.source);
       const flow = buildPipelineFlow({
         ...identity,
         title: task.title,
         description: task.description,
+        repoId: task.repoId,
       });
       await enqueuer.add(flow);
       return { ...identity, flow };

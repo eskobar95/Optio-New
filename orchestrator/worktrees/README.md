@@ -17,3 +17,7 @@ BullMQ: pass the manager as `StageRuntime.worktrees`. Implement calls `create` b
 CX33 disk budget and why v1 does not use a container per task: `docs/ops/worktree-isolation.md`.
 
 Session concurrency (SPEC §13.5, `src/orchestrator/sessions`) does not create or reap git worktrees. It claims a cwd through `SessionWorkspacePort`. Adapt this manager with `workspacePortFromWorktreeManager`. Releasing a session drops that claim only. Reap stays on merge success.
+
+## More than one repo
+
+`RepoWorktreeRouter` (`src/orchestrator/repos/router.ts`) implements the same `create` / `status` / `reap` surface. `create(taskId, { repoId })` uses that binding's `localPath`, `defaultBranch`, and `worktreeRoot`. Omitted `repoId` uses the catalog default. The orchestrator process builds this router with `createGuardedRepoWorktrees`, so a low disk, inode, or memory reading throws `ResourceGuardError` before `git worktree add`. See [docs/ops/multi-repo-cx33.md](../../docs/ops/multi-repo-cx33.md) and [docs/ops/resource-guard.md](../../docs/ops/resource-guard.md).

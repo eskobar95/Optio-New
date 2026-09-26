@@ -10,10 +10,24 @@ import { HELLO_WORLD_RESPONSE, type PlanStageView } from "../jobs/hello-world.js
 import type { TaskRunView } from "../observability/run-log.js";
 import { PipelineIdentitySchema, STAGE_QUEUES } from "../jobs/stages.js";
 import {
+  REPO_ID_PATTERN,
+  UnknownRepoError,
+  loadRepoCatalog,
+  selectRepoId,
+  type RepoCatalog,
+} from "../repos/catalog.js";
+import { GITHUB_WEBHOOK_PATH, handleGithubWebhook } from "./adapters/github.js";
+import { SLACK_WEBHOOK_PATH, handleSlackWebhook } from "./adapters/slack.js";
+import type { IntakeAdapterResult } from "./adapters/shared.js";
+import { redactSecrets } from "./redact.js";
+import {
   authorizeIntakeWebhook,
   INTAKE_WEBHOOK_PATH,
   INTAKE_WEBHOOK_SIGNATURE_HEADER,
 } from "./webhook-auth.js";
+
+/** Linear stays out of v1 (SPEC ADR). This path exists so the refusal is explicit. */
+export const TRACKER_WEBHOOK_PATH = "/webhooks/linear";
 
 const MAX_BODY_BYTES = 65_536;
 
@@ -34,6 +48,8 @@ export const IntakeHttpSchema = z.object({
     sessionId: PipelineIdSchema.optional(),
     repo: z.string().min(1).optional(),
     baseBranch: z.string().min(1).optional(),
+    /** Catalog selector. Omitted uses the workflow repo_id, then the catalog default. */
+    repoId: z.string().regex(REPO_ID_PATTERN, "repoId must be a safe token").optional(),
   }),
 });
 
@@ -63,6 +79,14 @@ export interface IntakeServerOptions {
    * POST /intake does not read this value.
    */
   webhookSecret?: string;
+  /** Repo catalog. Omitted uses the built-in single default checkout (not process.env). */
+  repoCatalog?: RepoCatalog;
+  /** `repo_id` from workflows/default-task.yaml, when the file names one. */
+  workflowRepoId?: string;
+  /** HMAC secret for POST /webhooks/github. Blank fails that route closed (503). */
+  githubWebhookSecret?: string;
+  /** HMAC secret for POST /webhooks/slack. Blank fails that route closed (503). */
+  slackSigningSecret?: string;
 }
 
 export interface IntakeAccepted {
@@ -70,6 +94,7 @@ export interface IntakeAccepted {
   sessionId: string;
   jobId: string;
   queue: string;
+  repoId: string;
 }
 
 class IntakeHttpError extends Error {
@@ -155,11 +180,31 @@ async function acceptIntake(
   options: IntakeServerOptions,
 ): Promise<void> {
   const parsed = IntakeHttpSchema.parse(json);
+  const catalog = options.repoCatalog ?? loadRepoCatalog({});
+  let repoId: string;
+  try {
+    repoId = selectRepoId({
+      catalog,
+      requested: parsed.metadata.repoId,
+      workflowRepoId: options.workflowRepoId,
+    });
+  } catch (error) {
+    if (error instanceof UnknownRepoError) {
+      throw new IntakeHttpError(400, {
+        error: "unknown_repo",
+        message: error.message,
+      });
+    }
+    throw error;
+  }
   const enqueued = await enqueueIntakePipeline(
     {
       taskId: parsed.metadata.taskId,
       title: parsed.brief.title,
       description: parsed.brief.description ?? "",
+      repoId,
+      source: "http",
+      event: "bot.intake.created",
     },
     options.enqueuer,
     parsed.metadata.sessionId,
@@ -169,8 +214,31 @@ async function acceptIntake(
     sessionId: enqueued.sessionId,
     jobId: `${enqueued.sessionId}__plan`,
     queue: STAGE_QUEUES.plan,
+    repoId,
   };
   sendJson(res, 202, accepted);
+}
+
+async function enqueueAdapter(
+  result: Extract<IntakeAdapterResult, { action: "enqueue" }>,
+  res: ServerResponse,
+  options: IntakeServerOptions,
+): Promise<void> {
+  const enqueued = await enqueueIntakePipeline(result.intake, options.enqueuer);
+  const body: Record<string, unknown> = {
+    event: result.intake.event,
+    taskId: enqueued.taskId,
+    sessionId: enqueued.sessionId,
+    jobId: `${enqueued.sessionId}__plan`,
+    queue: STAGE_QUEUES.plan,
+    repoId: result.intake.repoId,
+    source: result.intake.source,
+  };
+  if (result.intake.source === "slack") {
+    body.response_type = "ephemeral";
+    body.text = "Queued.";
+  }
+  sendJson(res, result.status, body);
 }
 
 function invalidIntake(error: ZodError): IntakeHttpError {
@@ -289,11 +357,51 @@ export async function handleIntakeRequest(
       await acceptIntake(parseJsonBody(raw), res, options);
       return;
     }
+    if (url.pathname === GITHUB_WEBHOOK_PATH || url.pathname === SLACK_WEBHOOK_PATH) {
+      if (req.method !== "POST") {
+        res.setHeader("allow", "POST");
+        sendJson(res, 405, {
+          error: "method_not_allowed",
+          message: `Use POST ${url.pathname}`,
+        });
+        return;
+      }
+      const raw = await readRawBody(req);
+      const catalog = options.repoCatalog ?? loadRepoCatalog({});
+      const adapter =
+        url.pathname === GITHUB_WEBHOOK_PATH
+          ? handleGithubWebhook({
+              raw,
+              headers: req.headers,
+              secret: options.githubWebhookSecret,
+              catalog,
+            })
+          : handleSlackWebhook({
+              raw,
+              headers: req.headers,
+              secret: options.slackSigningSecret,
+              catalog,
+            });
+      if (adapter.action === "respond") {
+        sendJson(res, adapter.status, adapter.body);
+        return;
+      }
+      await enqueueAdapter(adapter, res, options);
+      return;
+    }
+    if (url.pathname === TRACKER_WEBHOOK_PATH) {
+      sendJson(res, 404, {
+        error: "linear_deferred",
+        message:
+          "Linear intake is out of scope for Optio-New v1 (SPEC ADR). Use New Bot, GitHub Issues, or Slack.",
+      });
+      return;
+    }
     if (url.pathname !== "/intake") {
       sendJson(res, 404, {
         error: "not_found",
         message:
-          "Known routes: GET /health, GET /hello, GET /hello/plan, GET /tasks/:taskId/actions, POST /intake, POST /webhooks/intake",
+          "Known routes: GET /health, GET /hello, GET /hello/plan, GET /tasks/:taskId/actions, POST /intake, POST /webhooks/intake, POST /webhooks/github, POST /webhooks/slack",
       });
       return;
     }
@@ -317,7 +425,7 @@ export async function handleIntakeRequest(
       sendJson(res, invalid.status, invalid.body);
       return;
     }
-    const message = error instanceof Error ? error.message : "Enqueue failed";
+    const message = redactSecrets(error instanceof Error ? error.message : "Enqueue failed");
     sendJson(res, 500, { error: "enqueue_failed", message });
   }
 }
