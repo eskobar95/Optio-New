@@ -7,3 +7,6 @@ specs/harness-working-skills
 .git
 .env.example
 LICENSE
+.agents/
+.cursor/skills/caveman/
+.cursor/skills/caveman-*/

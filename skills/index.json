@@ -1,5 +1,5 @@
 {
-  "$schema_comment": "In-repo SoT: full skill bodies live under .cursor/skills/. Staging under harness/staging and specs/harness-working-skills is historical snapshot only.",
+  "$schema_comment": "In-repo SoT: full skill bodies under .cursor/skills/. caveman* skills are optional cost/verbosity (opt-in via /caveman). Staging under harness/staging and specs/harness-working-skills is historical only.",
   "source_of_truth_root": ".cursor/skills",
   "skills": [
     {
@@ -73,6 +73,20 @@
       "cursor_native_id": "handoff",
       "cursor_native_path": ".cursor/skills/handoff",
       "phase_tags": ["meta"]
+    },
+    {
+      "id": "skills/caveman",
+      "cursor_native_id": "caveman",
+      "cursor_native_path": ".cursor/skills/caveman",
+      "phase_tags": ["optional", "cost", "verbosity"],
+      "optional": true
+    },
+    {
+      "id": "skills/caveman-compress",
+      "cursor_native_id": "caveman-compress",
+      "cursor_native_path": ".cursor/skills/caveman-compress",
+      "phase_tags": ["optional", "cost"],
+      "optional": true
     }
   ]
 }

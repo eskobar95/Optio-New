@@ -5,3 +5,9 @@
 export { buildIntakeJob, IntakeTaskSchema, type IntakeTask } from "./orchestrator/intake/index.js";
 export { processHelloWorld } from "./orchestrator/jobs/hello-world.js";
 export type { CodingAgent, CodingAgentInput, CodingAgentOutput } from "./adapters/coding-agent.js";
+export {
+  loadCavemanProxyConfig,
+  resolveCodexUpstreamBaseUrl,
+  type CavemanMode,
+  type CavemanProxyConfig,
+} from "./proxy/index.js";

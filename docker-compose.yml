@@ -114,6 +114,20 @@ services:
       - optio_new_caddy_config:/config
     profiles: ["edge"]
 
+  # Optional local Caveman proxy host placeholder (profile: caveman).
+  # Prefer host CLI: npm i -g @caveman-ai/cli && caveman start
+  # Do not vendor BSL engine binaries into this repo.
+  caveman-proxy:
+    profiles: ["caveman"]
+    image: node:20-alpine
+    working_dir: /app
+    command:
+      - sh
+      - -lc
+      - "echo 'Install @caveman-ai/cli on the host or replace this stub with your proxy image'; sleep infinity"
+    ports:
+      - "127.0.0.1:8787:8787"
+
 volumes:
   optio_new_redis:
   optio_new_postgres:

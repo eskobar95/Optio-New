@@ -50,3 +50,8 @@ npm run smoke
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same checks on every push and every PR to `main`.
+
+## Optional: Caveman (cost / brevity)
+
+- Skills: `.cursor/skills/caveman*` (MIT). Activate with `/caveman`; disable with `/caveman off`. Default **off** — do not force caveman-speak on every agent.
+- Local proxy: `CAVEMAN_PROXY_ENABLED` (default `false`). See `src/proxy/README.md`. Do not require Caveman Cloud/Platform in V1.

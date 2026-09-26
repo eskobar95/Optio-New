@@ -61,11 +61,21 @@ Postgres backup example: `scripts/backup-postgres-to-storagebox.sh.example`.
 - **Pre-commit:** Husky + lint-staged (`.husky/pre-commit`) installs via `npm install` (`prepare` → `husky`). Formats/lints staged files and runs `typecheck` (no Docker required).
 - **Tooling:** ESLint + Prettier + Vitest + `tsc --noEmit`. Scripts: `lint`, `lint:fix`, `format`, `format:check`, `typecheck`, `test`, `test:watch`, `smoke`, `ci`.
 
+## Optional: Caveman cost-opt
+
+**Opt-in only** (default off). MIT skills from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) live under `.cursor/skills/caveman*`.
+
+- **Skill:** in Cursor, `/caveman` (levels: `lite|full|ultra|…`) · `/caveman off` to disable. Not forced on all agents.
+- **Local proxy:** set `CAVEMAN_PROXY_ENABLED=true` and `CAVEMAN_PROXY_URL=http://127.0.0.1:8787` (see `.env.example`). Install runtime separately: `npm i -g @caveman-ai/cli && caveman setup --install && CAVEMAN_MODE=compress caveman start`. Or `docker compose --profile caveman up -d` (stub). Helps: `src/proxy/caveman.ts` / `src/proxy/README.md`.
+- **Skip for V1:** Caveman Platform / Cloud managed gateway — post-V1.
+
+## First issue / Getting started
+
 ## First issue / Getting started
 
 1. Copy `.env.example` → `.env` (no real secrets in git).
 2. `npm install` then `npm run ci`.
-3. Grab the **good first issue**: implement `src/agent/loop.ts` (prompt → model adapter → response) with a Vitest mock — see [issues labeled good first issue](https://github.com/eskobar95/Optio-New/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
+3. Grab the **good first issue**: implement `src/agent/loop.ts` (prompt → model adapter → response) with a Vitest mock — see [issues labeled good first issue](https://github.com/eskobar95/Optio-New/issues/1).
 4. Read [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), and [docs/SPEC.md](docs/SPEC.md) §8 / §14.0.
 
 License: [MIT](LICENSE).
