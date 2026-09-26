@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 01:00 WEST
+Last refreshed: 2026-09-26 00:23 UTC
 
 ## Bootstrap progress
 
@@ -24,7 +24,44 @@ Actions: https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml
 
 ## Open issues
 
-- #1 good first issue: request-response agent loop (src/agent/loop.ts) (enhancement, good first issue, orchestration)
+Open: 22.
+
+Tracker: https://github.com/eskobar95/Optio-New/issues
+
+- #23 [P2] Mac local verify: Docker Desktop compose up smoke (P2, documentation, good first issue, infra)
+- #22 [P2] Caddy TLS edge for optional intake webhook (P2, deploy, infra, security)
+- #21 [P2] Eve phase agents: planner / implementation / review / ready / merge contracts (P2, enhancement, orchestration)
+- #20 [P1] Hetzner deploy: systemd + Compose beside LiteLLM/BullMQ (P1, deploy, infra)
+- #19 [P2] Learning worker: failure fingerprints → meta GitHub issues (P2, enhancement, orchestration)
+- #18 [P1] Postgres backups to Hetzner Storage Box (P1, deploy, infra, security)
+- #17 [P1] Optional Caveman proxy: enable path for Codex cost-opt (P1, cost-opt, enhancement)
+- #16 [P2] Caveman Cloud/Platform evaluation (post-V1 only) (P2, cost-opt, documentation)
+- #15 [P2] docs/status.md automation in CI (refresh open issues + CI badge) (P2, documentation, good first issue, infra)
+- #14 [P2] Optional Laya CPU decision service Compose profile (P2, harness, infra)
+- #13 [P1] Observability: OTel spans + Langfuse/SigNoz wiring (P1, enhancement, infra)
+- #12 [P1] Parallel agent sessions: concurrency caps + isolated worktrees (P1, enhancement, orchestration)
+- #11 [P1] LiteLLM gateway + JevRouter plugins (jev / rules / laya) (P1, enhancement, harness, infra)
+- #10 [P1] Secrets management: sops/age or Infisical on VPS (P1, deploy, infra, security)
+- #9 [P1] CodingAgent adapters: Cursor CLI + Codex → LiteLLM (P1, enhancement, orchestration)
+- #8 [P0] kit-harness Compose service: routing, tool gates, loop, split (P0, enhancement, harness, infra)
+- #7 [P0] New Bot intake API: enqueue tasks without Linear (P0, enhancement, orchestration)
+- #6 [P0] Worktree manager: create / isolate / reap per task (P0, enhancement, orchestration, security)
+- #5 [P0] Review gate: Jev/rules completion + CI green before ready (P0, enhancement, harness, orchestration)
+- #4 [P1] Docker Compose full stack: redis, postgres, orchestrator, litellm, kit-harness (P1, enhancement, infra)
+- #3 [P0] Hard security gates: secrets deny, config lock, tool timeout (P0, enhancement, harness, security)
+- #2 [P0] BullMQ job graph: plan → implement → review → ready → merge (P0, enhancement, orchestration)
+
+## Refresh
+
+Manual refresh (GitHub CLI authenticated via `gh auth login`):
+
+```bash
+npm run status
+```
+
+The script is idempotent: this file is rewritten only when the latest CI conclusion or the open-issue list changes.
+
+Automation: `.github/workflows/status.yml` runs the same script on a daily schedule, on `workflow_dispatch`, and after the CI workflow completes on `main`.
 
 ## Structure overview
 

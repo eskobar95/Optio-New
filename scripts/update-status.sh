@@ -1,35 +1,110 @@
 #!/usr/bin/env bash
-# Refresh docs/status.md using gh (issues + latest CI conclusion).
+# Refresh docs/status.md with the CI badge and an open-issue overview.
+#
+# Manual:
+#   gh auth login
+#   npm run status
+#
+# Idempotent: docs/status.md is rewritten only when the latest CI conclusion
+# or the open-issue list changes. The "Last refreshed" line stays put when
+# nothing else moved, so a second run does not dirty the tree.
+#
+# Tests set STATUS_USE_FIXTURES=1 and pass STATUS_CI_CONCLUSION plus
+# STATUS_ISSUES_MD. Optional: STATUS_OUT, STATUS_NOW.
 set -euo pipefail
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-OUT="$ROOT/docs/status.md"
-NOW="$(date '+%Y-%m-%d %H:%M %Z')"
+
+OUT="${STATUS_OUT:-$ROOT/docs/status.md}"
+NOW="${STATUS_NOW:-$(date '+%Y-%m-%d %H:%M %Z')}"
+ISSUE_LIMIT=50
 
 REPO="${GITHUB_REPOSITORY:-}"
 if [[ -z "$REPO" ]]; then
-  REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo "eskobar95/Optio-New")"
-fi
-
-CI_CONCLUSION="unknown"
-CI_URL="https://github.com/${REPO}/actions/workflows/ci.yml"
-if command -v gh >/dev/null 2>&1; then
-  CI_CONCLUSION="$(gh run list --workflow=ci.yml --limit 1 --json conclusion -q '.[0].conclusion' 2>/dev/null || echo unknown)"
-  if [[ -z "$CI_CONCLUSION" || "$CI_CONCLUSION" == "null" ]]; then
-    CI_CONCLUSION="unknown"
-  fi
-fi
-
-ISSUES_MD="- (none or gh unavailable)"
-if command -v gh >/dev/null 2>&1; then
-  TMP="$(gh issue list --state open --limit 20 --json number,title,labels \
-    --jq '.[] | "- #\(.number) \(.title) (\([.labels[].name] | join(", ")))"' 2>/dev/null || true)"
-  if [[ -n "${TMP}" ]]; then
-    ISSUES_MD="$TMP"
+  if [[ "${STATUS_USE_FIXTURES:-}" == "1" ]]; then
+    REPO="eskobar95/Optio-New"
   else
-    ISSUES_MD="- (no open issues)"
+    command -v gh >/dev/null 2>&1 || {
+      echo "gh is required (or set GITHUB_REPOSITORY)" >&2
+      exit 1
+    }
+    REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
   fi
 fi
+
+if [[ ! "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+  echo "invalid repository name: ${REPO}" >&2
+  exit 1
+fi
+
+CI_URL="https://github.com/${REPO}/actions/workflows/ci.yml"
+ISSUES_URL="https://github.com/${REPO}/issues"
+
+overview_for_count() {
+  local count="$1"
+  if [[ "$count" -eq 0 ]]; then
+    printf '%s\n' "Open: 0."
+  elif [[ "$count" -eq "$ISSUE_LIMIT" && "${STATUS_USE_FIXTURES:-}" != "1" ]]; then
+    printf '%s\n' "Open: ${count} shown (capped at ${ISSUE_LIMIT})."
+  else
+    printf '%s\n' "Open: ${count}."
+  fi
+}
+
+if [[ "${STATUS_USE_FIXTURES:-}" == "1" ]]; then
+  CI_CONCLUSION="${STATUS_CI_CONCLUSION:-unknown}"
+  if [[ -z "${STATUS_ISSUES_MD:-}" ]]; then
+    ISSUE_COUNT=0
+    ISSUES_MD="- (no open issues)"
+  else
+    ISSUES_MD="$STATUS_ISSUES_MD"
+    ISSUE_COUNT="$(printf '%s\n' "$ISSUES_MD" | grep -c '^- #' || true)"
+  fi
+else
+  command -v gh >/dev/null 2>&1 || {
+    echo "gh is required. Install GitHub CLI and run gh auth login." >&2
+    exit 1
+  }
+  export GH_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+
+  if [[ -n "${STATUS_CI_CONCLUSION:-}" ]]; then
+    CI_CONCLUSION="$STATUS_CI_CONCLUSION"
+  else
+    CI_CONCLUSION="$(gh run list --repo "$REPO" --workflow=ci.yml --limit 1 --json conclusion --jq '.[0].conclusion // "unknown"')"
+  fi
+
+  ISSUES_MD="$(gh issue list --repo "$REPO" --state open --limit "$ISSUE_LIMIT" \
+    --json number,title,labels \
+    --jq '
+      sort_by(-.number) | .[] |
+      "- #\(.number) \(.title)" +
+      (
+        if (.labels | length) == 0 then ""
+        else " (\([.labels[].name] | sort | join(", ")))"
+        end
+      )
+    ')"
+
+  if [[ -z "${ISSUES_MD}" ]]; then
+    ISSUE_COUNT=0
+    ISSUES_MD="- (no open issues)"
+  else
+    ISSUE_COUNT="$(printf '%s\n' "$ISSUES_MD" | grep -c '^- #' || true)"
+  fi
+fi
+
+if [[ -z "$CI_CONCLUSION" || "$CI_CONCLUSION" == "null" ]]; then
+  CI_CONCLUSION="unknown"
+fi
+
+OPEN_OVERVIEW="$(overview_for_count "$ISSUE_COUNT")"
+
+TMP="$(mktemp "${TMPDIR:-/tmp}/optio-status.XXXXXX.md")"
+cleanup() {
+  rm -f "$TMP"
+}
+trap cleanup EXIT
 
 {
   echo "# Optio-New — status"
@@ -50,7 +125,7 @@ fi
   echo
   echo "## CI"
   echo
-  echo "[![CI](https://github.com/${REPO}/actions/workflows/ci.yml/badge.svg)](https://github.com/${REPO}/actions/workflows/ci.yml)"
+  echo "[![CI](https://github.com/${REPO}/actions/workflows/ci.yml/badge.svg)](${CI_URL})"
   echo
   echo "Latest conclusion: **${CI_CONCLUSION}**"
   echo
@@ -58,7 +133,23 @@ fi
   echo
   echo "## Open issues"
   echo
+  echo "${OPEN_OVERVIEW}"
+  echo
+  echo "Tracker: ${ISSUES_URL}"
+  echo
   echo "${ISSUES_MD}"
+  echo
+  echo "## Refresh"
+  echo
+  echo "Manual refresh (GitHub CLI authenticated via \`gh auth login\`):"
+  echo
+  echo '```bash'
+  echo "npm run status"
+  echo '```'
+  echo
+  echo "The script is idempotent: this file is rewritten only when the latest CI conclusion or the open-issue list changes."
+  echo
+  echo "Automation: \`.github/workflows/status.yml\` runs the same script on a daily schedule, on \`workflow_dispatch\`, and after the CI workflow completes on \`main\`."
   echo
   echo "## Structure overview"
   echo
@@ -75,10 +166,22 @@ fi
   echo '```'
   echo
   echo "Decision layer: **New Bot**. Pipeline: **BullMQ**. Linear: **out** (SPEC §8)."
-} > "$OUT"
+} >"$TMP"
 
-echo "Updated $OUT"
-
-if command -v npx >/dev/null 2>&1; then
-  npx prettier --write "$OUT" >/dev/null 2>&1 || true
+PRETTIER="$ROOT/node_modules/.bin/prettier"
+if [[ -x "$PRETTIER" ]]; then
+  "$PRETTIER" --write "$TMP" --config "$ROOT/.prettierrc" >/dev/null
 fi
+
+snapshot_body() {
+  grep -v '^Last refreshed:' "$1" || true
+}
+
+if [[ -f "$OUT" ]] && diff -q <(snapshot_body "$OUT") <(snapshot_body "$TMP") >/dev/null; then
+  echo "Unchanged $OUT"
+  exit 0
+fi
+
+mkdir -p "$(dirname "$OUT")"
+cp "$TMP" "$OUT"
+echo "Updated $OUT"

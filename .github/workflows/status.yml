@@ -1,0 +1,62 @@
+# Refreshes docs/status.md (CI badge + open issues) without touching the
+# lint/test job in ci.yml. Direct pushes use the workflow token, which does
+# not start another CI run, and the script skips the commit when nothing changed.
+name: Status
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: write
+  issues: read
+  actions: read
+
+concurrency:
+  group: status-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: refresh docs/status.md
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Refresh status snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          # After CI on main, record that run. Schedule and dispatch leave this empty so the script asks gh.
+          STATUS_CI_CONCLUSION: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion || '' }}
+        run: bash scripts/update-status.sh
+
+      - name: Commit snapshot when it changed
+        run: |
+          if git diff --quiet -- docs/status.md; then
+            echo "docs/status.md unchanged"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/status.md
+          git commit -m "docs: refresh status snapshot"
+          git push origin HEAD:main
