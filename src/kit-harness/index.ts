@@ -1,3 +1,4 @@
+export { clearToolAudit, readToolAudit, recordDeniedTool, type ToolAuditEntry } from "./audit.js";
 export { consultAdvisor, confidentChoice } from "./advisor.js";
 export { checkCompletion } from "./completion-check.js";
 export { detectLoop } from "./loop-detect.js";

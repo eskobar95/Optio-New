@@ -4,6 +4,7 @@
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
+import { readToolAudit } from "./audit.js";
 import { checkCompletion } from "./completion-check.js";
 import { detectLoop } from "./loop-detect.js";
 import { routeModel } from "./model-routing.js";
@@ -193,6 +194,11 @@ async function handle(
       return;
     }
     sendJson(res, 200, body);
+    return;
+  }
+
+  if (path === "/v1/audit" && method === "GET") {
+    sendJson(res, 200, { entries: readToolAudit() });
     return;
   }
 

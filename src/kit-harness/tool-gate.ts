@@ -2,6 +2,7 @@
  * Tool allow / confirm / deny.
  * Hard deny (secrets, destructive ops, allow-list misses) never calls the advisor.
  */
+import { recordDeniedTool } from "./audit.js";
 import { confidentChoice, consultAdvisor } from "./advisor.js";
 import {
   normalizeToken,
@@ -124,14 +125,11 @@ function ruled(
   return { decision, hard, reason, engine };
 }
 
-export async function decideTool(
-  tool: string,
-  context: ToolContext = {},
+async function evaluateTool(
+  name: string,
+  context: ToolContext,
   advisor?: DecisionAdvisor | null,
 ): Promise<ToolGateDecision> {
-  const name = normalizeToken(tool);
-  if (!name) return ruled("deny", "empty_tool", true);
-
   const text = inspectedText(name, context);
   if (HARD_DENY_TOOLS.has(name)) return ruled("deny", "hard_deny_tool", true);
   if (isSecret(text)) return ruled("deny", "hard_deny_secret", true);
@@ -157,4 +155,25 @@ export async function decideTool(
   if (needsConfirm(name, text)) return ruled("confirm", "confirm_tool", false);
   if (ALLOW_TOOLS.has(name)) return ruled("allow", "allow_tool", false);
   return ruled("deny", "unknown_tool", false);
+}
+
+export async function decideTool(
+  tool: string,
+  context: ToolContext = {},
+  advisor?: DecisionAdvisor | null,
+): Promise<ToolGateDecision> {
+  const name = normalizeToken(tool);
+  const decision = name
+    ? await evaluateTool(name, context, advisor)
+    : ruled("deny", "empty_tool", true);
+  if (decision.decision === "deny") {
+    recordDeniedTool({
+      tool: name || "(empty)",
+      reason: decision.reason,
+      hard: decision.hard,
+      command: context.command,
+      agent_id: context.agent_id,
+    });
+  }
+  return decision;
 }

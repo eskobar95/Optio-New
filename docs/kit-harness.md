@@ -29,6 +29,7 @@ Compose publishes **`127.0.0.1:3200`** (override the host port with `KIT_HARNESS
 | Method | Path                   |
 | ------ | ---------------------- |
 | `GET`  | `/health`              |
+| `GET`  | `/v1/audit`            |
 | `POST` | `/v1/route-model`      |
 | `POST` | `/v1/tool-gate`        |
 | `POST` | `/v1/completion-check` |
@@ -48,7 +49,9 @@ curl -s http://127.0.0.1:3200/v1/route-model \
 
 curl -s http://127.0.0.1:3200/v1/tool-gate \
   -H 'content-type: application/json' \
-  -d '{"tool":"shell","context":{"command":"cat .env"}}'
+  -d '{"tool":"shell","context":{"command":"rm -rf /tmp/optio-agent","agent_id":"scenario-agent"}}'
+
+curl -s http://127.0.0.1:3200/v1/audit
 
 curl -s http://127.0.0.1:3200/v1/completion-check \
   -H 'content-type: application/json' \
@@ -92,7 +95,11 @@ curl -s http://127.0.0.1:3200/health
 docker compose --profile harness stop kit-harness
 ```
 
-`npm run ci` runs `docker compose config`. When Docker is present, smoke also checks that `kit-harness` is absent from the default project and present with `--profile harness`.
+`npm run smoke` (also the last step of `npm run ci`) compiles the sidecar, starts it on `127.0.0.1:3217`, and checks health, Hop-1 routing, loop detection, and a forbidden `rm -rf` shell call. That call must come back `deny`, show up on `GET /v1/audit`, and emit one stdout line with `event: "tool_denied"`. When Docker is present, smoke also checks that `kit-harness` is absent from the default project and present with `--profile harness`.
+
+```bash
+npm run smoke
+```
 
 ## Beside LiteLLM and BullMQ on Hetzner
 

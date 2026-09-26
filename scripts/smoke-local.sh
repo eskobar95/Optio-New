@@ -32,6 +32,78 @@ pass "vitest"
 npx vitest run tests/security-gates.test.ts || fail "security gates"
 pass "security gates (secrets deny, config lock, tool timeout)"
 
+# kit-harness røgtest: start, health, model routing, loop detection, forbidden tool.
+smoke_kit_harness() {
+  local port="${KIT_HARNESS_SMOKE_PORT:-3217}"
+  local base="http://127.0.0.1:${port}"
+  local log pid
+  log="$(mktemp)"
+  pid=""
+  cleanup() {
+    if [[ -n "${pid}" ]]; then
+      kill "${pid}" >/dev/null 2>&1 || true
+      wait "${pid}" >/dev/null 2>&1 || true
+      pid=""
+    fi
+    if [[ -n "${log}" && -f "${log}" ]]; then
+      rm -f "${log}"
+    fi
+  }
+  trap cleanup EXIT
+
+  npx tsc -p tsconfig.kit-harness.json || fail "kit-harness tsc"
+  KIT_HARNESS_HOST=127.0.0.1 KIT_HARNESS_PORT="${port}" node dist/main.js >"${log}" 2>&1 &
+  pid=$!
+
+  local ready=0
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    if curl -sf "${base}/health" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    if ! kill -0 "${pid}" 2>/dev/null; then
+      cat "${log}" >&2 || true
+      fail "kit-harness exited before health"
+    fi
+    sleep 0.25
+  done
+  [[ "${ready}" == "1" ]] || { cat "${log}" >&2 || true; fail "kit-harness health"; }
+  pass "kit-harness health"
+
+  local route loop gate audit
+  route="$(curl -sf "${base}/v1/route-model" -H 'content-type: application/json' \
+    -d '{"cursor_quota_remaining":2,"codex_quota_remaining":2}')" \
+    || { cat "${log}" >&2 || true; fail "model routing request"; }
+  echo "${route}" | grep -q '"choice":"cursor_subscription"' || fail "model routing"
+  pass "model routing"
+
+  loop="$(curl -sf "${base}/v1/loop-detect" -H 'content-type: application/json' \
+    -d '{"events":[{"fingerprint":"fp","tool":"run_tests","outcome":"fail"},{"fingerprint":"fp","tool":"run_tests","outcome":"fail"},{"fingerprint":"fp","tool":"run_tests","outcome":"fail"}]}')" \
+    || { cat "${log}" >&2 || true; fail "loop detection request"; }
+  echo "${loop}" | grep -q '"loop_detected":true' || fail "loop detection"
+  pass "loop detection"
+
+  gate="$(curl -sf "${base}/v1/tool-gate" -H 'content-type: application/json' \
+    -d '{"tool":"shell","context":{"command":"rm -rf /tmp/optio-smoke","agent_id":"smoke"}}')" \
+    || { cat "${log}" >&2 || true; fail "forbidden tool request"; }
+  echo "${gate}" | grep -q '"decision":"deny"' || fail "forbidden tool not denied"
+  echo "${gate}" | grep -q '"reason":"hard_deny_destructive"' || fail "forbidden tool reason"
+  pass "forbidden tool deny"
+
+  audit="$(curl -sf "${base}/v1/audit")" \
+    || { cat "${log}" >&2 || true; fail "audit request"; }
+  echo "${audit}" | grep -q 'rm -rf /tmp/optio-smoke' || fail "audit missing rm -rf attempt"
+  echo "${audit}" | grep -q '"decision":"deny"' || fail "audit missing deny"
+  grep -q '"event":"tool_denied"' "${log}" || fail "structured deny log missing"
+  grep -q 'rm -rf /tmp/optio-smoke' "${log}" || fail "structured log missing command"
+  pass "forbidden tool audit log"
+
+  cleanup
+  trap - EXIT
+}
+
+smoke_kit_harness
+
 if command -v docker >/dev/null 2>&1; then
   if docker compose version >/dev/null 2>&1; then
     # An empty env file skips the project .env so local secrets are not interpolated into logs.
