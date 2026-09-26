@@ -120,7 +120,7 @@ trap cleanup EXIT
   echo "| TypeScript \`src/\` + \`tests/\` + tooling (ESLint, Prettier, Vitest, Husky) | Done |"
   echo "| Public GitHub + CI on push/PR | Live |"
   echo "| Good first issue: \`src/agent/loop.ts\` | See open issues |"
-  echo "| BullMQ stage graph (plan → merge) + Postgres step cursor | Skeleton (\`docs/pipeline.md\`) |"
+  echo "| BullMQ stage graph (plan → merge) + Postgres step cursor | Orchestrator image: \`POST /intake\` and \`GET /health\` on :3100 |"
   echo "| Real model providers / GPU / Vercel key | Pending (secrets local only) |"
   echo "| kit-harness decision sidecar | Compose profile \`harness\` (rules engine; Jev not called) |"
   echo
@@ -145,6 +145,18 @@ trap cleanup EXIT
   echo "Verified: kit-harness (Linux, Docker Compose) full \`bash scripts/smoke-compose-mac.sh\` PASSED on 2026-09-26 against \`7aa4b2e\` (redis PING, postgres pg_isready, litellm \`/health/liveliness\`, \`down -v\`). Project \`optio-new\` on 6379/5432/4000 stayed up. Config-only PASSED."
   echo
   echo "Gaps: LiteLLM tag \`ghcr.io/berriai/litellm:main-latest\` floats; profile \`full\` (orchestrator, eve-runner) stays out of this smoke; provider keys stay empty; the check is \`/health/liveliness\`, which does not call a model."
+  echo
+  echo "Orchestrator verify (profiles \`full\` and \`orchestrator\`; eve-runner is still a stub):"
+  echo
+  echo '```bash'
+  echo "docker compose --profile full up -d --build orchestrator"
+  echo "curl -fsS http://127.0.0.1:3100/health"
+  echo "curl -fsS -X POST http://127.0.0.1:3100/intake \\\\"
+  echo "  -H 'content-type: application/json' \\\\"
+  echo "  -d '{\"brief\":{\"title\":\"hello\",\"description\":\"smoke\"},\"metadata\":{\"taskId\":\"t-1\"}}'"
+  echo '```'
+  echo
+  echo "\`GET /health\` is 200 when Redis answers. \`POST /intake\` returns 202 and enqueues \`optio.plan\`."
   echo
   echo "## Open issues"
   echo

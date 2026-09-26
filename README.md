@@ -56,6 +56,18 @@ docker compose --profile harness up -d --build kit-harness
 curl -s http://127.0.0.1:3200/health
 ```
 
+Orchestrator image (profiles `full` and `orchestrator`) serves intake and the BullMQ stage workers. Eve-runner in profile `full` is still an intentional stub: `agents/*` have no process entrypoint.
+
+```bash
+docker compose --profile full up -d --build orchestrator
+curl -fsS http://127.0.0.1:3100/health
+curl -fsS -X POST http://127.0.0.1:3100/intake \
+  -H 'content-type: application/json' \
+  -d '{"brief":{"title":"hello","description":"smoke"},"metadata":{"taskId":"t-1"}}'
+```
+
+`GET /health` is 200 when Redis answers. `POST /intake` returns 202 and enqueues queue `optio.plan`. The same listener is what Hetzner starts with `COMPOSE_PROFILES=harness,orchestrator`.
+
 Decision sidecar: **[docs/kit-harness.md](docs/kit-harness.md)**. A default `docker compose up` does not start `kit-harness`. Bound to `127.0.0.1:3200`.
 
 Docker Desktop or Linux Docker (config check, then isolated up/down of redis, postgres, and litellm):

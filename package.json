@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "prepare": "husky",
+    "build:orchestrator": "tsc -p tsconfig.orchestrator.json",
     "typecheck": "tsc -p . --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
