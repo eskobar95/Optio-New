@@ -6,11 +6,17 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { ZodError, z } from "zod";
 import { enqueueIntakePipeline, type FlowEnqueuer } from "../jobs/enqueue-pipeline.js";
+import { HELLO_WORLD_RESPONSE, type PlanStageView } from "../jobs/hello-world.js";
 import { PipelineIdentitySchema, STAGE_QUEUES } from "../jobs/stages.js";
 
 const MAX_BODY_BYTES = 65_536;
 
 const PipelineIdSchema = PipelineIdentitySchema.shape.taskId;
+
+const HelloPlanQuerySchema = z.object({
+  taskId: PipelineIdSchema,
+  sessionId: PipelineIdSchema,
+});
 
 export const IntakeHttpSchema = z.object({
   brief: z.object({
@@ -36,6 +42,11 @@ export interface IntakeServerOptions {
   enqueuer: FlowEnqueuer;
   /** When set, GET /health pings Redis. Omitted means the route stays 404. */
   checkRedis?: () => Promise<boolean>;
+  /**
+   * When set, GET /hello/plan reads the plan step cursor.
+   * Omitted means that route stays 404. GET /hello does not need it.
+   */
+  readPlanStage?: (taskId: string, sessionId: string) => Promise<PlanStageView>;
 }
 
 export interface IntakeAccepted {
@@ -126,10 +137,48 @@ export async function handleIntakeRequest(
       sendJson(res, redisUp ? 200 : 503, body);
       return;
     }
+    if (url.pathname === "/hello") {
+      if (req.method !== "GET") {
+        res.setHeader("allow", "GET");
+        sendJson(res, 405, {
+          error: "method_not_allowed",
+          message: "Use GET /hello",
+        });
+        return;
+      }
+      sendJson(res, 200, HELLO_WORLD_RESPONSE);
+      return;
+    }
+    if (url.pathname === "/hello/plan") {
+      if (req.method !== "GET") {
+        res.setHeader("allow", "GET");
+        sendJson(res, 405, {
+          error: "method_not_allowed",
+          message: "Use GET /hello/plan",
+        });
+        return;
+      }
+      if (!options.readPlanStage) {
+        sendJson(res, 404, {
+          error: "not_found",
+          message: "Plan progress is unavailable",
+        });
+        return;
+      }
+      const sessionRaw = url.searchParams.get("sessionId");
+      const query = HelloPlanQuerySchema.parse({
+        taskId: url.searchParams.get("taskId") ?? "",
+        sessionId:
+          sessionRaw && sessionRaw.length > 0 ? sessionRaw : (url.searchParams.get("taskId") ?? ""),
+      });
+      const view = await options.readPlanStage(query.taskId, query.sessionId);
+      sendJson(res, 200, view);
+      return;
+    }
     if (url.pathname !== "/intake") {
       sendJson(res, 404, {
         error: "not_found",
-        message: "POST /intake is the intake route",
+        message: "Known routes: GET /health, GET /hello, GET /hello/plan, POST /intake",
       });
       return;
     }

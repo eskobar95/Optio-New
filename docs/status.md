@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 01:24 UTC
+Last refreshed: 2026-09-26 01:27 UTC
 
 ## Bootstrap progress
 
@@ -40,23 +40,19 @@ Gaps: LiteLLM tag `ghcr.io/berriai/litellm:main-latest` floats; profile `full` (
 Orchestrator verify (profiles `full` and `orchestrator`; eve-runner is still a stub):
 
 ```bash
-docker compose --profile full up -d --build orchestrator
-curl -fsS http://127.0.0.1:3100/health
-curl -fsS -X POST http://127.0.0.1:3100/intake \\
-  -H 'content-type: application/json' \\
-  -d '{"brief":{"title":"hello","description":"smoke"},"metadata":{"taskId":"t-1"}}'
+docker compose --profile full --profile harness up -d --build orchestrator
+HELLO_WORLD_E2E=1 bash scripts/hello-world-e2e.sh
 ```
 
-`GET /health` is 200 when Redis answers. `POST /intake` returns 202 and enqueues `optio.plan`.
+`GET /hello` is the demo card. The script posts intake and polls `GET /hello/plan` until the plan cursor is `completed`. `GET /health` is 200 when Redis answers. Without a listener the script skips; `HELLO_WORLD_E2E=1` fails closed.
 
 ## Open issues
 
-Open: 5.
+Open: 4.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
 - #60 [EVE-3] Local eve-runner invoked by BullMQ stage (P0, enhancement, orchestration)
-- #45 [e2e] Add a hello-world endpoint to the agent loop (P2, enhancement, good first issue, orchestration)
 - #22 [P2] Caddy TLS edge for optional intake webhook (P2, deploy, infra, security)
 - #21 [P2] Eve phase agents: planner / implementation / review / ready / merge contracts (P2, enhancement, orchestration)
 - #14 [P2] Optional Laya CPU decision service Compose profile (P2, harness, infra)

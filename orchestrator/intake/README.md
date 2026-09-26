@@ -10,7 +10,7 @@
 
 ## HTTP
 
-`createIntakeServer` (`src/orchestrator/intake/http.ts`) serves `POST /intake`. The process entry is `src/orchestrator/main.ts` (image `Dockerfile.orchestrator`, `ORCHESTRATOR_PORT`, default 3100). `GET /health` is 200 when Redis answers `PING`.
+`createIntakeServer` (`src/orchestrator/intake/http.ts`) serves `POST /intake`. The process entry is `src/orchestrator/main.ts` (image `Dockerfile.orchestrator`, `ORCHESTRATOR_PORT`, default 3100). `GET /health` is 200 when Redis answers `PING`. `GET /hello` is the demo card (`hello: "world"`, stage `plan`, queue `optio.plan`). `GET /hello/plan?taskId=&sessionId=` reads the plan step cursor. `sessionId` defaults to `taskId`. `progressed` is true only when that cursor is `completed`. The route is 404 until the process wires a cursor reader. No new port: Compose already publishes 3100 on `127.0.0.1`.
 
 ```json
 {

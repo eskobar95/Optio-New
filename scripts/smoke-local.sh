@@ -7,7 +7,9 @@
 #
 # Docker-required (not started here): `docker compose --profile full --profile harness up -d`
 # for redis, postgres, orchestrator, litellm, and kit-harness on 127.0.0.1:3200.
-# Orchestrator image: curl http://127.0.0.1:3100/health and POST /intake. Eve-runner stays a stub.
+# Hello-world (skipped unless :3100 is already up): scripts/hello-world-e2e.sh posts
+# /intake and polls GET /hello/plan. See README.md and docs/kit-harness.md.
+# Eve-runner stays a stub.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -272,5 +274,7 @@ else
     fail "CAVEMAN_PROXY_ENABLED=true but ${caveman_url}/health/live is down. Start: CAVEMAN_MODE=${CAVEMAN_MODE:-compress} CAVE_SSRF_ALLOWLIST=${CAVE_SSRF_ALLOWLIST:-127.0.0.1} caveman start"
   fi
 fi
+
+bash "$ROOT/scripts/hello-world-e2e.sh"
 
 pass "all smoke checks finished"
