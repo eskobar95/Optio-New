@@ -166,6 +166,16 @@ trap cleanup EXIT
   echo
   echo "Automation: \`.github/workflows/status.yml\` runs the same script on a daily schedule, on \`workflow_dispatch\`, and after the CI workflow completes on \`main\`."
   echo
+  echo "## Observability"
+  echo
+  echo "v1 agent UI is Langfuse; Phoenix is not wired. SigNoz is the infra OTLP sink. Both exporters default off. Decision: \`docs/observability.md\`."
+  echo
+  echo "Local pipeline trace (in-process OTel, exporters off):"
+  echo
+  echo '```json'
+  cat "$ROOT/docs/traces/local-pipeline.json"
+  echo '```'
+  echo
   echo "## Structure overview"
   echo
   echo '```text'

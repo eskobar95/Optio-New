@@ -3,6 +3,12 @@
  */
 import type { ModelAdapter } from "../../agent/adapter.js";
 import { runAgentLoop } from "../../agent/loop.js";
+import {
+  CANONICAL_SPAN,
+  getStageTracer,
+  readStringField,
+  type StageTracer,
+} from "../telemetry/index.js";
 import type { WorktreeLifecycle } from "../worktrees/manager.js";
 import { createWorktreeStageHandler } from "../worktrees/stage-hooks.js";
 import type { StepCursor, StepCursorStore } from "./cursor.js";
@@ -38,6 +44,8 @@ export interface StageStepContext {
   stage: PipelineStage;
   step: string;
   stepIndex: number;
+  worktreeId?: string;
+  tracer?: StageTracer;
 }
 
 export interface StageStepHandler {
@@ -54,6 +62,10 @@ export interface StageRuntime {
   reviewGate?: ReviewGateBinding;
   /** When set, implement creates the task worktree and merge reaps it. */
   worktrees?: WorktreeLifecycle;
+  /** When set, stage and agent spans share this tracer. */
+  tracer?: StageTracer;
+  /** Empty string on the span when omitted (no worktree yet). */
+  worktreeId?: string;
 }
 
 export interface StageJobResult {
@@ -86,12 +98,59 @@ function freshCursor(payload: StageJobPayload): StepCursor {
 export function createAgentStageHandler(adapter: ModelAdapter): StageStepHandler {
   return {
     async run(ctx) {
-      await runAgentLoop({ prompt: `${ctx.stage}:${ctx.step} task=${ctx.taskId}` }, adapter);
+      const tracer = ctx.tracer ?? getStageTracer();
+      await tracer.runStage(
+        CANONICAL_SPAN.agentRun,
+        {
+          taskId: ctx.taskId,
+          worktreeId: ctx.worktreeId,
+          attributes: {
+            workflow_id: "default-task",
+            step_id: ctx.step,
+            agent_id: `agents/${ctx.stage}`,
+            session_id: ctx.sessionId,
+          },
+        },
+        () =>
+          runAgentLoop(
+            {
+              prompt: `${ctx.stage}:${ctx.step} task=${ctx.taskId}`,
+              taskId: ctx.taskId,
+              worktreeId: ctx.worktreeId,
+              stepId: ctx.step,
+              tracer,
+            },
+            adapter,
+          ),
+      );
     },
   };
 }
 
 export async function processStageJob(input: unknown, deps: StageRuntime): Promise<StageJobResult> {
+  const tracer = deps.tracer ?? getStageTracer();
+  const stage = readStringField(input, "stage");
+  const sessionId = readStringField(input, "sessionId");
+  return tracer.runStage(
+    CANONICAL_SPAN.workflowStep,
+    {
+      taskId: readStringField(input, "taskId"),
+      worktreeId: deps.worktreeId,
+      attributes: {
+        workflow_id: "default-task",
+        ...(stage ? { step_id: stage } : {}),
+        ...(sessionId ? { session_id: sessionId } : {}),
+      },
+    },
+    () => executeStageJob(input, deps, tracer),
+  );
+}
+
+async function executeStageJob(
+  input: unknown,
+  deps: StageRuntime,
+  tracer: StageTracer,
+): Promise<StageJobResult> {
   const payload = StageJobPayloadSchema.parse(input);
   const blockedBy = previousStage(payload.stage);
   if (blockedBy) {
@@ -154,6 +213,8 @@ export async function processStageJob(input: unknown, deps: StageRuntime): Promi
       stage: payload.stage,
       step,
       stepIndex: index,
+      worktreeId: deps.worktreeId,
+      tracer,
     });
     const finished = index + 1 >= steps.length;
     cursor = {

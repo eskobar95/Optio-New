@@ -13,6 +13,7 @@ import {
   invokeCli,
   mapCliToOutput,
   spawnCli,
+  withAgentRunSpan,
   type CliRunRequest,
   type CodingAgentDeps,
 } from "../runtime.js";
@@ -61,17 +62,19 @@ export function createCursorAdapter(deps: CodingAgentDeps = {}): CodingAgent {
   return {
     id: "cursor",
     async run(input: CodingAgentInput): Promise<CodingAgentOutput> {
-      const env = deps.env ?? process.env;
-      const apiKey = env.CURSOR_API_KEY?.trim() ?? "";
-      if (!apiKey) {
-        return credentialsFailure("cursor", input, "missing_credentials");
-      }
-      const result = await invokeCli(deps.runner ?? spawnCli, cursorRequest(input, env));
-      return mapCliToOutput({
-        provider: "cursor",
-        input,
-        result,
-        secrets: [apiKey],
+      return withAgentRunSpan(input, "cursor", deps.tracer, async () => {
+        const env = deps.env ?? process.env;
+        const apiKey = env.CURSOR_API_KEY?.trim() ?? "";
+        if (!apiKey) {
+          return credentialsFailure("cursor", input, "missing_credentials");
+        }
+        const result = await invokeCli(deps.runner ?? spawnCli, cursorRequest(input, env));
+        return mapCliToOutput({
+          provider: "cursor",
+          input,
+          result,
+          secrets: [apiKey],
+        });
       });
     },
   };

@@ -74,6 +74,10 @@ const workers = startStageGraph(
 
 Apply `state/migrations/001_pipeline_step_cursor.sql` before using Postgres. `createPgStepCursorStore` also runs that DDL on connect.
 
+## Spans
+
+Each `processStageJob` call emits `workflow.step` with `task_id`, `worktree_id` (empty until a worktree exists), `workflow_id=default-task`, and `step_id` set to the stage. The agent handler nests `agent.run` and `skill.load` under that span. Export to Langfuse or SigNoz stays off unless the env flag is `true`. See `docs/observability.md`.
+
 ## Tests
 
 `npm test` covers the happy path and crash resume with in-memory and SQL-executor cursors. It does not need Redis, Postgres, or `MODEL_API_KEY`.

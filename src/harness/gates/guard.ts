@@ -1,4 +1,9 @@
 import {
+  CANONICAL_SPAN,
+  getStageTracer,
+  type StageTracer,
+} from "../../orchestrator/telemetry/index.js";
+import {
   classifyPath,
   commandMutatesLockedConfig,
   commandReferencesSecret,
@@ -53,6 +58,7 @@ export interface GuardToolCallOptions {
   sidecar?: DecisionSidecar;
   timeoutMs?: number;
   now?: () => Date;
+  tracer?: StageTracer;
 }
 
 /** Deterministic preflight. Null means the hard gates allow the call. */
@@ -70,6 +76,29 @@ export function evaluateHardGates(request: ToolCallRequest): GateDecision | null
 }
 
 export async function guardToolCall(options: GuardToolCallOptions): Promise<GuardedToolResult> {
+  const tracer = options.tracer ?? getStageTracer();
+  const stepId = options.request.stepId;
+  return tracer.runStage(
+    CANONICAL_SPAN.gatePass,
+    {
+      taskId: options.request.taskId ?? "",
+      worktreeId: "",
+      attributes: stepId ? { step_id: stepId } : undefined,
+    },
+    async (span) => {
+      const result = await runGuardedToolCall(options);
+      span.setAttribute("gate_id", result.decision.gate);
+      if (result.status !== "allowed") {
+        span.setName(CANONICAL_SPAN.gateFail);
+        span.setAttribute("error_class", result.decision.gate);
+        span.fail(result.decision.reason);
+      }
+      return result;
+    },
+  );
+}
+
+async function runGuardedToolCall(options: GuardToolCallOptions): Promise<GuardedToolResult> {
   const hard = evaluateHardGates(options.request);
   if (hard) {
     await auditDeny(options, hard);

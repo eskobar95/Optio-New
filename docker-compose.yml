@@ -44,6 +44,10 @@ services:
       OPTIO_NEW_DATABASE_URL: postgres://${OPTIO_NEW_POSTGRES_USER:-optio}:${OPTIO_NEW_POSTGRES_PASSWORD:-changeme}@postgres:5432/${OPTIO_NEW_POSTGRES_DB:-optio_new}
       JEV_BASE_URL: ${JEV_BASE_URL:-https://ai-gateway.vercel.sh}
       VERCEL_AI_GATEWAY_URL: ${VERCEL_AI_GATEWAY_URL:-https://ai-gateway.vercel.sh}
+      OPTIO_OTEL_LANGFUSE: ${OPTIO_OTEL_LANGFUSE:-false}
+      OPTIO_OTEL_SIGNOZ: ${OPTIO_OTEL_SIGNOZ:-false}
+      OPTIO_SIGNOZ_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-http://127.0.0.1:3000}
     ports:
       - "127.0.0.1:3100:3100"
 
@@ -133,10 +137,13 @@ services:
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
     restart: unless-stopped
-    # Stub: add collector config when wiring Langfuse/SigNoz exporters
+    # Debug sink. App export stays off until OPTIO_OTEL_LANGFUSE / OPTIO_OTEL_SIGNOZ=true.
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
       - ./deploy/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
     profiles: ["observability"]
 
   # langfuse:

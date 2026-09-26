@@ -38,6 +38,8 @@ describe("update-status.sh", () => {
     expect(text).toContain("- #15 docs/status.md automation (P2, documentation)");
     expect(text).toContain("npm run status");
     expect(text).toContain(".github/workflows/status.yml");
+    expect(text).toContain("docs/observability.md");
+    expect(text).toContain("workflow.step");
     expect(text).toContain("Last refreshed: 2026-01-01 00:00 UTC");
     expect(text).toContain("## Compose smoke (Docker Desktop or Linux)");
     expect(text).toContain("kit-harness (Linux) full up/down PASSED 2026-09-26");
