@@ -27,8 +27,8 @@
 
 ## Adding a task
 
-1. New Bot accepts intent (chat) or optional HTTP intake (`orchestrator/intake`).
-2. Validate with `buildIntakeJob` → enqueue BullMQ job.
+1. New Bot accepts intent (chat) or `POST /intake` (`src/orchestrator/intake/http.ts`).
+2. Validate with `buildIntakeJob` → `enqueueIntakePipeline` (first job is `optio.plan`).
 3. Workers run Eve stages; New Bot gates ambiguous steps.
 4. GitHub PR/CI signals feed ready/merge; worktree cleaned after merge.
 

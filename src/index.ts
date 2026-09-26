@@ -31,7 +31,17 @@ export {
   evaluateHardGates,
 } from "./harness/gates/index.js";
 export { createEnvModelAdapter, readModelEnv, type ModelEnvConfig } from "./agent/env-adapter.js";
-export { buildIntakeJob, IntakeTaskSchema, type IntakeTask } from "./orchestrator/intake/index.js";
+export {
+  IntakeHttpSchema,
+  buildIntakeJob,
+  createIntakeServer,
+  handleIntakeRequest,
+  IntakeTaskSchema,
+  type IntakeAccepted,
+  type IntakeHttpRequest,
+  type IntakeServerOptions,
+  type IntakeTask,
+} from "./orchestrator/intake/index.js";
 export { processHelloWorld } from "./orchestrator/jobs/hello-world.js";
 export {
   PIPELINE_JOB_ATTEMPTS,
