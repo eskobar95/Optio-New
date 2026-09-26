@@ -1,6 +1,6 @@
 # Optio-New — status
 
-Last refreshed: 2026-09-26 00:40 UTC
+Last refreshed: 2026-09-26 00:43 UTC
 
 ## Bootstrap progress
 
@@ -43,7 +43,7 @@ Open: 15.
 
 Tracker: https://github.com/eskobar95/Optio-New/issues
 
-- #23 [P2] Mac local verify: Docker Desktop compose up smoke (P2, documentation, good first issue, infra)
+- #45 [e2e] Add a hello-world endpoint to the agent loop (P2, enhancement, good first issue, orchestration)
 - #22 [P2] Caddy TLS edge for optional intake webhook (P2, deploy, infra, security)
 - #21 [P2] Eve phase agents: planner / implementation / review / ready / merge contracts (P2, enhancement, orchestration)
 - #20 [P1] Hetzner deploy: systemd + Compose beside LiteLLM/BullMQ (P1, deploy, infra)
