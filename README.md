@@ -57,6 +57,14 @@ curl -s http://127.0.0.1:3200/health
 
 Decision sidecar: **[docs/kit-harness.md](docs/kit-harness.md)**. A default `docker compose up` does not start `kit-harness`. Bound to `127.0.0.1:3200`.
 
+Docker Desktop on a Mac (config check, then isolated up/down of redis, postgres, and litellm):
+
+```bash
+bash scripts/smoke-compose-mac.sh
+```
+
+See [docs/mac-compose-smoke.md](docs/mac-compose-smoke.md). GitHub Actions stays on `scripts/smoke-local.sh` (`--config-only` when Docker is present).
+
 Secrets on the Hetzner kit-harness (`/opt/optio-new`): **sops + age**. Runbook: [docs/secrets.md](docs/secrets.md).
 Postgres backup example: `scripts/backup-postgres-to-storagebox.sh.example`.
 
@@ -64,7 +72,7 @@ Postgres backup example: `scripts/backup-postgres-to-storagebox.sh.example`.
 
 - **GitHub Actions:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on **every push** and **every pull_request** (any branch for push; PRs targeting `main`). Runs `format:check`, `lint`, `typecheck`, `test` (Vitest), and `smoke`. Failures fail the workflow.
 - **Pre-commit:** Husky + lint-staged (`.husky/pre-commit`) installs via `npm install` (`prepare` → `husky`). Formats/lints staged files and runs `typecheck` (no Docker required).
-- **Tooling:** ESLint + Prettier + Vitest + `tsc --noEmit`. Scripts: `lint`, `lint:fix`, `format`, `format:check`, `typecheck`, `test`, `test:watch`, `smoke`, `ci`, `status`, `kit-harness`.
+- **Tooling:** ESLint + Prettier + Vitest + `tsc --noEmit`. Scripts: `lint`, `lint:fix`, `format`, `format:check`, `typecheck`, `test`, `test:watch`, `smoke`, `smoke:compose`, `ci`, `status`, `kit-harness`.
 
 ## Optional: Caveman cost-opt
 

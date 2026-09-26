@@ -132,6 +132,18 @@ trap cleanup EXIT
   echo
   echo "Actions: ${CI_URL}"
   echo
+  echo "## Mac local verify (Docker Desktop)"
+  echo
+  echo "Issue [#23](https://github.com/${REPO}/issues/23). Runbook: [mac-compose-smoke.md](mac-compose-smoke.md). Command: \`bash scripts/smoke-compose-mac.sh\` (repo-root \`.env\`, or \`.env.example\` when \`.env\` is absent)."
+  echo
+  echo "| Check | State |"
+  echo "| --- | --- |"
+  echo "| Compose config for redis, postgres, litellm | Scripted. CI runs \`--config-only\` when the Docker CLI is present, and always syntax-checks the script |"
+  echo "| Isolated up/down (\`optio-new-mac-smoke\`, ports 16379/15432/14000) | Local Docker Desktop. Linux CI has no macOS runner and does not start the stack |"
+  echo "| Failure issues | None filed. No up/down run has failed in this change |"
+  echo
+  echo "Gaps: LiteLLM tag \`ghcr.io/berriai/litellm:main-latest\` floats; profile \`full\` (orchestrator, eve-runner) stays out of this smoke; provider keys stay empty; the check is \`/health/liveliness\`, which does not call a model."
+  echo
   echo "## Open issues"
   echo
   echo "${OPEN_OVERVIEW}"

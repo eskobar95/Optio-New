@@ -23,6 +23,18 @@ Latest conclusion: **success**
 
 Actions: https://github.com/eskobar95/Optio-New/actions/workflows/ci.yml
 
+## Mac local verify (Docker Desktop)
+
+Issue [#23](https://github.com/eskobar95/Optio-New/issues/23). Runbook: [mac-compose-smoke.md](mac-compose-smoke.md). Command: `bash scripts/smoke-compose-mac.sh` (repo-root `.env`, or `.env.example` when `.env` is absent).
+
+| Check                                                             | State                                                                                                 |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Compose config for redis, postgres, litellm                       | Scripted. CI runs `--config-only` when the Docker CLI is present, and always syntax-checks the script |
+| Isolated up/down (`optio-new-mac-smoke`, ports 16379/15432/14000) | Local Docker Desktop. Linux CI has no macOS runner and does not start the stack                       |
+| Failure issues                                                    | None filed. No up/down run has failed in this change                                                  |
+
+Gaps: LiteLLM tag `ghcr.io/berriai/litellm:main-latest` floats; profile `full` (orchestrator, eve-runner) stays out of this smoke; provider keys stay empty; the check is `/health/liveliness`, which does not call a model.
+
 ## Open issues
 
 Open: 15.

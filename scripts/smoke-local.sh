@@ -29,6 +29,9 @@ pass "typecheck"
 npm test || fail "vitest"
 pass "vitest"
 
+bash -n "$ROOT/scripts/smoke-compose-mac.sh" || fail "smoke-compose-mac.sh syntax"
+pass "smoke-compose-mac.sh syntax"
+
 npx vitest run tests/security-gates.test.ts || fail "security gates"
 pass "security gates (secrets deny, config lock, tool timeout)"
 
@@ -176,18 +179,19 @@ if command -v docker >/dev/null 2>&1; then
     fi
     rm -f "$empty_env" "$config_log"
     pass "docker compose config"
+    bash "$ROOT/scripts/smoke-compose-mac.sh" --config-only || fail "mac compose config"
+    if [[ "${SMOKE_COMPOSE_UP:-0}" == "1" ]]; then
+      docker compose up -d redis postgres
+      pass "compose up redis postgres"
+    else
+      skip "compose up (bash scripts/smoke-compose-mac.sh for redis+postgres+litellm up/down)"
+    fi
     if docker compose config | grep -Eq '^  kit-harness:'; then
       fail "kit-harness is profile-gated and must not appear in default compose config"
     fi
     docker compose --profile harness config | grep -Eq '^  kit-harness:' \
       || fail "docker compose --profile harness missing kit-harness"
     pass "compose profile harness defines kit-harness"
-    if [[ "${SMOKE_COMPOSE_UP:-0}" == "1" ]]; then
-      docker compose up -d redis postgres
-      pass "compose up redis postgres"
-    else
-      skip "compose up (set SMOKE_COMPOSE_UP=1 to enable)"
-    fi
   else
     skip "docker compose plugin not available"
   fi
