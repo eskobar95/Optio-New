@@ -9,6 +9,10 @@ import type { WorkflowDecision } from "./workflow.js";
 export interface WorkflowPorts {
   openDraft(): Promise<void>;
   markReady(): Promise<void>;
+  /** Request `OPTIO_REVIEW_GITHUB_LOGINS`. Empty config is a no-op. */
+  requestReviewers(): Promise<void>;
+  /** Run the review agent and post `[optio-review]` when this head has none yet. */
+  dispatchReview(): Promise<void>;
   merge(): Promise<void>;
   /** Re-request review and comment. Must not convert the pull request to a draft. */
   rereview(comment: string): Promise<void>;
@@ -26,6 +30,8 @@ export async function applyWorkflowEffects(
   for (const effect of decision.effects) {
     if (effect.kind === "github.draft") await ports.openDraft();
     else if (effect.kind === "github.ready") await ports.markReady();
+    else if (effect.kind === "github.request_reviewers") await ports.requestReviewers();
+    else if (effect.kind === "github.dispatch_review") await ports.dispatchReview();
     else if (effect.kind === "github.merge") await ports.merge();
     else if (effect.kind === "github.rereview") await ports.rereview(effect.comment);
     else if (effect.kind === "linear.status") await ports.setStatus(effect.status);

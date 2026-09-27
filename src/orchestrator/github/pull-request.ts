@@ -371,6 +371,19 @@ export async function mergeGithubPullRequest(input: {
   }
 }
 
+const MARK_READY_FOR_REVIEW = `
+  mutation MarkReady($id: ID!) {
+    markPullRequestReadyForReview(input: { pullRequestId: $id }) {
+      pullRequest { isDraft }
+    }
+  }
+`;
+
+/**
+ * Marks a draft pull request ready for review.
+ * REST `PATCH { draft: false }` is ignored by GitHub and still returns 200,
+ * so this uses `markPullRequestReadyForReview`. Already-ready is a no-op.
+ */
 export async function markGithubPullRequestReady(input: {
   token: string;
   owner: string;
@@ -379,13 +392,97 @@ export async function markGithubPullRequestReady(input: {
   fetchImpl?: typeof fetch;
 }): Promise<void> {
   const fetchImpl = input.fetchImpl ?? fetch;
-  const endpoint = `${pullsUrl(input.owner, input.repo)}/${input.number}`;
-  const response = await githubFetch(fetchImpl, endpoint, input.token, {
-    method: "PATCH",
-    body: JSON.stringify({ draft: false }),
+  const current = await readPullDraft(input, fetchImpl);
+  if (current.draft === false) return;
+  if (!current.nodeId) {
+    throw new GithubRequestError(200, "github undraft missing node_id");
+  }
+  const response = await githubFetch(fetchImpl, "https://api.github.com/graphql", input.token, {
+    method: "POST",
+    body: JSON.stringify({
+      query: MARK_READY_FOR_REVIEW,
+      variables: { id: current.nodeId },
+    }),
   });
   if (!response.ok) {
     throw await requestError(response, input.token, "undraft");
+  }
+  const payload = record(await response.json());
+  const errors = graphqlErrorText(payload);
+  const ready = payload ? markReadyClearedDraft(payload) : false;
+  if (ready && !errors) return;
+  const again = await readPullDraft(input, fetchImpl);
+  if (again.draft === false) return;
+  const detail = errors || "pull request is still a draft";
+  throw new GithubRequestError(
+    response.status,
+    redact(`github undraft failed: ${detail}`, [input.token]),
+  );
+}
+
+export async function requestGithubPullRequestReviewers(input: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  reviewers: readonly string[];
+  fetchImpl?: typeof fetch;
+}): Promise<void> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const reviewers = [...new Set(input.reviewers.map((login) => login.trim()).filter(Boolean))];
+  if (reviewers.length === 0) return;
+  const endpoint = `${pullsUrl(input.owner, input.repo)}/${input.number}/requested_reviewers`;
+  const response = await githubFetch(fetchImpl, endpoint, input.token, {
+    method: "POST",
+    body: JSON.stringify({ reviewers }),
+  });
+  if (!response.ok && response.status !== 422) {
+    throw await requestError(response, input.token, "request reviewers");
+  }
+}
+
+export async function listGithubIssueCommentBodies(input: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  fetchImpl?: typeof fetch;
+}): Promise<string[]> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const bodies: string[] = [];
+  for (let page = 1; page <= 5; page += 1) {
+    const endpoint = `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/issues/${input.number}/comments?per_page=100&page=${page}`;
+    const response = await githubFetch(fetchImpl, endpoint, input.token, { method: "GET" });
+    if (!response.ok) {
+      throw await requestError(response, input.token, "issue comments");
+    }
+    const payload = (await response.json()) as unknown;
+    if (!Array.isArray(payload) || payload.length === 0) return bodies;
+    for (const item of payload) {
+      const body = record(item)?.body;
+      if (typeof body === "string") bodies.push(body);
+    }
+    if (payload.length < 100) return bodies;
+  }
+  return bodies;
+}
+
+export async function commentOnGithubPullRequest(input: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  body: string;
+  fetchImpl?: typeof fetch;
+}): Promise<void> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const endpoint = `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/issues/${input.number}/comments`;
+  const response = await githubFetch(fetchImpl, endpoint, input.token, {
+    method: "POST",
+    body: JSON.stringify({ body: input.body }),
+  });
+  if (!response.ok) {
+    throw await requestError(response, input.token, "pull request comment");
   }
 }
 
@@ -507,6 +604,39 @@ export async function findOpenGithubPullRequest(
     }
   }
   return undefined;
+}
+
+async function readPullDraft(
+  input: { token: string; owner: string; repo: string; number: number },
+  fetchImpl: typeof fetch,
+): Promise<{ draft: boolean | undefined; nodeId: string }> {
+  const endpoint = `${pullsUrl(input.owner, input.repo)}/${input.number}`;
+  const response = await githubFetch(fetchImpl, endpoint, input.token, { method: "GET" });
+  if (!response.ok) {
+    throw await requestError(response, input.token, "undraft");
+  }
+  const row = record(await response.json());
+  const nodeId = typeof row?.node_id === "string" ? row.node_id : "";
+  const draft = typeof row?.draft === "boolean" ? row.draft : undefined;
+  return { draft, nodeId };
+}
+
+function graphqlErrorText(payload: Record<string, unknown> | undefined): string {
+  if (!payload || !Array.isArray(payload.errors)) return "";
+  return payload.errors
+    .map((item) => {
+      const message = record(item)?.message;
+      return typeof message === "string" ? message.trim() : "";
+    })
+    .filter(Boolean)
+    .join("; ");
+}
+
+function markReadyClearedDraft(payload: Record<string, unknown>): boolean {
+  const data = record(payload.data);
+  const mutation = record(data?.markPullRequestReadyForReview);
+  const pull = record(mutation?.pullRequest);
+  return pull?.isDraft === false;
 }
 
 function pullsUrl(owner: string, repo: string): string {

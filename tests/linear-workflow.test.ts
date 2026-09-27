@@ -62,6 +62,12 @@ function ports(overrides: Partial<WorkflowPorts> = {}): {
       markReady: async () => {
         calls.push("ready");
       },
+      requestReviewers: async () => {
+        calls.push("request_reviewers");
+      },
+      dispatchReview: async () => {
+        calls.push("dispatch_review");
+      },
       merge: async () => {
         calls.push("merge");
       },
@@ -106,11 +112,13 @@ describe("Linear workflow decisions", () => {
     expect(review.ciFailureCount).toBe(0);
     expect(review.effects.map((effect) => effect.kind)).toEqual([
       "github.ready",
+      "github.request_reviewers",
+      "github.dispatch_review",
       "linear.status",
       "linear.comment",
       "linear.comment",
     ]);
-    expect(review.effects[1]).toMatchObject({ status: "Review" });
+    expect(review.effects[3]).toMatchObject({ status: "Review" });
     expect(commentBodies(review)).toEqual([
       expect.stringContaining("[status]\nStatus: Review\nTrigger: ci"),
       expect.stringContaining("[ci]\nResult: green\nAttempt: 0/3"),
@@ -127,6 +135,18 @@ describe("Linear workflow decisions", () => {
     expect(merge.effects[1]).toMatchObject({ status: "Merge" });
     expect(merge.effects[3]).toMatchObject({ status: "Done" });
     expect(commentBodies(merge).join("\n")).toContain("Trigger: agent");
+
+    const waiting = advance({ action: "merge", ci: "green", humanApproved: false });
+    expect(waiting.reason).toBe("awaiting_approval");
+    expect(waiting.ok).toBe(false);
+    expect(waiting.effects.map((effect) => effect.kind)).toEqual([
+      "github.ready",
+      "github.request_reviewers",
+      "github.dispatch_review",
+      "linear.status",
+      "linear.comment",
+      "linear.comment",
+    ]);
   });
 
   it("returns to In Progress with feedback when CI is red and keeps the pull request ready", () => {
@@ -154,6 +174,10 @@ describe("Linear workflow decisions", () => {
     expect(bodies[2]).toContain("Attempt: 1/3");
     expect(decision.effects.some((effect) => effect.kind === "github.draft")).toBe(false);
     expect(decision.effects.some((effect) => effect.kind === "github.ready")).toBe(false);
+    expect(decision.effects.some((effect) => effect.kind === "github.request_reviewers")).toBe(
+      false,
+    );
+    expect(decision.effects.some((effect) => effect.kind === "github.dispatch_review")).toBe(false);
   });
 
   it("returns to In Progress when review feedback is still open on green CI", () => {
@@ -199,6 +223,15 @@ describe("Linear workflow decisions", () => {
         { login: "bea", state: "COMMENTED", body: "Also rename the helper" },
       ]),
     ).toBe("ada: Fix the gate\nbea: Also rename the helper");
+    expect(
+      blockingReviewFeedback([
+        {
+          login: "optio",
+          state: "COMMENTED",
+          body: "<!-- optio-review sha:abc -->\n[optio-review]\npass",
+        },
+      ]),
+    ).toBeUndefined();
   });
 
   it("does not count a pending check as a failure", () => {
@@ -294,6 +327,9 @@ describe("Linear workflow decisions", () => {
     const agent = decideObservedMove({ toStatus: "Review", actor: "agent", fromStateId: "x" });
     expect(agent.ok).toBe(true);
     expect(agent.effects).toEqual([]);
+    expect(human.effects.some((effect) => effect.kind === "github.ready")).toBe(false);
+    expect(human.effects.some((effect) => effect.kind === "github.request_reviewers")).toBe(false);
+    expect(human.effects.some((effect) => effect.kind === "github.dispatch_review")).toBe(false);
   });
 
   it("uses 3 as the default escalate threshold and honors a configured integer", () => {
@@ -357,6 +393,17 @@ describe("Linear workflow effects", () => {
     expect(blocked.calls.some((call) => call.includes("[ci]"))).toBe(true);
     expect(blocked.calls.some((call) => call.startsWith("rereview:"))).toBe(true);
     expect(blocked.calls.some((call) => call === "draft" || call === "ready")).toBe(false);
+    expect(blocked.calls).not.toContain("request_reviewers");
+    expect(blocked.calls).not.toContain("dispatch_review");
+
+    const entered = ports();
+    await applyWorkflowEffects(advance({ action: "review", ci: "green" }), entered.ports);
+    expect(entered.calls.slice(0, 4)).toEqual([
+      "ready",
+      "request_reviewers",
+      "dispatch_review",
+      "status:Review",
+    ]);
   });
 
   it("moves to Needs Human and comments, or falls back to In Progress", async () => {
@@ -369,6 +416,7 @@ describe("Linear workflow effects", () => {
     );
     expect(preferred.calls.some((call) => call.includes("Next:"))).toBe(true);
     expect(preferred.calls.some((call) => call === "ready")).toBe(false);
+    expect(preferred.calls).not.toContain("dispatch_review");
 
     const fallback = ports({
       escalationStatus: async () => "Needs Human",

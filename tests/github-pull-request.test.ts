@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   findOpenGithubPullRequest,
+  markGithubPullRequestReady,
   openGithubPullRequest,
   readCommitStatusReport,
+  requestGithubPullRequestReviewers,
 } from "../src/orchestrator/github/pull-request.js";
 
 const input = {
@@ -328,5 +330,106 @@ describe("readCommitStatusReport", () => {
       }),
     });
     expect(report).toEqual({ state: "success", failedChecks: [] });
+  });
+});
+
+describe("markGithubPullRequestReady", () => {
+  const readyInput = {
+    token: "test-github-token",
+    owner: "acme",
+    repo: "widgets",
+    number: 69,
+  };
+
+  it("undrafts with markPullRequestReadyForReview and does not PATCH draft", async () => {
+    const calls: { url: string; method: string; body?: string }[] = [];
+    await markGithubPullRequestReady({
+      ...readyInput,
+      fetchImpl: async (url, init) => {
+        const method = init?.method ?? "GET";
+        const body = typeof init?.body === "string" ? init.body : undefined;
+        calls.push({ url: String(url), method, body });
+        if (method === "GET") {
+          return jsonResponse(200, { draft: true, node_id: "PR_kwDO123" });
+        }
+        return jsonResponse(200, {
+          data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } },
+        });
+      },
+    });
+    expect(calls.map((call) => call.method)).toEqual(["GET", "POST"]);
+    expect(calls[1]?.url).toBe("https://api.github.com/graphql");
+    expect(calls[1]?.body).toContain("markPullRequestReadyForReview");
+    expect(calls[1]?.body).toContain("PR_kwDO123");
+    expect(
+      calls.some((call) => call.method === "PATCH" || call.body?.includes('"draft":false')),
+    ).toBe(false);
+  });
+
+  it("does nothing when the pull request is already ready", async () => {
+    const methods: string[] = [];
+    await markGithubPullRequestReady({
+      ...readyInput,
+      fetchImpl: async (_url, init) => {
+        methods.push(init?.method ?? "GET");
+        return jsonResponse(200, { draft: false, node_id: "PR_kwDO123" });
+      },
+    });
+    expect(methods).toEqual(["GET"]);
+  });
+
+  it("fails when GraphQL leaves the pull request a draft", async () => {
+    await expect(
+      markGithubPullRequestReady({
+        ...readyInput,
+        fetchImpl: async (url, init) => {
+          const method = init?.method ?? "GET";
+          if (method === "GET") return jsonResponse(200, { draft: true, node_id: "PR_kwDO123" });
+          return jsonResponse(200, {
+            data: { markPullRequestReadyForReview: { pullRequest: { isDraft: true } } },
+            errors: [{ message: "draft field ignored" }],
+          });
+        },
+      }),
+    ).rejects.toThrow(/still a draft|draft field ignored|undraft failed/);
+  });
+
+  it("treats a follow-up read of draft false as success", async () => {
+    let reads = 0;
+    await markGithubPullRequestReady({
+      ...readyInput,
+      fetchImpl: async (_url, init) => {
+        const method = init?.method ?? "GET";
+        if (method === "GET") {
+          reads += 1;
+          return jsonResponse(200, { draft: reads === 1, node_id: "PR_kwDO123" });
+        }
+        return jsonResponse(200, { errors: [{ message: "already ready for review" }] });
+      },
+    });
+    expect(reads).toBe(2);
+  });
+
+  it("requests configured reviewers and ignores an empty list", async () => {
+    const bodies: string[] = [];
+    await requestGithubPullRequestReviewers({
+      ...readyInput,
+      reviewers: ["hannes-bot", "hannes-bot", " "],
+      fetchImpl: async (_url, init) => {
+        bodies.push(typeof init?.body === "string" ? init.body : "");
+        return jsonResponse(201, { ok: true });
+      },
+    });
+    expect(JSON.parse(bodies[0] ?? "{}")).toEqual({ reviewers: ["hannes-bot"] });
+    const calls: string[] = [];
+    await requestGithubPullRequestReviewers({
+      ...readyInput,
+      reviewers: [],
+      fetchImpl: async () => {
+        calls.push("called");
+        return jsonResponse(500, {});
+      },
+    });
+    expect(calls).toEqual([]);
   });
 });

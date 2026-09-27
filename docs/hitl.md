@@ -9,7 +9,7 @@ Plan and merge can wait for an explicit approve, reject, or replan. The orchestr
 | `plan`  | Start of `implement`, after plan        | `when_confidence_low` |
 | `merge` | Start of `merge`, before `merge_branch` | `always`              |
 
-`ready` (`open_pr`, then `record_ci_wait`) does not open the merge gate. A Linear-sourced task can move to **Review** when CI is green, undraft the pull request, and post `[status]` and `[ci]` before anyone approves the merge. The same merge decision still blocks `merge_branch`. Plan approval is unchanged.
+`ready` (`open_pr`, then `record_ci_wait`) does not open the merge gate. A Linear-sourced task can move to **Review** when CI is green, undraft the pull request, request the configured reviewers, dispatch the review agent, and post `[status]` and `[ci]` before anyone approves the merge. The same merge decision still blocks `merge_branch`. Plan approval is unchanged. Starting that review is not a human step.
 
 Order for a Linear task: draft pull request and **In Progress** → CI wait → **Review** on green → merge approval → merge.
 

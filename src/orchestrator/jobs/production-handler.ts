@@ -10,6 +10,7 @@ import { execFile } from "node:child_process";
 import type {
   CodingAgent,
   CodingAgentInput,
+  CodingAgentOutput,
   CodingAgentUsage,
 } from "../../adapters/coding-agent.js";
 import { defaultPermissionForStep } from "../../kit-harness/permissions.js";
@@ -18,8 +19,10 @@ import type { ModelAdapter } from "../../agent/adapter.js";
 import { createEnvModelAdapter } from "../../agent/env-adapter.js";
 import {
   GithubRequestError,
+  commentOnGithubPullRequest,
   findOpenGithubPullRequest,
   githubPullRequestApproved,
+  listGithubIssueCommentBodies,
   listGithubPullRequestReviews,
   mergeGithubPullRequest,
   githubRepoFromCloneUrl,
@@ -27,10 +30,17 @@ import {
   openGithubPullRequest,
   readCommitStatusReport,
   reRequestGithubPullRequestReview,
+  requestGithubPullRequestReviewers,
   redact,
   type PullRequestRef,
 } from "../github/pull-request.js";
 import { applyWorkflowEffects, type WorkflowPorts } from "../linear/apply.js";
+import {
+  formatOptioReviewComment,
+  optioReviewPosted,
+  readReviewGithubLogins,
+  reviewSpecialistsForPaths,
+} from "../linear/review-entry.js";
 import {
   commentOnIssue,
   escalationTargetStatus,
@@ -229,6 +239,58 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     );
     attachStepUsage(error, usage);
     throw error;
+  }
+
+  async function runReviewDispatch(
+    ctx: StageStepContext,
+    handle: WorktreeHandle,
+    sha: string,
+    specialists: readonly string[],
+  ): Promise<CodingAgentOutput> {
+    const backend = resolveCodingBackend({
+      defaultBackend: env.OPTIO_NEW_CODING_BACKEND?.trim() || "cursor",
+    });
+    if (backend === "cursor" && !env.CURSOR_API_KEY?.trim()) {
+      throw new StageCredentialsError("CURSOR_API_KEY is required to dispatch the review agent");
+    }
+    const agent = options.codingAgent ?? createCodingAgent(backend, { env });
+    const output = await agent.run({
+      worktree_path: handle.path,
+      prompt: reviewDispatchPrompt(ctx, sha, specialists),
+      instructions:
+        "Review only. Read .cursor/skills/code-review/SKILL.md and review Standards, Spec, and Slop. Do not edit files, push, undraft, request reviewers, or merge.",
+      allowed_tools: ["read"],
+      permission_tier: "read-only",
+      budget: { maxWallClockMs: timeoutMs },
+      metadata: {
+        task_id: ctx.taskId,
+        worktree_id: handle.worktreeId,
+        workflow_id: "default-task",
+        step_id: "dispatch_review",
+        agent_id: "agents/review",
+      },
+    });
+    const usage = usageFromCoding(output.usage);
+    if (ctx.recordUsage) {
+      await ctx.recordUsage({
+        agentId: "agents/review",
+        provider: output.usage.provider,
+        modelId: output.usage.model_id,
+        inputTokens: output.usage.input_tokens,
+        outputTokens: output.usage.output_tokens,
+        cachedTokens: output.usage.cached_tokens,
+        costUsd: output.usage.cost_usd,
+      });
+    }
+    if (output.status !== "succeeded") {
+      const detail = output.logs ? `: ${output.logs.slice(0, 500)}` : "";
+      const error = new Error(
+        `review dispatch ${output.status} (${output.error_class ?? "failed"})${detail}`,
+      );
+      attachStepUsage(error, usage);
+      throw error;
+    }
+    return output;
   }
 
   async function ensureWorktree(ctx: StageStepContext): Promise<WorktreeHandle> {
@@ -629,6 +691,63 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
           }),
         );
       },
+      requestReviewers: async () => {
+        const reviewers = readReviewGithubLogins(env);
+        if (reviewers.length === 0) return;
+        const github = requireGithub(ctx);
+        const stored = await readPullRecord(handle);
+        await mapGithub(() =>
+          requestGithubPullRequestReviewers({
+            token: github.token,
+            owner: github.owner,
+            repo: github.repo,
+            number: stored.number,
+            reviewers,
+            fetchImpl,
+          }),
+        );
+      },
+      dispatchReview: async () => {
+        const github = requireGithub(ctx);
+        const stored = await readPullRecord(handle);
+        const sha = (await git(handle.path, ["rev-parse", "HEAD"], [github.token])).trim();
+        const bodies = await mapGithub(() =>
+          listGithubIssueCommentBodies({
+            token: github.token,
+            owner: github.owner,
+            repo: github.repo,
+            number: stored.number,
+            fetchImpl,
+          }),
+        );
+        if (optioReviewPosted(bodies, sha)) {
+          logStageEvent({ msg: "optio review already posted", taskId: ctx.taskId, sha });
+          return;
+        }
+        const diffNames = await git(
+          handle.path,
+          ["diff", "--name-only", `${stored.base}...HEAD`],
+          [github.token],
+        );
+        const specialists = reviewSpecialistsForPaths(diffNames.split("\n"));
+        const reviewers = readReviewGithubLogins(env);
+        const output = await runReviewDispatch(ctx, handle, sha, specialists);
+        await mapGithub(() =>
+          commentOnGithubPullRequest({
+            token: github.token,
+            owner: github.owner,
+            repo: github.repo,
+            number: stored.number,
+            body: formatOptioReviewComment({
+              sha,
+              reviewers,
+              specialists,
+              body: reviewDispatchText(output),
+            }),
+            fetchImpl,
+          }),
+        );
+      },
       merge: async () => {
         const github = requireGithub(ctx);
         const stored = await readPullRecord(handle);
@@ -904,6 +1023,39 @@ async function reviewFixText(
   } catch {
     return input.reviewFeedback?.trim() || "GitHub checks are still red. Make CI green.";
   }
+}
+
+function reviewDispatchText(output: CodingAgentOutput): string {
+  const text = [output.diff_summary, output.logs]
+    .map((part) => part?.trim() ?? "")
+    .filter(Boolean)
+    .join("\n\n");
+  return text || "Review completed with no written findings.";
+}
+
+function reviewDispatchPrompt(
+  ctx: StageStepContext,
+  sha: string,
+  specialists: readonly string[],
+): string {
+  const lines = [
+    `Task ${ctx.taskId}.`,
+    "You are the Optio review agent (Hannes).",
+    "Read .cursor/skills/code-review/SKILL.md and review the worktree diff on three axes: Standards, Spec, and Slop.",
+    `Pull request head: ${sha}.`,
+    "Do not edit files, push, undraft, request reviewers, or merge.",
+    "Write findings first, then a verdict of pass or fail.",
+  ];
+  if (specialists.length > 0) {
+    lines.push(
+      `This diff also needs these specialists: ${specialists.join(", ")}. Read each specialist instructions.md and apply it only where the diff matches that responsibility.`,
+    );
+  }
+  const title = ctx.title?.trim();
+  const description = ctx.description?.trim();
+  if (title) lines.push(`Title: ${title}`);
+  if (description) lines.push(`Description: ${description.slice(0, 4000)}`);
+  return lines.join("\n");
 }
 
 function usageFromCoding(usage: CodingAgentUsage): StageStepUsage {

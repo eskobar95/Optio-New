@@ -30,6 +30,8 @@ export async function enforceObservedLinearStatus(input: {
   const ports: WorkflowPorts = {
     openDraft: unused,
     markReady: unused,
+    requestReviewers: unused,
+    dispatchReview: unused,
     merge: unused,
     rereview: unused,
     setStatus: unused,

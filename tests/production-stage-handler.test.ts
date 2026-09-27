@@ -77,6 +77,7 @@ function gitRunner(counts: { ahead: string }) {
       const command = args[0] === "-c" ? "commit" : args[0];
       if (command === "rev-list") return counts.ahead;
       if (command === "rev-parse") return "abc123";
+      if (command === "diff") return "src/app.ts\nstate/migrations/001.sql";
       if (command === "push" || command === "add" || command === "commit" || command === "status") {
         return "";
       }
@@ -654,15 +655,22 @@ describe("production stage handler", () => {
     const agentCalls: CodingAgentInput[] = [];
     let head = "aaa111";
     let ciState = "failure";
+    const issueComments: string[] = [];
     const githubBodies: { url: string; method: string; body?: string }[] = [];
     const handler = createProductionStageHandler({
-      env: handlerEnv({ OPTIO_NEW_LINEAR_API_KEY: "lin_api_testkey12345678" }),
+      env: handlerEnv({
+        OPTIO_NEW_LINEAR_API_KEY: "lin_api_testkey12345678",
+        OPTIO_REVIEW_GITHUB_LOGINS: "hannes-bot",
+      }),
       worktrees,
       codingAgent: codingAgent(agentCalls),
       git: async (_cwd, args) => {
         const command = args[0] === "-c" ? "commit" : args[0];
         if (command === "rev-parse") return head;
         if (command === "status") return head === "aaa111" ? " M src/app.ts" : "";
+        if (command === "diff") {
+          return "src/app.ts\nstate/migrations/001.sql\ndeploy/Caddyfile\napps/web/App.tsx";
+        }
         if (command === "add") return "";
         if (command === "commit") {
           head = "bbb222";
@@ -721,8 +729,26 @@ describe("production stage handler", () => {
         if (method === "POST" && url.endsWith("/reviews")) {
           return jsonResponse(201, { id: 3, state: "COMMENTED" });
         }
+        if (method === "GET" && /\/pulls\/\d+$/.test(url)) {
+          return jsonResponse(200, { draft: true, node_id: "PR_node_7", number: 7 });
+        }
+        if (method === "POST" && url.endsWith("/graphql")) {
+          return jsonResponse(200, {
+            data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } },
+          });
+        }
+        if (method === "GET" && /\/issues\/\d+\/comments/.test(url)) {
+          return jsonResponse(
+            200,
+            issueComments.map((comment) => ({ body: comment })),
+          );
+        }
+        if (method === "POST" && url.includes("/issues/") && url.endsWith("/comments")) {
+          const posted = body ? ((JSON.parse(body) as { body?: string }).body ?? "") : "";
+          issueComments.push(posted);
+          return jsonResponse(201, { id: 1 });
+        }
         if (method === "POST" && url.endsWith("/comments")) return jsonResponse(201, { id: 1 });
-        if (method === "PATCH") return jsonResponse(200, { draft: false });
         return jsonResponse(500, { message: `unexpected ${method} ${url}` });
       },
     });
@@ -772,8 +798,36 @@ describe("production stage handler", () => {
     githubBodies.length = 0;
     await handler.run(ctx);
     expect(
-      githubBodies.some((call) => call.method === "PATCH" && call.body?.includes('"draft":false')),
+      githubBodies.some(
+        (call) =>
+          call.method === "POST" &&
+          call.url.endsWith("/graphql") &&
+          call.body?.includes("markPullRequestReadyForReview"),
+      ),
     ).toBe(true);
+    expect(githubBodies.some((call) => call.method === "PATCH")).toBe(false);
+    expect(
+      githubBodies.some(
+        (call) => call.url.endsWith("/requested_reviewers") && call.body?.includes("hannes-bot"),
+      ),
+    ).toBe(true);
+    expect(
+      issueComments.some((comment) => comment.includes("<!-- optio-review sha:bbb222 -->")),
+    ).toBe(true);
+    expect(agentCalls[1]?.metadata.step_id).toBe("dispatch_review");
+    expect(agentCalls[1]?.prompt).toContain("code-review");
+    expect(agentCalls[1]?.prompt).toContain("specialists/back-end");
+    expect(agentCalls[1]?.prompt).toContain("specialists/database");
+    expect(agentCalls[1]?.prompt).toContain("specialists/devops");
+    expect(agentCalls[1]?.prompt).toContain("specialists/front-end");
+    const dispatched = agentCalls.length;
+    githubBodies.length = 0;
+    await handler.run(ctx);
+    expect(agentCalls.length).toBe(dispatched);
+    expect(githubBodies.some((call) => call.url.endsWith("/graphql"))).toBe(true);
+    expect(
+      githubBodies.some((call) => call.method === "POST" && call.url.includes("/issues/")),
+    ).toBe(false);
     const reviewUpdate = githubBodies.find(
       (call) => call.url.includes("api.linear.app") && call.body?.includes("s-re"),
     );
@@ -786,10 +840,26 @@ describe("production stage handler", () => {
     const { worktrees } = worktreeFixture(taskId, true);
     const git = gitRunner({ ahead: "1" });
     const calls: { url: string; method: string; body?: string }[] = [];
+    const agentCalls: CodingAgentInput[] = [];
     const handler = createProductionStageHandler({
-      env: handlerEnv({ OPTIO_NEW_LINEAR_API_KEY: "lin_api_testkey12345678" }),
+      env: handlerEnv({
+        OPTIO_NEW_LINEAR_API_KEY: "lin_api_testkey12345678",
+        OPTIO_REVIEW_GITHUB_LOGINS: "hannes-bot",
+      }),
       worktrees,
       git: git.git,
+      codingAgent: {
+        id: "cursor",
+        async run(input) {
+          agentCalls.push(input);
+          return {
+            pr_ready: false,
+            status: "succeeded",
+            diff_summary: "Standards pass. Spec pass. Slop pass.",
+            usage: { provider: "cursor", input_tokens: 10, output_tokens: 4, cost_usd: 0 },
+          };
+        },
+      },
       loadPrSafety: passingSafety,
       fetchImpl: async (input, init) => {
         const url = String(input);
@@ -839,7 +909,21 @@ describe("production stage handler", () => {
         if (method === "GET" && url.endsWith("/reviews")) {
           return jsonResponse(200, [{ user: { login: "ada" }, state: "APPROVED", body: "" }]);
         }
-        if (method === "PATCH") return jsonResponse(200, { draft: false });
+        if (method === "GET" && /\/pulls\/\d+$/.test(url)) {
+          return jsonResponse(200, { draft: true, node_id: "PR_node_66", number: 66 });
+        }
+        if (method === "POST" && url === "https://api.github.com/graphql") {
+          return jsonResponse(200, {
+            data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } },
+          });
+        }
+        if (method === "GET" && /\/issues\/\d+\/comments/.test(url)) return jsonResponse(200, []);
+        if (method === "POST" && url.endsWith("/requested_reviewers")) {
+          return jsonResponse(201, { requested_reviewers: [{ login: "hannes-bot" }] });
+        }
+        if (method === "POST" && url.includes("/issues/") && url.endsWith("/comments")) {
+          return jsonResponse(201, { id: 9 });
+        }
         if (method === "PUT" && url.endsWith("/merge")) return jsonResponse(200, { merged: true });
         return jsonResponse(500, { message: `unexpected ${method} ${url}` });
       },
@@ -881,8 +965,30 @@ describe("production stage handler", () => {
     expect(linearBodies.some((body) => body.includes("s-re"))).toBe(true);
     expect(linearBodies.some((body) => body.includes("s-me"))).toBe(false);
     expect(
-      calls.some((call) => call.method === "PATCH" && call.body?.includes('"draft":false')),
+      calls.some(
+        (call) =>
+          call.method === "POST" &&
+          call.url.endsWith("/graphql") &&
+          call.body?.includes("markPullRequestReadyForReview"),
+      ),
     ).toBe(true);
+    expect(calls.some((call) => call.method === "PATCH")).toBe(false);
+    expect(
+      calls.some(
+        (call) => call.url.endsWith("/requested_reviewers") && call.body?.includes("hannes-bot"),
+      ),
+    ).toBe(true);
+    expect(
+      calls.some(
+        (call) =>
+          call.method === "POST" &&
+          call.url.includes("/issues/") &&
+          call.body?.includes("[optio-review]") &&
+          call.body?.includes("Standards pass"),
+      ),
+    ).toBe(true);
+    expect(agentCalls.some((call) => call.prompt.includes("skills/code-review"))).toBe(true);
+    expect(agentCalls.some((call) => call.prompt.includes("specialists/back-end"))).toBe(true);
     expect(calls.some((call) => call.method === "PUT" && call.url.endsWith("/merge"))).toBe(false);
     expect(await hitlState.get(taskId, taskId, "merge")).toBeUndefined();
 

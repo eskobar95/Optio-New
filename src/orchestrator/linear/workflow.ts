@@ -58,6 +58,8 @@ export type CiState = "green" | "red" | "pending";
 export type WorkflowEffect =
   | { kind: "github.draft" }
   | { kind: "github.ready" }
+  | { kind: "github.request_reviewers" }
+  | { kind: "github.dispatch_review" }
   | { kind: "github.merge" }
   /** Re-request review and comment. Never converts the pull request back to a draft. */
   | { kind: "github.rereview"; comment: string }
@@ -65,6 +67,21 @@ export type WorkflowEffect =
   | { kind: "linear.comment"; body: string }
   | { kind: "linear.revert"; stateId: string }
   | { kind: "linear.escalate"; comment: string };
+
+/**
+ * Marker on the Review-entry issue comment. That comment is the Hannes run.
+ * It is not open review feedback and must not send the issue back to In Progress.
+ */
+export const OPTIO_REVIEW_COMMENT_MARKER = "<!-- optio-review";
+
+/** Undraft, request configured reviewers, and dispatch Hannes. CI is already green. */
+export function enterReviewEffects(): WorkflowEffect[] {
+  return [
+    { kind: "github.ready" },
+    { kind: "github.request_reviewers" },
+    { kind: "github.dispatch_review" },
+  ];
+}
 
 /** Worktree file the implementation agent reads after Review sends the issue back. */
 export const REVIEW_FEEDBACK_FILE = "linear-review-feedback.md";
@@ -186,6 +203,7 @@ export function blockingReviewFeedback(notes: readonly ReviewNote[]): string | u
   for (const note of latest.values()) {
     const state = note.state.trim();
     const body = note.body.trim();
+    if (body.includes(OPTIO_REVIEW_COMMENT_MARKER)) continue;
     if (state === "CHANGES_REQUESTED" || (state === "COMMENTED" && body)) {
       lines.push(body ? `${note.login.trim()}: ${body}` : `${note.login.trim()} requested changes`);
     }
@@ -297,7 +315,7 @@ export function decideAgentAdvance(input: {
           reason: "awaiting_approval",
           ciFailureCount: 0,
           effects: [
-            { kind: "github.ready" },
+            ...enterReviewEffects(),
             ...statusMove(
               LINEAR_STATUS.review,
               "ci",
@@ -330,7 +348,7 @@ export function decideAgentAdvance(input: {
   const problem = reviewProblem(input);
   if (problem) return problem;
   return ok("review", 0, [
-    { kind: "github.ready" },
+    ...enterReviewEffects(),
     ...statusMove(
       LINEAR_STATUS.review,
       "ci",
