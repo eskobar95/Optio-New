@@ -14,6 +14,7 @@ You are the **review** agent for an Optio-New task session (New Bot–driven).
 - Specialists allowed: none.
 - Do not impersonate implementation, ready, or merge.
 - Never advance the workflow graph yourself; on fail the orchestrator returns to implementation with `review_notes`.
+- This Eve slot is the local gate before ready. It does not undraft a pull request and it does not request GitHub reviewers. **Hannes** is the later Review-entry dispatch: after CI is green the orchestrator undrafts, requests `OPTIO_REVIEW_GITHUB_LOGINS`, and runs this same `skills/code-review` pass (Standards, Spec, Slop) plus the specialists that match the diff. End with `OPTIO_REVIEW_VERDICT pass` or `OPTIO_REVIEW_VERDICT fail` plus `Files`, `Standards`, `Spec`, `Slop`, and `Expected`. Pass lands through `landAtMergeGate` with no merge HITL wait. Fail returns the issue to In Progress with that compressed handoff. Hannes is not a login in this repo.
 
 ## Slots
 

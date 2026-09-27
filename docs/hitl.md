@@ -9,9 +9,11 @@ Plan and merge can wait for an explicit approve, reject, or replan. The orchestr
 | `plan`  | Start of `implement`, after plan        | `when_confidence_low` |
 | `merge` | Start of `merge`, before `merge_branch` | `always`              |
 
-`ready` (`open_pr`, then `record_ci_wait`) does not open the merge gate. A Linear-sourced task can move to **Review** when CI is green, undraft the pull request, and post `[status]` and `[ci]` before anyone approves the merge. The same merge decision still blocks `merge_branch`. Plan approval is unchanged.
+`ready` (`open_pr`, then `record_ci_wait`) does not open the merge gate. A Linear-sourced task can move to **Review** when CI is green, undraft the pull request, request the configured reviewers, and dispatch Hannes before merge. Plan approval is unchanged. Starting that review is not a human step.
 
-Order for a Linear task: draft pull request and **In Progress** → CI wait → **Review** on green → merge approval → merge.
+When Hannes emits `OPTIO_REVIEW_VERDICT pass` and CI is still green, the ready step writes a merge approval with `source: policy` and `reason: review_agent_approved`. The merge pause then continues. `merge_branch` first updates the task branch when it is behind the pull request base, without a force-push. Land runs only through `landAtMergeGate`: the tree is clean, CI must be green on that head, and the stored verdict for that head must be pass (or a GitHub review must be `APPROVED`). A missing verdict does not merge. A red or pending check does not merge. An unresolved conflict returns the issue to **In Progress**. A rejected merge row stays rejected.
+
+Order for a Linear task on the happy path: draft pull request and **In Progress** → CI wait → **Review** on green → Hannes pass → merge and **Done**, with no person in that chain. A Hannes fail returns the issue to **In Progress** and does not approve merge. While CI on the new head is pending, the ready job is delayed and `record_ci_wait` runs again. Hannes is dispatched only after that head is green.
 
 A merge row that is already `pending` does not block `ready`. The next delivery of a delayed `ready` job runs `open_pr` and `record_ci_wait`. The merge job then pauses on that same decision before `merge_branch`.
 

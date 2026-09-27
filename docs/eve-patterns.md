@@ -32,13 +32,13 @@ Agents, specialists, and skills are directories and markdown, not rows in a data
 
 Phase skill budgets follow `workflows/default-task.yaml`:
 
-| Phase          | `skills/index.json` `budget_mode` | Ids                                                       |
-| -------------- | --------------------------------- | --------------------------------------------------------- |
-| planner        | `fixed`                           | `skills/_shared`, `skills/bot-session`                    |
-| implementation | `from_planner_selection`          | candidates tagged `implementation` in `skills/index.json` |
-| review         | `fixed`                           | `skills/code-review`                                      |
-| ready          | `fixed`                           | `skills/land`, `skills/sync-development`                  |
-| merge          | `fixed`                           | `skills/land`, `skills/reap-worktree`                     |
+| Phase          | `skills/index.json` `budget_mode` | Ids                                                                                       |
+| -------------- | --------------------------------- | ----------------------------------------------------------------------------------------- |
+| planner        | `fixed`                           | `skills/_shared`, `skills/bot-session`                                                    |
+| implementation | `from_planner_selection`          | candidates tagged `implementation` in `skills/index.json`                                 |
+| review         | `fixed`                           | `skills/code-review`                                                                      |
+| ready          | `fixed`                           | `skills/land`, `skills/sync-development`                                                  |
+| merge          | `fixed`                           | `skills/land`, `skills/reap-worktree`, `skills/codebase-design`, `skills/diagnosing-bugs` |
 
 The planner narrows the implementation candidate pool. The orchestrator still blocks loads outside the active allow-list.
 

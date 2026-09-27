@@ -340,6 +340,42 @@ export async function assertNoTerminalHitl(
  * Open or refresh the gate for this stage. Does not auto-approve when a human is required.
  * Timeout moves pending → timed_out, notifies once, and still pauses.
  */
+/**
+ * Hannes pass bypasses the merge pause. A rejected or replan row stays closed.
+ * Plan HITL is unchanged. CI green is still required later, in landAtMergeGate.
+ */
+export async function approveMergeForReviewAgent(
+  binding: HitlBinding,
+  identity: { taskId: string; sessionId: string },
+): Promise<void> {
+  const existing = await binding.store.get(identity.taskId, identity.sessionId, "merge");
+  if (existing?.status === "approved") return;
+  if (existing?.status === "rejected" || existing?.status === "replan") return;
+  const now = clock(binding);
+  const decidedAt = now.toISOString();
+  const record: HitlRecord = {
+    taskId: identity.taskId,
+    sessionId: identity.sessionId,
+    point: "merge",
+    status: "approved",
+    reason: "review_agent_approved",
+    source: "policy",
+    requestedAt: decidedAt,
+    decidedAt,
+    notifiedAt: decidedAt,
+    timeoutAt: new Date(now.getTime() + binding.config.timeoutMs).toISOString(),
+  };
+  await binding.store.save(record);
+  await notify(binding, {
+    taskId: identity.taskId,
+    sessionId: identity.sessionId,
+    point: "merge",
+    kind: "approved",
+    reason: record.reason,
+    status: "approved",
+  });
+}
+
 export async function evaluateHitlGate(
   stage: PipelineStage,
   binding: HitlBinding,

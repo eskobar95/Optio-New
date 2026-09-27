@@ -17,6 +17,8 @@ export interface StageStepResult {
   summary?: string;
   /** Pull request URL stored on the stage artifact. */
   prUrl?: string;
+  /** Hannes passed on this head. The merge gate records a policy approval. */
+  reviewApproved?: boolean;
 }
 
 const STEP_USAGE = Symbol.for("optio.stageStepUsage");

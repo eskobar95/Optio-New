@@ -61,6 +61,8 @@ describe("workflow SkillLoader allow-list", () => {
     await expect(loader.computeAllowList({ stepId: "merge" })).resolves.toEqual([
       "skills/land",
       "skills/reap-worktree",
+      "skills/codebase-design",
+      "skills/diagnosing-bugs",
     ]);
   });
 

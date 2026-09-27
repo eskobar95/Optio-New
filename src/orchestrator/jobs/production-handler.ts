@@ -10,6 +10,7 @@ import { execFile } from "node:child_process";
 import type {
   CodingAgent,
   CodingAgentInput,
+  CodingAgentOutput,
   CodingAgentUsage,
 } from "../../adapters/coding-agent.js";
 import { defaultPermissionForStep } from "../../kit-harness/permissions.js";
@@ -18,19 +19,35 @@ import type { ModelAdapter } from "../../agent/adapter.js";
 import { createEnvModelAdapter } from "../../agent/env-adapter.js";
 import {
   GithubRequestError,
+  approveGithubPullRequest,
+  commentOnGithubPullRequest,
   findOpenGithubPullRequest,
   githubPullRequestApproved,
+  listGithubIssueCommentBodies,
   listGithubPullRequestReviews,
   mergeGithubPullRequest,
   githubRepoFromCloneUrl,
   markGithubPullRequestReady,
   openGithubPullRequest,
   readCommitStatusReport,
+  readGithubPullMergeState,
   reRequestGithubPullRequestReview,
+  requestGithubPullRequestReviewers,
   redact,
   type PullRequestRef,
 } from "../github/pull-request.js";
 import { applyWorkflowEffects, type WorkflowPorts } from "../linear/apply.js";
+import {
+  formatOptioReviewComment,
+  optioReviewMarker,
+  readReviewGithubLogins,
+  reviewSpecialistsForPaths,
+} from "../linear/review-entry.js";
+import {
+  hannesFeedbackComment,
+  parseReviewVerdict,
+  ReviewRejectedError,
+} from "../linear/review-verdict.js";
 import {
   commentOnIssue,
   escalationTargetStatus,
@@ -42,6 +59,7 @@ import {
   blockingReviewFeedback,
   ciLogComment,
   decideAgentAdvance,
+  decideHannesRejection,
   mapCommitStatus,
   noteAgentStatusWrite,
   readBlindAlley,
@@ -49,6 +67,14 @@ import {
   reviewFailureKey,
   type WorkflowDecision,
 } from "../linear/workflow.js";
+import {
+  assertNoForcePush,
+  baseForPull,
+  isProtectedBranch,
+  prepareMergeWorktree,
+} from "../git/merge-update.js";
+import { assertRemoteBranchDelete, remoteDeleteAllowed } from "../git/reap-remote.js";
+import { CiPendingError } from "./ci-pending.js";
 import { CANONICAL_SPAN } from "../telemetry/spans.js";
 import { loadRepoCatalog, resolveRepo, type RepoCatalog } from "../repos/catalog.js";
 import { worktreeKey, type WorktreeHandle, type WorktreeLifecycle } from "../worktrees/manager.js";
@@ -131,7 +157,9 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     async run(ctx): Promise<void | StageStepResult> {
       switch (ctx.step) {
         case "ack_session":
+          return { usage: ZERO_USAGE };
         case "record_cleanup":
+          await reapRemoteIssueBranch(ctx);
           return { usage: ZERO_USAGE };
         case "invoke_planner":
           return runPlanner(ctx);
@@ -149,9 +177,10 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
           const opened = await openPullRequest(ctx);
           return { usage: ZERO_USAGE, prUrl: opened.prUrl };
         }
-        case "record_ci_wait":
-          await waitForCi(ctx);
-          return { usage: ZERO_USAGE };
+        case "record_ci_wait": {
+          const reviewApproved = await waitForCi(ctx);
+          return { usage: ZERO_USAGE, ...(reviewApproved ? { reviewApproved: true } : {}) };
+        }
         case "merge_branch":
           await mergePullRequest(ctx);
           return { usage: ZERO_USAGE };
@@ -229,6 +258,58 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     );
     attachStepUsage(error, usage);
     throw error;
+  }
+
+  async function runReviewDispatch(
+    ctx: StageStepContext,
+    handle: WorktreeHandle,
+    sha: string,
+    specialists: readonly string[],
+  ): Promise<CodingAgentOutput> {
+    const backend = resolveCodingBackend({
+      defaultBackend: env.OPTIO_NEW_CODING_BACKEND?.trim() || "cursor",
+    });
+    if (backend === "cursor" && !env.CURSOR_API_KEY?.trim()) {
+      throw new StageCredentialsError("CURSOR_API_KEY is required to dispatch the review agent");
+    }
+    const agent = options.codingAgent ?? createCodingAgent(backend, { env });
+    const output = await agent.run({
+      worktree_path: handle.path,
+      prompt: reviewDispatchPrompt(ctx, sha, specialists),
+      instructions:
+        "Review only. Read .cursor/skills/code-review/SKILL.md and review Standards, Spec, and Slop. Do not edit files, push, undraft, request reviewers, or merge.",
+      allowed_tools: ["read"],
+      permission_tier: "read-only",
+      budget: { maxWallClockMs: timeoutMs },
+      metadata: {
+        task_id: ctx.taskId,
+        worktree_id: handle.worktreeId,
+        workflow_id: "default-task",
+        step_id: "dispatch_review",
+        agent_id: "agents/review",
+      },
+    });
+    const usage = usageFromCoding(output.usage);
+    if (ctx.recordUsage) {
+      await ctx.recordUsage({
+        agentId: "agents/review",
+        provider: output.usage.provider,
+        modelId: output.usage.model_id,
+        inputTokens: output.usage.input_tokens,
+        outputTokens: output.usage.output_tokens,
+        cachedTokens: output.usage.cached_tokens,
+        costUsd: output.usage.cost_usd,
+      });
+    }
+    if (output.status !== "succeeded") {
+      const detail = output.logs ? `: ${output.logs.slice(0, 500)}` : "";
+      const error = new Error(
+        `review dispatch ${output.status} (${output.error_class ?? "failed"})${detail}`,
+      );
+      attachStepUsage(error, usage);
+      throw error;
+    }
+    return output;
   }
 
   async function ensureWorktree(ctx: StageStepContext): Promise<WorktreeHandle> {
@@ -337,7 +418,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     return { prUrl: opened.url };
   }
 
-  async function waitForCi(ctx: StageStepContext): Promise<void> {
+  async function waitForCi(ctx: StageStepContext): Promise<boolean> {
     const github = requireGithub(ctx);
     const handle = await requireWorktree(ctx);
     const sha = await git(handle.path, ["rev-parse", "HEAD"], [github.token]);
@@ -360,11 +441,13 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
         failureKey: reviewFailureKey(sha, feedback),
         sha,
       });
-      return;
+      const verdict = await readStoredVerdict(handle);
+      return verdict?.sha === sha && verdict.verdict === "pass";
     }
     if (report.state !== "success") {
       throw new Error(`ci ${report.state} for ${ctx.taskId}`);
     }
+    return false;
   }
 
   async function mergePullRequest(ctx: StageStepContext): Promise<void> {
@@ -373,6 +456,12 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     if (E2E_TASK.test(ctx.taskId)) {
       logStageEvent({ msg: "e2e pull request left unmerged", taskId: ctx.taskId });
       return;
+    }
+    const prepared = await updateTaskBranch(ctx, handle);
+    if (!prepared.ok) {
+      if (!isLinearTask(ctx)) throw new Error(`merge update failed for ${ctx.taskId}`);
+      const sha = (await git(handle.path, ["rev-parse", "HEAD"], [])).trim();
+      await applyLinearRejection(ctx, handle, new ReviewRejectedError(sha, prepared.feedback));
     }
     if (isLinearTask(ctx)) {
       const github = requireGithub(ctx);
@@ -497,17 +586,199 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     return handle;
   }
 
+  function assertTaskBranchPush(args: readonly string[]): void {
+    if (args.includes("--delete")) {
+      assertRemoteBranchDelete(args);
+      return;
+    }
+    const refspec = args[args.length - 1] ?? "";
+    const parts = refspec.split(":");
+    if (parts.length !== 2 || !parts[0] || parts[0] !== parts[1]) {
+      throw new Error("push must update the task branch only");
+    }
+    if (isProtectedBranch(parts[1])) throw new Error("refusing to push the target branch");
+  }
+
+  async function reapRemoteIssueBranch(ctx: StageStepContext): Promise<void> {
+    if (E2E_TASK.test(ctx.taskId)) return;
+    const handle = await worktrees.status(ctx.taskId);
+    if (!handle) return;
+    const stored = await readPullRecordOptional(handle);
+    if (!stored?.head) return;
+    const github = requireGithub(ctx);
+    const fallback = isLinearTask(ctx) ? LINEAR_PULL_REQUEST_BASE : taskBase(ctx);
+    const base = baseForPull(stored.base, fallback);
+    const branch = stored.head;
+    const remote = `https://x-access-token:${encodeURIComponent(github.token)}@github.com/${github.owner}/${github.repo}.git`;
+    const dirty = await git(handle.path, ["status", "--porcelain"], [github.token]);
+    await git(handle.path, ["fetch", remote, base], [github.token]);
+    let ancestor = false;
+    try {
+      await git(handle.path, ["merge-base", "--is-ancestor", "HEAD", "FETCH_HEAD"], [github.token]);
+      ancestor = true;
+    } catch {
+      ancestor = false;
+    }
+    const pull = await mapGithub(() =>
+      readGithubPullMergeState({
+        token: github.token,
+        owner: github.owner,
+        repo: github.repo,
+        number: stored.number,
+        fetchImpl,
+      }),
+    );
+    const decision = remoteDeleteAllowed({
+      branch,
+      base,
+      ancestor,
+      clean: dirty.trim().length === 0,
+      pullMerged: pull.merged,
+      pullState: pull.state,
+    });
+    if (!decision.delete) {
+      throw new Error(`reap-worktree skipped: ${decision.reason} for ${ctx.taskId}`);
+    }
+    try {
+      await git(handle.path, ["push", remote, "--delete", branch], [github.token]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/remote ref does not exist|not found/i.test(message)) return;
+      throw error;
+    }
+    logStageEvent({
+      msg: "reap-worktree remote branch deleted",
+      taskId: ctx.taskId,
+      branch,
+    });
+  }
+
   async function git(
     cwd: string,
     args: readonly string[],
     secrets: readonly string[],
   ): Promise<string> {
+    assertNoForcePush(args);
+    if (args[0] === "push") assertTaskBranchPush(args);
     try {
       return await runGit(cwd, args);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(redact(message, secrets));
     }
+  }
+
+  async function updateTaskBranch(
+    ctx: StageStepContext,
+    handle: WorktreeHandle,
+  ): Promise<{ ok: true } | { ok: false; feedback: string }> {
+    const github = requireGithub(ctx);
+    const stored = await readPullRecord(handle);
+    const fallback = isLinearTask(ctx) ? LINEAR_PULL_REQUEST_BASE : taskBase(ctx);
+    const base = baseForPull(stored.base, fallback);
+    const progress = await readLinearProgress(handle);
+    const escalateAfter = readCiFailEscalateAfter(env);
+    const remote = `https://x-access-token:${encodeURIComponent(github.token)}@github.com/${github.owner}/${github.repo}.git`;
+    const prepared = await prepareMergeWorktree({
+      git: (args) => git(handle.path, args, [github.token]),
+      base,
+      headBranch: handle.branch,
+      remote,
+      attempt: progress.ciFailureCount + 1,
+      escalateAfter,
+      resolveConflict: (unmerged) => resolveMergeConflict(ctx, handle, base, unmerged),
+    });
+    if (!prepared.ok) return prepared;
+    if (prepared.updated) {
+      const sha = (await git(handle.path, ["rev-parse", "HEAD"], [github.token])).trim();
+      const prior = await readStoredVerdict(handle);
+      if (prior?.verdict === "pass") {
+        await writeStoredVerdict(handle, { sha, verdict: "pass" });
+      }
+    }
+    return { ok: true };
+  }
+
+  async function resolveMergeConflict(
+    ctx: StageStepContext,
+    handle: WorktreeHandle,
+    base: string,
+    unmerged: string,
+  ): Promise<string> {
+    const backend = resolveCodingBackend({
+      defaultBackend: env.OPTIO_NEW_CODING_BACKEND?.trim() || "cursor",
+    });
+    if (backend === "cursor" && !env.CURSOR_API_KEY?.trim()) {
+      return "OPTIO_REVIEW_VERDICT fail\nExpected: conflict resolver is not configured";
+    }
+    const agent = options.codingAgent ?? createCodingAgent(backend, { env });
+    const output = await agent.run({
+      worktree_path: handle.path,
+      prompt: [
+        `Task ${ctx.taskId}. The task branch is behind \`${base}\` and the merge has conflicts.`,
+        "Read .cursor/skills/land/SKILL.md and .cursor/skills/land/references/merge.md.",
+        "Read .cursor/skills/codebase-design/SKILL.md and keep the resolution at the existing seam. Do not invent a module.",
+        "Read .cursor/skills/diagnosing-bugs/SKILL.md when the conflict changes behavior. Name the check that would go red before editing.",
+        `Unmerged files:\n${unmerged.trim()}`,
+        "Resolve every conflict marker. Preserve both sides where the seam allows it.",
+        "Do not push, force-push, commit the base branch, or leave conflict markers.",
+        "End with OPTIO_REVIEW_VERDICT pass or OPTIO_REVIEW_VERDICT fail.",
+        "Files: path/one.ts",
+        "Standards: which standard failed",
+        "Spec: which acceptance failed",
+        "Slop: none, or the filler to remove",
+        "Expected: the fix, one or two lines",
+      ].join("\n"),
+      instructions:
+        "Resolve merge conflicts in this worktree. Do not push, force-push, or update the base branch. Do not open a signal-up issue.",
+      allowed_tools: ["shell", "edit", "write"],
+      permission_tier: "edit-worktree",
+      budget: { maxWallClockMs: timeoutMs },
+      metadata: {
+        task_id: ctx.taskId,
+        worktree_id: handle.worktreeId,
+        workflow_id: "default-task",
+        step_id: "merge_branch",
+        agent_id: "agents/merge",
+      },
+    });
+    return reviewDispatchText(output);
+  }
+
+  async function applyLinearRejection(
+    ctx: StageStepContext,
+    handle: WorktreeHandle,
+    error: ReviewRejectedError,
+  ): Promise<never> {
+    const issueId = ctx.linearIssueId?.trim() ?? "";
+    const progress = await readLinearProgress(handle);
+    const escalateAfter = readCiFailEscalateAfter(env);
+    const ports = linearPorts(ctx, handle, issueId);
+    const rejected = decideHannesRejection({
+      feedback: error.feedback,
+      ciFailureCount: progress.ciFailureCount,
+      escalateAfter,
+      whenIso: new Date().toISOString(),
+      failureKey: reviewFailureKey(error.sha, error.feedback),
+      lastFailureKey: progress.lastFailureKey,
+    });
+    if (rejected.effects.length > 0) {
+      await applyWorkflowEffects(rejected, ports);
+    }
+    await writeLinearProgress(
+      handle,
+      nextLinearProgress(progress, rejected, reviewFailureKey(error.sha, error.feedback), {
+        lastCiStartSha: progress.lastCiStartSha,
+        lastCiResultKey: progress.lastCiResultKey,
+      }),
+    );
+    await traceLinear(ctx, rejected);
+    if (rejected.halt) throw new Error(`linear workflow escalated: ${rejected.reason}`);
+    if (rejected.reason === "return_to_progress" || rejected.reason === "ci_unchanged") {
+      await attemptReviewFix(ctx, handle, error.feedback);
+      throw new Error(`linear workflow ${rejected.reason} for ${ctx.taskId}`);
+    }
+    throw error;
   }
 
   async function mapGithub<T>(fn: () => Promise<T>): Promise<T> {
@@ -582,8 +853,13 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
           (effect) => !(effect.kind === "linear.comment" && effect.body.startsWith("[ci]")),
         )
       : decision.effects;
-    if (effects.length > 0) {
-      await applyWorkflowEffects({ ...decision, effects }, ports);
+    try {
+      if (effects.length > 0) {
+        await applyWorkflowEffects({ ...decision, effects }, ports);
+      }
+    } catch (error) {
+      if (!(error instanceof ReviewRejectedError)) throw error;
+      await applyLinearRejection(ctx, handle, error);
     }
     await writeLinearProgress(
       handle,
@@ -597,6 +873,9 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     if (decision.reason === "return_to_progress" || decision.reason === "ci_unchanged") {
       await attemptReviewFix(ctx, handle, await reviewFixText(decision, input, handle));
       throw new Error(`linear workflow ${decision.reason} for ${ctx.taskId}`);
+    }
+    if (!decision.ok && decision.reason === "ci_pending") {
+      throw new CiPendingError(`linear workflow ci_pending for ${ctx.taskId}`);
     }
     if (!decision.ok) throw new Error(`linear workflow ${decision.reason} for ${ctx.taskId}`);
   }
@@ -625,6 +904,82 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
             owner: github.owner,
             repo: github.repo,
             number: stored.number,
+            fetchImpl,
+          }),
+        );
+      },
+      requestReviewers: async () => {
+        const reviewers = readReviewGithubLogins(env);
+        if (reviewers.length === 0) return;
+        const github = requireGithub(ctx);
+        const stored = await readPullRecord(handle);
+        await mapGithub(() =>
+          requestGithubPullRequestReviewers({
+            token: github.token,
+            owner: github.owner,
+            repo: github.repo,
+            number: stored.number,
+            reviewers,
+            fetchImpl,
+          }),
+        );
+      },
+      dispatchReview: async () => {
+        const github = requireGithub(ctx);
+        const stored = await readPullRecord(handle);
+        const sha = (await git(handle.path, ["rev-parse", "HEAD"], [github.token])).trim();
+        const bodies = await mapGithub(() =>
+          listGithubIssueCommentBodies({
+            token: github.token,
+            owner: github.owner,
+            repo: github.repo,
+            number: stored.number,
+            fetchImpl,
+          }),
+        );
+        const posted = bodies.find((body) => body.includes(optioReviewMarker(sha)));
+        if (posted) {
+          logStageEvent({ msg: "optio review already posted", taskId: ctx.taskId, sha });
+          await finishReviewVerdict(ctx, handle, sha, posted);
+          return;
+        }
+        const diffNames = await git(
+          handle.path,
+          ["diff", "--name-only", `${stored.base}...HEAD`],
+          [github.token],
+        );
+        const specialists = reviewSpecialistsForPaths(diffNames.split("\n"));
+        const reviewers = readReviewGithubLogins(env);
+        const output = await runReviewDispatch(ctx, handle, sha, specialists);
+        const text = reviewDispatchText(output);
+        await mapGithub(() =>
+          commentOnGithubPullRequest({
+            token: github.token,
+            owner: github.owner,
+            repo: github.repo,
+            number: stored.number,
+            body: formatOptioReviewComment({
+              sha,
+              reviewers,
+              specialists,
+              body: text,
+            }),
+            fetchImpl,
+          }),
+        );
+        await finishReviewVerdict(ctx, handle, sha, text);
+      },
+      noteFeedback: async (comment) => {
+        const stored = await readPullRecordOptional(handle);
+        if (!stored) return;
+        const github = requireGithub(ctx);
+        await mapGithub(() =>
+          commentOnGithubPullRequest({
+            token: github.token,
+            owner: github.owner,
+            repo: github.repo,
+            number: stored.number,
+            body: comment,
             fetchImpl,
           }),
         );
@@ -687,10 +1042,47 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     };
   }
 
+  async function finishReviewVerdict(
+    ctx: StageStepContext,
+    handle: WorktreeHandle,
+    sha: string,
+    text: string,
+  ): Promise<void> {
+    const parsed = parseReviewVerdict(text);
+    await writeStoredVerdict(handle, { sha, verdict: parsed.verdict });
+    if (parsed.verdict === "pass") {
+      const github = requireGithub(ctx);
+      const stored = await readPullRecord(handle);
+      await mapGithub(() =>
+        approveGithubPullRequest({
+          token: github.token,
+          owner: github.owner,
+          repo: github.repo,
+          number: stored.number,
+          body: `${optioReviewMarker(sha)}\n[optio-review]\nVerdict: pass`,
+          fetchImpl,
+        }),
+      );
+      return;
+    }
+    const progress = await readLinearProgress(handle);
+    throw new ReviewRejectedError(
+      sha,
+      hannesFeedbackComment({
+        verdict: parsed,
+        attempt: progress.ciFailureCount + 1,
+        escalateAfter: readCiFailEscalateAfter(env),
+      }),
+    );
+  }
+
   async function linearPullApproved(
     ctx: StageStepContext,
     handle: WorktreeHandle,
   ): Promise<boolean> {
+    const sha = (await git(handle.path, ["rev-parse", "HEAD"], [])).trim();
+    const storedVerdict = await readStoredVerdict(handle);
+    if (storedVerdict?.sha === sha && storedVerdict.verdict === "pass") return true;
     const github = requireGithub(ctx);
     const stored = await readPullRecord(handle);
     return mapGithub(() =>
@@ -740,11 +1132,12 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
           worktree_path: handle.path,
           prompt: [
             "Review sent this task back to In Progress.",
+            "The handoff below is compressed. Fix Files and Expected. Do not re-derive the review.",
             feedback.trim(),
             `Read ${REVIEW_FEEDBACK_FILE} and fix the failure. Commit the fix on the current branch.`,
           ].join("\n\n"),
           instructions:
-            "Fix the review feedback in this worktree and commit on the current branch. Do not push, open a pull request, convert a pull request to draft, or merge.",
+            "Fix the compressed handoff in this worktree and commit on the current branch. Do not push, open a pull request, convert a pull request to draft, or merge. Do not open a signal-up issue.",
           allowed_tools: ["shell", "edit", "write"],
           permission_tier: "edit-worktree",
           budget: { maxWallClockMs: timeoutMs },
@@ -820,6 +1213,35 @@ interface LinearProgress {
 
 function isLinearCount(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+interface StoredVerdict {
+  sha: string;
+  verdict: "pass" | "fail";
+}
+
+function reviewVerdictPath(handle: WorktreeHandle): string {
+  return path.join(path.dirname(handle.path), ".prs", `${worktreeKey(handle.taskId)}.review.json`);
+}
+
+async function readStoredVerdict(handle: WorktreeHandle): Promise<StoredVerdict | undefined> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(reviewVerdictPath(handle), "utf8"));
+    if (!parsed || typeof parsed !== "object") return undefined;
+    const row = parsed as { sha?: unknown; verdict?: unknown };
+    if (typeof row.sha !== "string" || (row.verdict !== "pass" && row.verdict !== "fail")) {
+      return undefined;
+    }
+    return { sha: row.sha, verdict: row.verdict };
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeStoredVerdict(handle: WorktreeHandle, verdict: StoredVerdict): Promise<void> {
+  const file = reviewVerdictPath(handle);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify(verdict)}\n`, "utf8");
 }
 
 function ciCountPath(handle: WorktreeHandle): string {
@@ -904,6 +1326,47 @@ async function reviewFixText(
   } catch {
     return input.reviewFeedback?.trim() || "GitHub checks are still red. Make CI green.";
   }
+}
+
+function reviewDispatchText(output: CodingAgentOutput): string {
+  const text = [output.diff_summary, output.logs]
+    .map((part) => part?.trim() ?? "")
+    .filter(Boolean)
+    .join("\n\n");
+  return text || "Review completed with no written findings.";
+}
+
+function reviewDispatchPrompt(
+  ctx: StageStepContext,
+  sha: string,
+  specialists: readonly string[],
+): string {
+  const lines = [
+    `Task ${ctx.taskId}.`,
+    "You are the Optio review agent (Hannes).",
+    "Read .cursor/skills/code-review/SKILL.md and review the worktree diff on three axes: Standards, Spec, and Slop.",
+    `Pull request head: ${sha}.`,
+    "Do not edit files, push, undraft, request reviewers, or merge.",
+    "End with this block. Use pass only when Standards, Spec, and Slop are clean.",
+    "OPTIO_REVIEW_VERDICT pass",
+    "or",
+    "OPTIO_REVIEW_VERDICT fail",
+    "Files: path/one.ts, path/two.ts",
+    "Standards: which standard failed",
+    "Spec: which acceptance failed",
+    "Slop: none, or the filler to remove",
+    "Expected: the fix, one or two lines",
+  ];
+  if (specialists.length > 0) {
+    lines.push(
+      `This diff also needs these specialists: ${specialists.join(", ")}. Read each specialist instructions.md and apply it only where the diff matches that responsibility.`,
+    );
+  }
+  const title = ctx.title?.trim();
+  const description = ctx.description?.trim();
+  if (title) lines.push(`Title: ${title}`);
+  if (description) lines.push(`Description: ${description.slice(0, 4000)}`);
+  return lines.join("\n");
 }
 
 function usageFromCoding(usage: CodingAgentUsage): StageStepUsage {

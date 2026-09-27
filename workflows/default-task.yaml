@@ -92,7 +92,8 @@ steps:
   - id: merge
     permission_tier: git-push
     agent: agents/merge
-    skills_allowed: [skills/land, skills/reap-worktree]
+    skills_allowed:
+      [skills/land, skills/reap-worktree, skills/codebase-design, skills/diagnosing-bugs]
     # pr_safety runs again before merge_branch. See docs/review-gate.md.
     entry_gates: [ci_green, merge_policy_allow, pr_safety]
     exit_gates: [merged_into_development]

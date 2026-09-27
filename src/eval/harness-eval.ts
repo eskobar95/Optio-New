@@ -433,6 +433,9 @@ function githubFetch(fixture: EvalFixture, calls: { n: number }): typeof fetch {
     if (method === "PUT" && url.endsWith("/merge")) {
       return jsonResponse(200, { merged: true });
     }
+    if (method === "GET" && /\/pulls\/\d+$/.test(url)) {
+      return jsonResponse(200, { merged: true, state: "closed", number: pull?.number ?? 1 });
+    }
     return jsonResponse(500, { message: "unexpected github request" });
   };
 }
@@ -442,7 +445,14 @@ function gitRunner(): GitRunner {
     const command = args[0] === "-c" ? "commit" : args[0];
     if (command === "rev-list") return "1";
     if (command === "rev-parse") return "abc123";
-    if (command === "push" || command === "status" || command === "add" || command === "commit") {
+    if (
+      command === "push" ||
+      command === "status" ||
+      command === "add" ||
+      command === "commit" ||
+      command === "fetch" ||
+      command === "merge-base"
+    ) {
       return "";
     }
     throw new Error(`unexpected git ${command ?? "command"}`);

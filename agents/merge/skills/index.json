@@ -12,6 +12,16 @@
       "id": "skills/reap-worktree",
       "cursor_native_id": "reap-worktree",
       "cursor_native_path": ".cursor/skills/reap-worktree"
+    },
+    {
+      "id": "skills/codebase-design",
+      "cursor_native_id": "codebase-design",
+      "cursor_native_path": ".cursor/skills/codebase-design"
+    },
+    {
+      "id": "skills/diagnosing-bugs",
+      "cursor_native_id": "diagnosing-bugs",
+      "cursor_native_path": ".cursor/skills/diagnosing-bugs"
     }
   ]
 }
