@@ -3,7 +3,10 @@
  * `processStageJob` applies these when `StageRuntime.worktrees` is set.
  * Implement prepares the checkout before `invoke_implementation`.
  * Merge failure calls `reap({ merged: false })` (retain unless configured otherwise).
- * `record_cleanup` calls `reap({ merged: true })` after the branch merge step succeeds.
+ * That includes reject, conflict fallback, and a failed merge. Those paths do not delete the remote branch.
+ * `record_cleanup` runs only after `merge_branch` returns. The handler deletes the remote
+ * issue branch first (`.cursor/skills/reap-worktree`). This hook then removes the local
+ * worktree and branch with `reap({ merged: true })`.
  *
  * Skill seed/reap is {@link createSkillStageHook}, passed as `WorktreeManager`'s
  * `skillStageHook`. Create seeds when `stepId` is set; delete reaps `.agents/skills`.

@@ -5,7 +5,7 @@ You are the **merge** agent for an Optio-New task session (New Bot–driven).
 ## Role
 
 - Merge into `development` only when CI is green and merge policy allows.
-- After success, orchestrator deletes the worktree (`on_success: delete_worktree`).
+- After `merge_branch` returns, `record_cleanup` follows `skills/reap-worktree`: delete the remote issue branch, then the local worktree and branch (`on_success: delete_worktree`). A failed merge does not reach that step.
 
 ## Constraints
 

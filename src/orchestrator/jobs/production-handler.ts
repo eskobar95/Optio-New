@@ -30,6 +30,7 @@ import {
   markGithubPullRequestReady,
   openGithubPullRequest,
   readCommitStatusReport,
+  readGithubPullMergeState,
   reRequestGithubPullRequestReview,
   requestGithubPullRequestReviewers,
   redact,
@@ -72,6 +73,7 @@ import {
   isProtectedBranch,
   prepareMergeWorktree,
 } from "../git/merge-update.js";
+import { assertRemoteBranchDelete, remoteDeleteAllowed } from "../git/reap-remote.js";
 import { CiPendingError } from "./ci-pending.js";
 import { CANONICAL_SPAN } from "../telemetry/spans.js";
 import { loadRepoCatalog, resolveRepo, type RepoCatalog } from "../repos/catalog.js";
@@ -155,7 +157,9 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     async run(ctx): Promise<void | StageStepResult> {
       switch (ctx.step) {
         case "ack_session":
+          return { usage: ZERO_USAGE };
         case "record_cleanup":
+          await reapRemoteIssueBranch(ctx);
           return { usage: ZERO_USAGE };
         case "invoke_planner":
           return runPlanner(ctx);
@@ -583,12 +587,70 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
   }
 
   function assertTaskBranchPush(args: readonly string[]): void {
+    if (args.includes("--delete")) {
+      assertRemoteBranchDelete(args);
+      return;
+    }
     const refspec = args[args.length - 1] ?? "";
     const parts = refspec.split(":");
     if (parts.length !== 2 || !parts[0] || parts[0] !== parts[1]) {
       throw new Error("push must update the task branch only");
     }
     if (isProtectedBranch(parts[1])) throw new Error("refusing to push the target branch");
+  }
+
+  async function reapRemoteIssueBranch(ctx: StageStepContext): Promise<void> {
+    if (E2E_TASK.test(ctx.taskId)) return;
+    const handle = await worktrees.status(ctx.taskId);
+    if (!handle) return;
+    const stored = await readPullRecordOptional(handle);
+    if (!stored?.head) return;
+    const github = requireGithub(ctx);
+    const fallback = isLinearTask(ctx) ? LINEAR_PULL_REQUEST_BASE : taskBase(ctx);
+    const base = baseForPull(stored.base, fallback);
+    const branch = stored.head;
+    const remote = `https://x-access-token:${encodeURIComponent(github.token)}@github.com/${github.owner}/${github.repo}.git`;
+    const dirty = await git(handle.path, ["status", "--porcelain"], [github.token]);
+    await git(handle.path, ["fetch", remote, base], [github.token]);
+    let ancestor = false;
+    try {
+      await git(handle.path, ["merge-base", "--is-ancestor", "HEAD", "FETCH_HEAD"], [github.token]);
+      ancestor = true;
+    } catch {
+      ancestor = false;
+    }
+    const pull = await mapGithub(() =>
+      readGithubPullMergeState({
+        token: github.token,
+        owner: github.owner,
+        repo: github.repo,
+        number: stored.number,
+        fetchImpl,
+      }),
+    );
+    const decision = remoteDeleteAllowed({
+      branch,
+      base,
+      ancestor,
+      clean: dirty.trim().length === 0,
+      pullMerged: pull.merged,
+      pullState: pull.state,
+    });
+    if (!decision.delete) {
+      throw new Error(`reap-worktree skipped: ${decision.reason} for ${ctx.taskId}`);
+    }
+    try {
+      await git(handle.path, ["push", remote, "--delete", branch], [github.token]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/remote ref does not exist|not found/i.test(message)) return;
+      throw error;
+    }
+    logStageEvent({
+      msg: "reap-worktree remote branch deleted",
+      taskId: ctx.taskId,
+      branch,
+    });
   }
 
   async function git(

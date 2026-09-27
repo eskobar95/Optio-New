@@ -371,6 +371,26 @@ export async function mergeGithubPullRequest(input: {
   }
 }
 
+/** `merged: true` only when GitHub says so. A missing field stays unknown. */
+export async function readGithubPullMergeState(input: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  fetchImpl?: typeof fetch;
+}): Promise<{ merged: boolean | undefined; state: string }> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const endpoint = `${pullsUrl(input.owner, input.repo)}/${input.number}`;
+  const response = await githubFetch(fetchImpl, endpoint, input.token, { method: "GET" });
+  if (!response.ok) {
+    throw await requestError(response, input.token, "pull request");
+  }
+  const row = record(await response.json());
+  const merged = row?.merged === true ? true : row?.merged === false ? false : undefined;
+  const state = typeof row?.state === "string" ? row.state : "";
+  return { merged, state };
+}
+
 const MARK_READY_FOR_REVIEW = `
   mutation MarkReady($id: ID!) {
     markPullRequestReadyForReview(input: { pullRequestId: $id }) {

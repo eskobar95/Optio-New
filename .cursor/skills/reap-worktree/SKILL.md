@@ -83,3 +83,12 @@ Report: worktree path removed, remote branch deleted or skipped (with reason), m
 Done when verify is green, the issue worktree is gone from `git worktree list`, and the human has a one-line summary (integration SHA, deleted branch or skip reason).
 
 If Cursor workspace root was the reaped worktree, tell the human to open the main repo path — do not leave them in a deleted directory.
+
+## Orchestrator
+
+The merge stage runs this skill only after `merge_branch` returns. `github.merge` has succeeded, and there is no separate deploy step in the worker: deploy is that repository's base branch after the merge.
+
+1. `record_cleanup` in `src/orchestrator/jobs/production-handler.ts` calls `reapRemoteIssueBranch`. It checks a clean worktree, `merge-base --is-ancestor` of the task tip against the pull request base, and that the pull request is not still open. Then `git push <remote> --delete <task-branch>`. Protected branches (`main`, `development`, `lanes/*`) are refused. `--force` is refused. A missing remote ref is success.
+2. `createWorktreeStageHandler` in `src/orchestrator/worktrees/stage-hooks.ts` then calls `reap({ merged: true })`, which runs `git worktree remove` and deletes the local branch.
+
+`merge_branch` failure calls `reap({ merged: false })`, which keeps the worktree. Hannes reject, conflict fallback, CI that is not green, and a failed merge throw from `merge_branch` or from an earlier stage, so `record_cleanup` does not run and the remote branch stays.

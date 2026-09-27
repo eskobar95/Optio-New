@@ -433,6 +433,9 @@ function githubFetch(fixture: EvalFixture, calls: { n: number }): typeof fetch {
     if (method === "PUT" && url.endsWith("/merge")) {
       return jsonResponse(200, { merged: true });
     }
+    if (method === "GET" && /\/pulls\/\d+$/.test(url)) {
+      return jsonResponse(200, { merged: true, state: "closed", number: pull?.number ?? 1 });
+    }
     return jsonResponse(500, { message: "unexpected github request" });
   };
 }

@@ -21,7 +21,7 @@ Lifecycle:
 2. Sparse-checkout omits `.cursor/skills`, `.cursor/agents`, `.cursor/commands`, and `.cursor/rules`. Coding CLIs do not auto-ingest the Cursor-native source of truth. Eve still loads skills by id from the control-plane checkout.
 3. Review, ready, and merge keep using the same directory. `status(taskId)` supplies `worktree_id` on later `workflow.step` spans.
 4. `merge_branch` failure calls `reap(taskId, { merged: false })`. With the default retain flag the named directory stays. A later successful merge still reaps it.
-5. `record_cleanup` calls `reap(taskId, { merged: true })`, which runs `git worktree remove --force` and deletes the local `task/<id>` branch.
+5. `record_cleanup` runs only after `merge_branch` returns. It follows `.cursor/skills/reap-worktree`: delete the remote issue branch with `git push --delete` when the task tip is on the base and the worktree is clean, then `reap(taskId, { merged: true })` removes the worktree and the local `task/<id>` branch. Reject, conflict fallback, and a failed merge throw before `record_cleanup`, and `reap({ merged: false })` keeps the directory.
 6. Every checkout is `wt-<key>` plus `.locks/<key>.json`. Reap deletes the lock. There is no unnamed directory. SPEC’s `orphaned/` archive is not used; retain keeps the named path, and `retainOnFailure=false` removes it.
 
 Session release (`src/orchestrator/sessions`) drops a cwd claim only. It does not reap.

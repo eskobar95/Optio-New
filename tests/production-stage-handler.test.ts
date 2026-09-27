@@ -126,6 +126,9 @@ function githubFetch(extra?: { onPost?: () => Response }) {
     if (method === "PUT" && url.endsWith("/merge")) {
       return jsonResponse(200, { merged: true });
     }
+    if (method === "GET" && /\/pulls\/\d+$/.test(url)) {
+      return jsonResponse(200, { merged: true, state: "closed", number: 7 });
+    }
     return jsonResponse(500, { message: "unexpected" });
   };
   return { fetchImpl, calls };
@@ -1024,6 +1027,8 @@ describe("production stage handler", () => {
       .map((call) => call.body ?? "");
     expect(afterMerge.some((body) => body.includes("s-me"))).toBe(true);
     expect(afterMerge.some((body) => body.includes("s-do"))).toBe(true);
+    expect(git.calls.some((call) => call.includes("--delete task/lin-ENG-9"))).toBe(true);
+    expect(git.calls.join("\n")).not.toContain("--force");
   });
 
   it("returns a Hannes rejection to In Progress and does not merge", async () => {
@@ -1220,6 +1225,7 @@ describe("production stage handler", () => {
     ).rejects.toBeInstanceOf(CiPendingError);
     expect(gitArgs.some((call) => call.endsWith(`${handle.branch}:${handle.branch}`))).toBe(true);
     expect(gitArgs.join("\n")).not.toContain("--force");
+    expect(gitArgs.join("\n")).not.toContain("--delete");
     expect(gitArgs.join("\n")).not.toContain("main:main");
     const verdict = JSON.parse(
       readFileSync(join(handle.path, "..", ".prs", `${taskId}.review.json`), "utf8"),
@@ -1343,6 +1349,7 @@ describe("production stage handler", () => {
     expect(bodies.some((body) => body.includes("s-ip"))).toBe(true);
     expect(bodies.some((body) => body.includes('"merged":true'))).toBe(false);
     expect(gitArgs.some((call) => call === "merge --abort")).toBe(true);
+    expect(gitArgs.join("\n")).not.toContain("--delete");
     expect(gitArgs.join("\n")).not.toContain("--force");
     expect(gitArgs.some((call) => call.includes("main:main"))).toBe(false);
   });
