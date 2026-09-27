@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { CodingAgent, CodingAgentInput } from "../src/adapters/coding-agent.js";
 import type { FlowJob } from "bullmq";
 import {
+  CiPendingError,
   InMemoryHitlStore,
   InMemoryStepCursorStore,
   PrSafetyClosedError,
@@ -81,6 +82,7 @@ function gitRunner(counts: { ahead: string }) {
       const command = args[0] === "-c" ? "commit" : args[0];
       if (command === "rev-list") return counts.ahead;
       if (command === "rev-parse") return "abc123";
+      if (command === "fetch" || command === "merge-base") return "";
       if (command === "diff") return "src/app.ts\nstate/migrations/001.sql";
       if (command === "push" || command === "add" || command === "commit" || command === "status") {
         return "";
@@ -1150,6 +1152,199 @@ describe("production stage handler", () => {
     expect(bodies.some((body) => body.includes("s-re"))).toBe(false);
     expect(bodies.some((body) => body.includes('"event":"APPROVE"'))).toBe(false);
     expect(bodies.some((body) => body.includes("markPullRequestReadyForReview"))).toBe(true);
+  });
+
+  it("updates a behind branch without force-push and waits for CI before merge", async () => {
+    const taskId = "lin-ENG-9";
+    const { handle, worktrees } = worktreeFixture(taskId, true);
+    mkdirSync(join(handle.path, "..", ".prs"), { recursive: true });
+    writeFileSync(
+      join(handle.path, "..", ".prs", `${taskId}.json`),
+      `${JSON.stringify({
+        url: "https://github.com/acme/widgets/pull/66",
+        number: 66,
+        head: handle.branch,
+        base: "main",
+      })}\n`,
+    );
+    writeFileSync(
+      join(handle.path, "..", ".prs", `${taskId}.review.json`),
+      `${JSON.stringify({ sha: "abc123", verdict: "pass" })}\n`,
+    );
+    const gitArgs: string[] = [];
+    let merged = false;
+    const handler = createProductionStageHandler({
+      env: handlerEnv({ OPTIO_NEW_LINEAR_API_KEY: "lin_api_testkey12345678" }),
+      worktrees,
+      loadPrSafety: passingSafety,
+      git: async (_cwd, args) => {
+        gitArgs.push(args.join(" "));
+        const verb = args.find((arg) =>
+          ["status", "fetch", "merge-base", "merge-tree", "merge", "push", "rev-parse"].includes(
+            arg,
+          ),
+        );
+        if (verb === "merge-base") throw new Error("not ancestor");
+        if (verb === "merge") merged = true;
+        if (verb === "rev-parse") return merged ? "def456" : "abc123";
+        return "";
+      },
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url.includes("api.linear.app/graphql")) {
+          return jsonResponse(200, {
+            data: { commentCreate: { success: true }, issueUpdate: { success: true } },
+          });
+        }
+        if (method === "GET" && url.includes("/actions/runs")) {
+          return jsonResponse(200, { total_count: 0, workflow_runs: [] });
+        }
+        if (method === "GET" && url.includes("/check-runs")) {
+          return jsonResponse(200, { total_count: 0, check_runs: [] });
+        }
+        if (method === "GET" && url.endsWith("/status")) {
+          return jsonResponse(200, { state: "pending", statuses: [] });
+        }
+        if (method === "GET" && url.endsWith("/reviews")) return jsonResponse(200, []);
+        if (method === "PUT" && url.endsWith("/merge")) return jsonResponse(200, { merged: true });
+        return jsonResponse(500, { message: `unexpected ${method} ${url}` });
+      },
+    });
+    await expect(
+      handler.run({
+        ...step("merge", "merge_branch", taskId),
+        source: "linear",
+        linearIssueId: "2174add1-f7c8-44e3-bbf3-2d60b5ea8bc9",
+      }),
+    ).rejects.toBeInstanceOf(CiPendingError);
+    expect(gitArgs.some((call) => call.endsWith(`${handle.branch}:${handle.branch}`))).toBe(true);
+    expect(gitArgs.join("\n")).not.toContain("--force");
+    expect(gitArgs.join("\n")).not.toContain("main:main");
+    const verdict = JSON.parse(
+      readFileSync(join(handle.path, "..", ".prs", `${taskId}.review.json`), "utf8"),
+    ) as { sha: string; verdict: string };
+    expect(verdict).toEqual({ sha: "def456", verdict: "pass" });
+  });
+
+  it("returns an unsafe merge conflict to In Progress and does not merge", async () => {
+    const taskId = "lin-ENG-7";
+    const { handle, worktrees } = worktreeFixture(taskId, true);
+    mkdirSync(join(handle.path, "..", ".prs"), { recursive: true });
+    writeFileSync(
+      join(handle.path, "..", ".prs", `${taskId}.json`),
+      `${JSON.stringify({
+        url: "https://github.com/acme/widgets/pull/69",
+        number: 69,
+        head: handle.branch,
+        base: "main",
+      })}\n`,
+    );
+    const gitArgs: string[] = [];
+    const prompts: string[] = [];
+    const bodies: string[] = [];
+    const handler = createProductionStageHandler({
+      env: handlerEnv({ OPTIO_NEW_LINEAR_API_KEY: "lin_api_testkey12345678" }),
+      worktrees,
+      loadPrSafety: passingSafety,
+      codingAgent: {
+        id: "cursor",
+        async run(input) {
+          prompts.push(input.prompt);
+          return {
+            pr_ready: false,
+            status: "succeeded",
+            diff_summary: [
+              "OPTIO_REVIEW_VERDICT fail",
+              "Files: src/gate.ts",
+              "Standards: seam overlap",
+              "Spec: keep both callers",
+              "Slop: none",
+              "Expected: merge the helper without dropping the new check",
+            ].join("\n"),
+            usage: { provider: "cursor" },
+          };
+        },
+      },
+      git: async (_cwd, args) => {
+        gitArgs.push(args.join(" "));
+        const verb = args.find((arg) =>
+          [
+            "status",
+            "fetch",
+            "merge-base",
+            "merge-tree",
+            "merge",
+            "diff",
+            "grep",
+            "add",
+            "commit",
+            "push",
+            "rev-parse",
+          ].includes(arg),
+        );
+        if (verb === "merge-base" || verb === "merge-tree" || verb === "grep") {
+          throw new Error("conflict");
+        }
+        if (verb === "diff") return "src/gate.ts";
+        if (verb === "rev-parse") return "abc123";
+        if (verb === "merge" && args.includes("--abort")) return "";
+        if (verb === "merge") throw new Error("conflict");
+        return "";
+      },
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        const body = typeof init?.body === "string" ? init.body : undefined;
+        bodies.push(body ?? "");
+        if (url.includes("api.linear.app/graphql")) {
+          const query = body ? ((JSON.parse(body) as { query?: string }).query ?? "") : "";
+          if (query.includes("IssueStates")) {
+            return jsonResponse(200, {
+              data: {
+                issue: {
+                  team: {
+                    states: {
+                      nodes: [
+                        { id: "s-ip", name: "In Progress" },
+                        { id: "s-re", name: "Review" },
+                      ],
+                    },
+                  },
+                },
+              },
+            });
+          }
+          return jsonResponse(200, {
+            data: { commentCreate: { success: true }, issueUpdate: { success: true } },
+          });
+        }
+        if (method === "PUT" && url.endsWith("/merge")) return jsonResponse(200, { merged: true });
+        if (method === "POST" && url.includes("/issues/") && url.endsWith("/comments")) {
+          return jsonResponse(201, { id: 1 });
+        }
+        return jsonResponse(500, { message: `unexpected ${method} ${url}` });
+      },
+    });
+    await expect(
+      handler.run({
+        ...step("merge", "merge_branch", taskId),
+        source: "linear",
+        linearIssueId: "2174add1-f7c8-44e3-bbf3-2d60b5ea8bc9",
+      }),
+    ).rejects.toThrow(/return_to_progress/);
+    expect(prompts[0]).toContain("skills/codebase-design");
+    expect(prompts[0]).toContain("skills/diagnosing-bugs");
+    expect(prompts[0]).toContain("skills/land");
+    const feedback = readFileSync(join(handle.path, "linear-review-feedback.md"), "utf8");
+    expect(feedback).toContain("Files: src/gate.ts");
+    expect(feedback).toContain("Standards: seam overlap");
+    expect(feedback).toContain("Expected: merge the helper without dropping the new check");
+    expect(bodies.some((body) => body.includes("s-ip"))).toBe(true);
+    expect(bodies.some((body) => body.includes('"merged":true'))).toBe(false);
+    expect(gitArgs.some((call) => call === "merge --abort")).toBe(true);
+    expect(gitArgs.join("\n")).not.toContain("--force");
+    expect(gitArgs.some((call) => call.includes("main:main"))).toBe(false);
   });
 });
 

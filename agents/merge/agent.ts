@@ -19,7 +19,12 @@ export const mergeAgent = definePhaseAgent({
     index: "skills/index.json",
     sourceOfTruth: ".cursor/skills",
     mode: "fixed",
-    allowed: ["skills/land", "skills/reap-worktree"],
+    allowed: [
+      "skills/land",
+      "skills/reap-worktree",
+      "skills/codebase-design",
+      "skills/diagnosing-bugs",
+    ],
   },
   specialistsAllowed: [],
   gates: {

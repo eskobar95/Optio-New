@@ -442,7 +442,14 @@ function gitRunner(): GitRunner {
     const command = args[0] === "-c" ? "commit" : args[0];
     if (command === "rev-list") return "1";
     if (command === "rev-parse") return "abc123";
-    if (command === "push" || command === "status" || command === "add" || command === "commit") {
+    if (
+      command === "push" ||
+      command === "status" ||
+      command === "add" ||
+      command === "commit" ||
+      command === "fetch" ||
+      command === "merge-base"
+    ) {
       return "";
     }
     throw new Error(`unexpected git ${command ?? "command"}`);

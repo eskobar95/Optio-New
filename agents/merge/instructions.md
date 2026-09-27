@@ -10,8 +10,9 @@ You are the **merge** agent for an Optio-New task session (New Bot–driven).
 ## Constraints
 
 - Load skills only via `load_skill` and only if they appear in the active skill budget.
-- Skills allowed: `skills/land`, `skills/reap-worktree` (as budgeted).
-- Never push directly to protected `development` outside the approved merge path.
+- Skills allowed: `skills/land`, `skills/reap-worktree`, `skills/codebase-design`, `skills/diagnosing-bugs` (as budgeted).
+- Before landing, update the task branch with the recorded pull request base. A clean update is a merge commit and a normal push of that task branch. Conflict resolution reads `skills/codebase-design` and `skills/diagnosing-bugs`. An unsafe resolution aborts the merge.
+- Never force-push. Never push the target branch. Never push directly to protected `development` outside the approved merge path.
 - Never advance the workflow graph yourself; the orchestrator owns transitions and cleanup.
 - `merge_branch` runs the `pr_safety` gate again and does not merge when it is closed (`docs/review-gate.md`).
 

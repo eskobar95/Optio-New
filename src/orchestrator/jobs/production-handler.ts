@@ -66,6 +66,12 @@ import {
   reviewFailureKey,
   type WorkflowDecision,
 } from "../linear/workflow.js";
+import {
+  assertNoForcePush,
+  baseForPull,
+  isProtectedBranch,
+  prepareMergeWorktree,
+} from "../git/merge-update.js";
 import { CiPendingError } from "./ci-pending.js";
 import { CANONICAL_SPAN } from "../telemetry/spans.js";
 import { loadRepoCatalog, resolveRepo, type RepoCatalog } from "../repos/catalog.js";
@@ -447,6 +453,12 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       logStageEvent({ msg: "e2e pull request left unmerged", taskId: ctx.taskId });
       return;
     }
+    const prepared = await updateTaskBranch(ctx, handle);
+    if (!prepared.ok) {
+      if (!isLinearTask(ctx)) throw new Error(`merge update failed for ${ctx.taskId}`);
+      const sha = (await git(handle.path, ["rev-parse", "HEAD"], [])).trim();
+      await applyLinearRejection(ctx, handle, new ReviewRejectedError(sha, prepared.feedback));
+    }
     if (isLinearTask(ctx)) {
       const github = requireGithub(ctx);
       const sha = await git(handle.path, ["rev-parse", "HEAD"], [github.token]);
@@ -570,17 +582,141 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     return handle;
   }
 
+  function assertTaskBranchPush(args: readonly string[]): void {
+    const refspec = args[args.length - 1] ?? "";
+    const parts = refspec.split(":");
+    if (parts.length !== 2 || !parts[0] || parts[0] !== parts[1]) {
+      throw new Error("push must update the task branch only");
+    }
+    if (isProtectedBranch(parts[1])) throw new Error("refusing to push the target branch");
+  }
+
   async function git(
     cwd: string,
     args: readonly string[],
     secrets: readonly string[],
   ): Promise<string> {
+    assertNoForcePush(args);
+    if (args[0] === "push") assertTaskBranchPush(args);
     try {
       return await runGit(cwd, args);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(redact(message, secrets));
     }
+  }
+
+  async function updateTaskBranch(
+    ctx: StageStepContext,
+    handle: WorktreeHandle,
+  ): Promise<{ ok: true } | { ok: false; feedback: string }> {
+    const github = requireGithub(ctx);
+    const stored = await readPullRecord(handle);
+    const fallback = isLinearTask(ctx) ? LINEAR_PULL_REQUEST_BASE : taskBase(ctx);
+    const base = baseForPull(stored.base, fallback);
+    const progress = await readLinearProgress(handle);
+    const escalateAfter = readCiFailEscalateAfter(env);
+    const remote = `https://x-access-token:${encodeURIComponent(github.token)}@github.com/${github.owner}/${github.repo}.git`;
+    const prepared = await prepareMergeWorktree({
+      git: (args) => git(handle.path, args, [github.token]),
+      base,
+      headBranch: handle.branch,
+      remote,
+      attempt: progress.ciFailureCount + 1,
+      escalateAfter,
+      resolveConflict: (unmerged) => resolveMergeConflict(ctx, handle, base, unmerged),
+    });
+    if (!prepared.ok) return prepared;
+    if (prepared.updated) {
+      const sha = (await git(handle.path, ["rev-parse", "HEAD"], [github.token])).trim();
+      const prior = await readStoredVerdict(handle);
+      if (prior?.verdict === "pass") {
+        await writeStoredVerdict(handle, { sha, verdict: "pass" });
+      }
+    }
+    return { ok: true };
+  }
+
+  async function resolveMergeConflict(
+    ctx: StageStepContext,
+    handle: WorktreeHandle,
+    base: string,
+    unmerged: string,
+  ): Promise<string> {
+    const backend = resolveCodingBackend({
+      defaultBackend: env.OPTIO_NEW_CODING_BACKEND?.trim() || "cursor",
+    });
+    if (backend === "cursor" && !env.CURSOR_API_KEY?.trim()) {
+      return "OPTIO_REVIEW_VERDICT fail\nExpected: conflict resolver is not configured";
+    }
+    const agent = options.codingAgent ?? createCodingAgent(backend, { env });
+    const output = await agent.run({
+      worktree_path: handle.path,
+      prompt: [
+        `Task ${ctx.taskId}. The task branch is behind \`${base}\` and the merge has conflicts.`,
+        "Read .cursor/skills/land/SKILL.md and .cursor/skills/land/references/merge.md.",
+        "Read .cursor/skills/codebase-design/SKILL.md and keep the resolution at the existing seam. Do not invent a module.",
+        "Read .cursor/skills/diagnosing-bugs/SKILL.md when the conflict changes behavior. Name the check that would go red before editing.",
+        `Unmerged files:\n${unmerged.trim()}`,
+        "Resolve every conflict marker. Preserve both sides where the seam allows it.",
+        "Do not push, force-push, commit the base branch, or leave conflict markers.",
+        "End with OPTIO_REVIEW_VERDICT pass or OPTIO_REVIEW_VERDICT fail.",
+        "Files: path/one.ts",
+        "Standards: which standard failed",
+        "Spec: which acceptance failed",
+        "Slop: none, or the filler to remove",
+        "Expected: the fix, one or two lines",
+      ].join("\n"),
+      instructions:
+        "Resolve merge conflicts in this worktree. Do not push, force-push, or update the base branch. Do not open a signal-up issue.",
+      allowed_tools: ["shell", "edit", "write"],
+      permission_tier: "edit-worktree",
+      budget: { maxWallClockMs: timeoutMs },
+      metadata: {
+        task_id: ctx.taskId,
+        worktree_id: handle.worktreeId,
+        workflow_id: "default-task",
+        step_id: "merge_branch",
+        agent_id: "agents/merge",
+      },
+    });
+    return reviewDispatchText(output);
+  }
+
+  async function applyLinearRejection(
+    ctx: StageStepContext,
+    handle: WorktreeHandle,
+    error: ReviewRejectedError,
+  ): Promise<never> {
+    const issueId = ctx.linearIssueId?.trim() ?? "";
+    const progress = await readLinearProgress(handle);
+    const escalateAfter = readCiFailEscalateAfter(env);
+    const ports = linearPorts(ctx, handle, issueId);
+    const rejected = decideHannesRejection({
+      feedback: error.feedback,
+      ciFailureCount: progress.ciFailureCount,
+      escalateAfter,
+      whenIso: new Date().toISOString(),
+      failureKey: reviewFailureKey(error.sha, error.feedback),
+      lastFailureKey: progress.lastFailureKey,
+    });
+    if (rejected.effects.length > 0) {
+      await applyWorkflowEffects(rejected, ports);
+    }
+    await writeLinearProgress(
+      handle,
+      nextLinearProgress(progress, rejected, reviewFailureKey(error.sha, error.feedback), {
+        lastCiStartSha: progress.lastCiStartSha,
+        lastCiResultKey: progress.lastCiResultKey,
+      }),
+    );
+    await traceLinear(ctx, rejected);
+    if (rejected.halt) throw new Error(`linear workflow escalated: ${rejected.reason}`);
+    if (rejected.reason === "return_to_progress" || rejected.reason === "ci_unchanged") {
+      await attemptReviewFix(ctx, handle, error.feedback);
+      throw new Error(`linear workflow ${rejected.reason} for ${ctx.taskId}`);
+    }
+    throw error;
   }
 
   async function mapGithub<T>(fn: () => Promise<T>): Promise<T> {
@@ -661,32 +797,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       }
     } catch (error) {
       if (!(error instanceof ReviewRejectedError)) throw error;
-      const feedback = error.feedback;
-      const rejected = decideHannesRejection({
-        feedback,
-        ciFailureCount: progress.ciFailureCount,
-        escalateAfter,
-        whenIso: new Date().toISOString(),
-        failureKey: reviewFailureKey(error.sha, feedback),
-        lastFailureKey: progress.lastFailureKey,
-      });
-      if (rejected.effects.length > 0) {
-        await applyWorkflowEffects(rejected, ports);
-      }
-      await writeLinearProgress(
-        handle,
-        nextLinearProgress(progress, rejected, reviewFailureKey(error.sha, feedback), {
-          lastCiStartSha: progress.lastCiStartSha,
-          lastCiResultKey: progress.lastCiResultKey,
-        }),
-      );
-      await traceLinear(ctx, rejected);
-      if (rejected.halt) throw new Error(`linear workflow escalated: ${rejected.reason}`);
-      if (rejected.reason === "return_to_progress" || rejected.reason === "ci_unchanged") {
-        await attemptReviewFix(ctx, handle, await reviewFixText(rejected, input, handle));
-        throw new Error(`linear workflow ${rejected.reason} for ${ctx.taskId}`);
-      }
-      throw error;
+      await applyLinearRejection(ctx, handle, error);
     }
     await writeLinearProgress(
       handle,
