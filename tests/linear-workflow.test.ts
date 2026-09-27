@@ -13,6 +13,7 @@ import {
   boardSetupPlan,
   consumeAgentStatusWrite,
   decideAgentAdvance,
+  decideHannesRejection,
   decideObservedMove,
   escalationComment,
   noteAgentStatusWrite,
@@ -67,6 +68,9 @@ function ports(overrides: Partial<WorkflowPorts> = {}): {
       },
       dispatchReview: async () => {
         calls.push("dispatch_review");
+      },
+      noteFeedback: async (comment) => {
+        calls.push(`feedback:${comment}`);
       },
       merge: async () => {
         calls.push("merge");
@@ -124,7 +128,7 @@ describe("Linear workflow decisions", () => {
       expect.stringContaining("[ci]\nResult: green\nAttempt: 0/3"),
     ]);
 
-    const merge = advance({ action: "merge", humanApproved: true });
+    const merge = advance({ action: "merge", ci: "green", humanApproved: true });
     expect(merge.effects.map((effect) => effect.kind)).toEqual([
       "github.merge",
       "linear.status",
@@ -147,6 +151,46 @@ describe("Linear workflow decisions", () => {
       "linear.comment",
       "linear.comment",
     ]);
+
+    const ungreen = advance({ action: "merge", humanApproved: true });
+    expect(ungreen.ok).toBe(false);
+    expect(ungreen.reason).toBe("ci_not_green");
+    expect(ungreen.effects).toEqual([]);
+  });
+
+  it("sends a Hannes rejection back to In Progress with a compressed handoff", () => {
+    const feedback = [
+      "[review]",
+      "Verdict: fail",
+      "Files: src/app.ts",
+      "Standards: Duplicated Code",
+      "Spec: undraft missing",
+      "Slop: none",
+      "Expected: extract the helper",
+      "Scope: in-task fix only. Do not open a signal-up issue.",
+      "Attempt: 1/3",
+    ].join("\n");
+    const decision = decideHannesRejection({
+      feedback,
+      ciFailureCount: 0,
+      escalateAfter: DEFAULT_CI_FAIL_ESCALATE_AFTER,
+      whenIso: WHEN,
+    });
+    expect(decision.reason).toBe("return_to_progress");
+    expect(decision.effects.map((effect) => effect.kind)).toEqual([
+      "linear.status",
+      "linear.comment",
+      "linear.comment",
+      "linear.comment",
+      "github.feedback",
+    ]);
+    expect(decision.effects[0]).toMatchObject({ status: "In Progress" });
+    expect(decision.effects.some((effect) => effect.kind === "github.ready")).toBe(false);
+    expect(decision.effects.some((effect) => effect.kind === "github.merge")).toBe(false);
+    const bodies = commentBodies(decision);
+    expect(bodies[1]).toContain("Files: src/app.ts");
+    expect(bodies[1]).toContain("Expected: extract the helper");
+    expect(bodies[1]).toContain("in-task fix only");
   });
 
   it("returns to In Progress with feedback when CI is red and keeps the pull request ready", () => {

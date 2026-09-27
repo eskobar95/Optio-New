@@ -2,6 +2,7 @@
  * One BullMQ worker per stage queue. The processor is injected so unit tests never open Redis.
  */
 import { DelayedError, Worker, type ConnectionOptions } from "bullmq";
+import { CiPendingError } from "./ci-pending.js";
 import { ApprovalRequiredError } from "./hitl.js";
 import { PIPELINE_STAGES, STAGE_QUEUES, StageJobPayloadSchema } from "./stages.js";
 import { processStageJob, type StageRuntime } from "./run-stage.js";
@@ -37,8 +38,9 @@ export interface BullmqStageWorkerOptions {
 }
 
 /**
- * A required approval delays the BullMQ job. It does not complete the stage and does not approve it.
- * The next delivery runs the gate again.
+ * A required approval, or CI that is still pending, delays the BullMQ job.
+ * The delay does not complete the stage, does not approve it, and does not burn a failure attempt.
+ * The next delivery runs the same step again.
  */
 export async function delayJobForApproval(
   error: unknown,
@@ -46,7 +48,7 @@ export async function delayJobForApproval(
   token: string | undefined,
   pollMs: number,
 ): Promise<boolean> {
-  if (!(error instanceof ApprovalRequiredError)) return false;
+  if (!(error instanceof ApprovalRequiredError) && !(error instanceof CiPendingError)) return false;
   const wait = pollMs > 0 ? pollMs : 60_000;
   await job.moveToDelayed(Date.now() + wait, token);
   return true;

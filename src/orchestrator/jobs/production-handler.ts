@@ -19,6 +19,7 @@ import type { ModelAdapter } from "../../agent/adapter.js";
 import { createEnvModelAdapter } from "../../agent/env-adapter.js";
 import {
   GithubRequestError,
+  approveGithubPullRequest,
   commentOnGithubPullRequest,
   findOpenGithubPullRequest,
   githubPullRequestApproved,
@@ -37,10 +38,15 @@ import {
 import { applyWorkflowEffects, type WorkflowPorts } from "../linear/apply.js";
 import {
   formatOptioReviewComment,
-  optioReviewPosted,
+  optioReviewMarker,
   readReviewGithubLogins,
   reviewSpecialistsForPaths,
 } from "../linear/review-entry.js";
+import {
+  hannesFeedbackComment,
+  parseReviewVerdict,
+  ReviewRejectedError,
+} from "../linear/review-verdict.js";
 import {
   commentOnIssue,
   escalationTargetStatus,
@@ -52,6 +58,7 @@ import {
   blockingReviewFeedback,
   ciLogComment,
   decideAgentAdvance,
+  decideHannesRejection,
   mapCommitStatus,
   noteAgentStatusWrite,
   readBlindAlley,
@@ -59,6 +66,7 @@ import {
   reviewFailureKey,
   type WorkflowDecision,
 } from "../linear/workflow.js";
+import { CiPendingError } from "./ci-pending.js";
 import { CANONICAL_SPAN } from "../telemetry/spans.js";
 import { loadRepoCatalog, resolveRepo, type RepoCatalog } from "../repos/catalog.js";
 import { worktreeKey, type WorktreeHandle, type WorktreeLifecycle } from "../worktrees/manager.js";
@@ -159,9 +167,10 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
           const opened = await openPullRequest(ctx);
           return { usage: ZERO_USAGE, prUrl: opened.prUrl };
         }
-        case "record_ci_wait":
-          await waitForCi(ctx);
-          return { usage: ZERO_USAGE };
+        case "record_ci_wait": {
+          const reviewApproved = await waitForCi(ctx);
+          return { usage: ZERO_USAGE, ...(reviewApproved ? { reviewApproved: true } : {}) };
+        }
         case "merge_branch":
           await mergePullRequest(ctx);
           return { usage: ZERO_USAGE };
@@ -399,7 +408,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     return { prUrl: opened.url };
   }
 
-  async function waitForCi(ctx: StageStepContext): Promise<void> {
+  async function waitForCi(ctx: StageStepContext): Promise<boolean> {
     const github = requireGithub(ctx);
     const handle = await requireWorktree(ctx);
     const sha = await git(handle.path, ["rev-parse", "HEAD"], [github.token]);
@@ -422,11 +431,13 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
         failureKey: reviewFailureKey(sha, feedback),
         sha,
       });
-      return;
+      const verdict = await readStoredVerdict(handle);
+      return verdict?.sha === sha && verdict.verdict === "pass";
     }
     if (report.state !== "success") {
       throw new Error(`ci ${report.state} for ${ctx.taskId}`);
     }
+    return false;
   }
 
   async function mergePullRequest(ctx: StageStepContext): Promise<void> {
@@ -644,8 +655,38 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
           (effect) => !(effect.kind === "linear.comment" && effect.body.startsWith("[ci]")),
         )
       : decision.effects;
-    if (effects.length > 0) {
-      await applyWorkflowEffects({ ...decision, effects }, ports);
+    try {
+      if (effects.length > 0) {
+        await applyWorkflowEffects({ ...decision, effects }, ports);
+      }
+    } catch (error) {
+      if (!(error instanceof ReviewRejectedError)) throw error;
+      const feedback = error.feedback;
+      const rejected = decideHannesRejection({
+        feedback,
+        ciFailureCount: progress.ciFailureCount,
+        escalateAfter,
+        whenIso: new Date().toISOString(),
+        failureKey: reviewFailureKey(error.sha, feedback),
+        lastFailureKey: progress.lastFailureKey,
+      });
+      if (rejected.effects.length > 0) {
+        await applyWorkflowEffects(rejected, ports);
+      }
+      await writeLinearProgress(
+        handle,
+        nextLinearProgress(progress, rejected, reviewFailureKey(error.sha, feedback), {
+          lastCiStartSha: progress.lastCiStartSha,
+          lastCiResultKey: progress.lastCiResultKey,
+        }),
+      );
+      await traceLinear(ctx, rejected);
+      if (rejected.halt) throw new Error(`linear workflow escalated: ${rejected.reason}`);
+      if (rejected.reason === "return_to_progress" || rejected.reason === "ci_unchanged") {
+        await attemptReviewFix(ctx, handle, await reviewFixText(rejected, input, handle));
+        throw new Error(`linear workflow ${rejected.reason} for ${ctx.taskId}`);
+      }
+      throw error;
     }
     await writeLinearProgress(
       handle,
@@ -659,6 +700,9 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     if (decision.reason === "return_to_progress" || decision.reason === "ci_unchanged") {
       await attemptReviewFix(ctx, handle, await reviewFixText(decision, input, handle));
       throw new Error(`linear workflow ${decision.reason} for ${ctx.taskId}`);
+    }
+    if (!decision.ok && decision.reason === "ci_pending") {
+      throw new CiPendingError(`linear workflow ci_pending for ${ctx.taskId}`);
     }
     if (!decision.ok) throw new Error(`linear workflow ${decision.reason} for ${ctx.taskId}`);
   }
@@ -720,8 +764,10 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
             fetchImpl,
           }),
         );
-        if (optioReviewPosted(bodies, sha)) {
+        const posted = bodies.find((body) => body.includes(optioReviewMarker(sha)));
+        if (posted) {
           logStageEvent({ msg: "optio review already posted", taskId: ctx.taskId, sha });
+          await finishReviewVerdict(ctx, handle, sha, posted);
           return;
         }
         const diffNames = await git(
@@ -732,6 +778,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
         const specialists = reviewSpecialistsForPaths(diffNames.split("\n"));
         const reviewers = readReviewGithubLogins(env);
         const output = await runReviewDispatch(ctx, handle, sha, specialists);
+        const text = reviewDispatchText(output);
         await mapGithub(() =>
           commentOnGithubPullRequest({
             token: github.token,
@@ -742,8 +789,24 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
               sha,
               reviewers,
               specialists,
-              body: reviewDispatchText(output),
+              body: text,
             }),
+            fetchImpl,
+          }),
+        );
+        await finishReviewVerdict(ctx, handle, sha, text);
+      },
+      noteFeedback: async (comment) => {
+        const stored = await readPullRecordOptional(handle);
+        if (!stored) return;
+        const github = requireGithub(ctx);
+        await mapGithub(() =>
+          commentOnGithubPullRequest({
+            token: github.token,
+            owner: github.owner,
+            repo: github.repo,
+            number: stored.number,
+            body: comment,
             fetchImpl,
           }),
         );
@@ -806,10 +869,47 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     };
   }
 
+  async function finishReviewVerdict(
+    ctx: StageStepContext,
+    handle: WorktreeHandle,
+    sha: string,
+    text: string,
+  ): Promise<void> {
+    const parsed = parseReviewVerdict(text);
+    await writeStoredVerdict(handle, { sha, verdict: parsed.verdict });
+    if (parsed.verdict === "pass") {
+      const github = requireGithub(ctx);
+      const stored = await readPullRecord(handle);
+      await mapGithub(() =>
+        approveGithubPullRequest({
+          token: github.token,
+          owner: github.owner,
+          repo: github.repo,
+          number: stored.number,
+          body: `${optioReviewMarker(sha)}\n[optio-review]\nVerdict: pass`,
+          fetchImpl,
+        }),
+      );
+      return;
+    }
+    const progress = await readLinearProgress(handle);
+    throw new ReviewRejectedError(
+      sha,
+      hannesFeedbackComment({
+        verdict: parsed,
+        attempt: progress.ciFailureCount + 1,
+        escalateAfter: readCiFailEscalateAfter(env),
+      }),
+    );
+  }
+
   async function linearPullApproved(
     ctx: StageStepContext,
     handle: WorktreeHandle,
   ): Promise<boolean> {
+    const sha = (await git(handle.path, ["rev-parse", "HEAD"], [])).trim();
+    const storedVerdict = await readStoredVerdict(handle);
+    if (storedVerdict?.sha === sha && storedVerdict.verdict === "pass") return true;
     const github = requireGithub(ctx);
     const stored = await readPullRecord(handle);
     return mapGithub(() =>
@@ -859,11 +959,12 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
           worktree_path: handle.path,
           prompt: [
             "Review sent this task back to In Progress.",
+            "The handoff below is compressed. Fix Files and Expected. Do not re-derive the review.",
             feedback.trim(),
             `Read ${REVIEW_FEEDBACK_FILE} and fix the failure. Commit the fix on the current branch.`,
           ].join("\n\n"),
           instructions:
-            "Fix the review feedback in this worktree and commit on the current branch. Do not push, open a pull request, convert a pull request to draft, or merge.",
+            "Fix the compressed handoff in this worktree and commit on the current branch. Do not push, open a pull request, convert a pull request to draft, or merge. Do not open a signal-up issue.",
           allowed_tools: ["shell", "edit", "write"],
           permission_tier: "edit-worktree",
           budget: { maxWallClockMs: timeoutMs },
@@ -939,6 +1040,35 @@ interface LinearProgress {
 
 function isLinearCount(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+interface StoredVerdict {
+  sha: string;
+  verdict: "pass" | "fail";
+}
+
+function reviewVerdictPath(handle: WorktreeHandle): string {
+  return path.join(path.dirname(handle.path), ".prs", `${worktreeKey(handle.taskId)}.review.json`);
+}
+
+async function readStoredVerdict(handle: WorktreeHandle): Promise<StoredVerdict | undefined> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(reviewVerdictPath(handle), "utf8"));
+    if (!parsed || typeof parsed !== "object") return undefined;
+    const row = parsed as { sha?: unknown; verdict?: unknown };
+    if (typeof row.sha !== "string" || (row.verdict !== "pass" && row.verdict !== "fail")) {
+      return undefined;
+    }
+    return { sha: row.sha, verdict: row.verdict };
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeStoredVerdict(handle: WorktreeHandle, verdict: StoredVerdict): Promise<void> {
+  const file = reviewVerdictPath(handle);
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify(verdict)}\n`, "utf8");
 }
 
 function ciCountPath(handle: WorktreeHandle): string {
@@ -1044,7 +1174,15 @@ function reviewDispatchPrompt(
     "Read .cursor/skills/code-review/SKILL.md and review the worktree diff on three axes: Standards, Spec, and Slop.",
     `Pull request head: ${sha}.`,
     "Do not edit files, push, undraft, request reviewers, or merge.",
-    "Write findings first, then a verdict of pass or fail.",
+    "End with this block. Use pass only when Standards, Spec, and Slop are clean.",
+    "OPTIO_REVIEW_VERDICT pass",
+    "or",
+    "OPTIO_REVIEW_VERDICT fail",
+    "Files: path/one.ts, path/two.ts",
+    "Standards: which standard failed",
+    "Spec: which acceptance failed",
+    "Slop: none, or the filler to remove",
+    "Expected: the fix, one or two lines",
   ];
   if (specialists.length > 0) {
     lines.push(

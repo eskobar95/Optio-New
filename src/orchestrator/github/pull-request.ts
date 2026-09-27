@@ -467,6 +467,25 @@ export async function listGithubIssueCommentBodies(input: {
   return bodies;
 }
 
+export async function approveGithubPullRequest(input: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  body: string;
+  fetchImpl?: typeof fetch;
+}): Promise<void> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const endpoint = `${pullsUrl(input.owner, input.repo)}/${input.number}/reviews`;
+  const response = await githubFetch(fetchImpl, endpoint, input.token, {
+    method: "POST",
+    body: JSON.stringify({ body: input.body, event: "APPROVE" }),
+  });
+  if (!response.ok && response.status !== 422) {
+    throw await requestError(response, input.token, "approve review");
+  }
+}
+
 export async function commentOnGithubPullRequest(input: {
   token: string;
   owner: string;

@@ -40,6 +40,7 @@ import { logStageEvent } from "./stage-log.js";
 import {
   ApprovalRequiredError,
   assertNoTerminalHitl,
+  approveMergeForReviewAgent,
   enforceHitlGate,
   releaseReplanAfterPlan,
   type HitlBinding,
@@ -582,6 +583,12 @@ async function executeStageJob(
           );
         }
         throw error;
+      }
+      if (result?.reviewApproved && deps.hitl) {
+        await approveMergeForReviewAgent(deps.hitl, {
+          taskId: payload.taskId,
+          sessionId: payload.sessionId,
+        });
       }
       if (deps.hitl && step === "invoke_planner" && result && result.confidence !== undefined) {
         await deps.hitl.signals.note({

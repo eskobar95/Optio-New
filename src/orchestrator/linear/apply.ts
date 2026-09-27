@@ -13,6 +13,8 @@ export interface WorkflowPorts {
   requestReviewers(): Promise<void>;
   /** Run the review agent and post `[optio-review]` when this head has none yet. */
   dispatchReview(): Promise<void>;
+  /** Pull-request issue comment. Must not submit a blocking review event. */
+  noteFeedback(comment: string): Promise<void>;
   merge(): Promise<void>;
   /** Re-request review and comment. Must not convert the pull request to a draft. */
   rereview(comment: string): Promise<void>;
@@ -32,6 +34,7 @@ export async function applyWorkflowEffects(
     else if (effect.kind === "github.ready") await ports.markReady();
     else if (effect.kind === "github.request_reviewers") await ports.requestReviewers();
     else if (effect.kind === "github.dispatch_review") await ports.dispatchReview();
+    else if (effect.kind === "github.feedback") await ports.noteFeedback(effect.comment);
     else if (effect.kind === "github.merge") await ports.merge();
     else if (effect.kind === "github.rereview") await ports.rereview(effect.comment);
     else if (effect.kind === "linear.status") await ports.setStatus(effect.status);

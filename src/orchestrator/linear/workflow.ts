@@ -3,6 +3,7 @@
  * Pure decisions: who may move, when CI blocks Review, and when to escalate.
  * Column create/rename is not performed. See boardSetupPlan.
  */
+import { landAtMergeGate } from "./land.js";
 
 export const CI_FAIL_ESCALATE_ENV = "LINEAR_WORKFLOW_CI_FAIL_ESCALATE_AFTER";
 export const DEFAULT_CI_FAIL_ESCALATE_AFTER = 3;
@@ -60,6 +61,8 @@ export type WorkflowEffect =
   | { kind: "github.ready" }
   | { kind: "github.request_reviewers" }
   | { kind: "github.dispatch_review" }
+  /** Issue comment only. Does not open a blocking pull-request review. */
+  | { kind: "github.feedback"; comment: string }
   | { kind: "github.merge" }
   /** Re-request review and comment. Never converts the pull request back to a draft. */
   | { kind: "github.rereview"; comment: string }
@@ -307,8 +310,12 @@ export function decideAgentAdvance(input: {
       const problem = reviewProblem(input);
       if (problem) return problem;
     }
-    if (!input.humanApproved) {
-      if (input.ci === "green") {
+    const land = landAtMergeGate({
+      ci: input.ci,
+      reviewApproved: Boolean(input.humanApproved),
+    });
+    if (!land.ok) {
+      if (input.ci === "green" && land.reason === "review_not_approved") {
         return {
           ok: false,
           halt: false,
@@ -319,7 +326,7 @@ export function decideAgentAdvance(input: {
             ...statusMove(
               LINEAR_STATUS.review,
               "ci",
-              "CI is green. Waiting for a human to approve the pull request.",
+              "CI is green. Waiting for Hannes to approve the review.",
             ),
             {
               kind: "linear.comment",
@@ -333,14 +340,14 @@ export function decideAgentAdvance(input: {
           ],
         };
       }
-      return deny("awaiting_approval", count);
+      return deny(land.reason, count);
     }
     return ok("merge", count, [
       { kind: "github.merge" },
       ...statusMove(
         LINEAR_STATUS.merge,
         "agent",
-        "A human approved the pull request. The agent is merging it into main.",
+        "Hannes approved the review. The agent is merging the pull request into main. Deploy follows that repo's main branch.",
       ),
       ...statusMove(LINEAR_STATUS.done, "agent", "The pull request is on main."),
     ]);
@@ -363,6 +370,52 @@ export function decideAgentAdvance(input: {
         escalateAfter: input.escalateAfter,
       }),
     },
+  ]);
+}
+
+/** Hannes reject. Compressed handoff, then In Progress. Does not merge and does not enter Review. */
+export function decideHannesRejection(input: {
+  feedback: string;
+  ciFailureCount: number;
+  escalateAfter: number;
+  whenIso: string;
+  failureKey?: string;
+  lastFailureKey?: string;
+}): WorkflowDecision {
+  const count = input.ciFailureCount;
+  if (input.failureKey && input.lastFailureKey && input.failureKey === input.lastFailureKey) {
+    return deny("ci_unchanged", count);
+  }
+  const next = count + 1;
+  const ciComment: WorkflowEffect = {
+    kind: "linear.comment",
+    body: ciLogComment({
+      phase: "result",
+      result: "green",
+      attempt: next,
+      escalateAfter: input.escalateAfter,
+    }),
+  };
+  if (next >= input.escalateAfter) {
+    const decision = escalate(
+      next,
+      input.whenIso,
+      `Repeated review rejection (${next}/${input.escalateAfter})`,
+      "Review → In Progress",
+      input.feedback,
+      "ci_failures",
+    );
+    return { ...decision, effects: [ciComment, ...decision.effects] };
+  }
+  return ok("return_to_progress", next, [
+    ...statusMove(
+      LINEAR_STATUS.inProgress,
+      "review",
+      "Hannes rejected the review. The issue is back in In Progress with a compressed handoff.",
+    ),
+    { kind: "linear.comment", body: input.feedback },
+    ciComment,
+    { kind: "github.feedback", comment: input.feedback },
   ]);
 }
 

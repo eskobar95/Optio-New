@@ -88,6 +88,7 @@ export {
   type WorktreeReapOutcome,
   type WorktreeSkillStageHook,
 } from "../worktrees/index.js";
+export { CiPendingError } from "./ci-pending.js";
 export {
   bullmqStageWorkerFactory,
   delayJobForApproval,
@@ -130,6 +131,7 @@ export {
   ApprovalRequiredError,
   HitlDecisionError,
   applyHitlDecision,
+  approveMergeForReviewAgent,
   createHitlQueuePort,
   enforceHitlGate,
   evaluateHitlGate,

@@ -5,12 +5,10 @@ import { describe, expect, it } from "vitest";
 import type { CodingAgent, CodingAgentInput } from "../src/adapters/coding-agent.js";
 import type { FlowJob } from "bullmq";
 import {
-  ApprovalRequiredError,
   InMemoryHitlStore,
   InMemoryStepCursorStore,
   PrSafetyClosedError,
   StageCredentialsError,
-  applyHitlDecision,
   createProductionStageHandler,
   enqueueIntakePipeline,
   loadHitlConfig,
@@ -63,7 +61,13 @@ function codingAgent(calls: CodingAgentInput[]): CodingAgent {
     id: "cursor",
     async run(input) {
       calls.push(input);
-      return { pr_ready: false, status: "succeeded", usage: { provider: "cursor" } };
+      const hannes = input.prompt.includes("Hannes");
+      return {
+        pr_ready: false,
+        status: "succeeded",
+        diff_summary: hannes ? "OPTIO_REVIEW_VERDICT pass" : "",
+        usage: { provider: "cursor" },
+      };
     },
   };
 }
@@ -855,7 +859,7 @@ describe("production stage handler", () => {
           return {
             pr_ready: false,
             status: "succeeded",
-            diff_summary: "Standards pass. Spec pass. Slop pass.",
+            diff_summary: "Standards pass. Spec pass. Slop pass.\nOPTIO_REVIEW_VERDICT pass",
             usage: { provider: "cursor", input_tokens: 10, output_tokens: 4, cost_usd: 0 },
           };
         },
@@ -924,6 +928,9 @@ describe("production stage handler", () => {
         if (method === "POST" && url.includes("/issues/") && url.endsWith("/comments")) {
           return jsonResponse(201, { id: 9 });
         }
+        if (method === "POST" && url.endsWith("/reviews")) {
+          return jsonResponse(201, { id: 4, state: "APPROVED" });
+        }
         if (method === "PUT" && url.endsWith("/merge")) return jsonResponse(200, { merged: true });
         return jsonResponse(500, { message: `unexpected ${method} ${url}` });
       },
@@ -990,22 +997,20 @@ describe("production stage handler", () => {
     expect(agentCalls.some((call) => call.prompt.includes("skills/code-review"))).toBe(true);
     expect(agentCalls.some((call) => call.prompt.includes("specialists/back-end"))).toBe(true);
     expect(calls.some((call) => call.method === "PUT" && call.url.endsWith("/merge"))).toBe(false);
-    expect(await hitlState.get(taskId, taskId, "merge")).toBeUndefined();
+    expect(await hitlState.get(taskId, taskId, "merge")).toMatchObject({
+      status: "approved",
+      reason: "review_agent_approved",
+      source: "policy",
+    });
+    expect(
+      calls.some(
+        (call) =>
+          call.method === "POST" &&
+          call.url.endsWith("/reviews") &&
+          call.body?.includes('"event":"APPROVE"'),
+      ),
+    ).toBe(true);
 
-    await expect(
-      processStageJob({ ...payload, stage: "merge" }, { cursors, handler, hitl }),
-    ).rejects.toBeInstanceOf(ApprovalRequiredError);
-    const beforeApprove = calls
-      .filter((call) => call.url.includes("api.linear.app"))
-      .map((call) => call.body ?? "");
-    expect(calls.some((call) => call.method === "PUT" && call.url.endsWith("/merge"))).toBe(false);
-    expect(beforeApprove.some((body) => body.includes("s-me"))).toBe(false);
-
-    await applyHitlDecision(
-      { taskId, sessionId: taskId, point: "merge", action: "approve" },
-      hitl,
-      cursors,
-    );
     const merged = await processStageJob(
       { ...payload, stage: "merge" },
       { cursors, handler, hitl },
@@ -1017,6 +1022,134 @@ describe("production stage handler", () => {
       .map((call) => call.body ?? "");
     expect(afterMerge.some((body) => body.includes("s-me"))).toBe(true);
     expect(afterMerge.some((body) => body.includes("s-do"))).toBe(true);
+  });
+
+  it("returns a Hannes rejection to In Progress and does not merge", async () => {
+    const taskId = "lin-ENG-7";
+    const { handle, worktrees } = worktreeFixture(taskId, true);
+    mkdirSync(join(handle.path, "..", ".prs"), { recursive: true });
+    writeFileSync(
+      join(handle.path, "..", ".prs", `${taskId}.json`),
+      `${JSON.stringify({
+        url: "https://github.com/acme/widgets/pull/69",
+        number: 69,
+        head: handle.branch,
+        base: "main",
+      })}\n`,
+    );
+    const bodies: string[] = [];
+    const handler = createProductionStageHandler({
+      env: handlerEnv({
+        OPTIO_NEW_LINEAR_API_KEY: "lin_api_testkey12345678",
+        OPTIO_REVIEW_GITHUB_LOGINS: "hannes-bot",
+      }),
+      worktrees,
+      codingAgent: {
+        id: "cursor",
+        async run(input) {
+          if (input.prompt.includes("Hannes")) {
+            return {
+              pr_ready: false,
+              status: "succeeded",
+              diff_summary: [
+                "OPTIO_REVIEW_VERDICT fail",
+                "Files: src/app.ts",
+                "Standards: Duplicated Code",
+                "Spec: undraft missing",
+                "Slop: none",
+                "Expected: extract the helper",
+              ].join("\n"),
+              usage: { provider: "cursor" },
+            };
+          }
+          return { pr_ready: false, status: "succeeded", usage: { provider: "cursor" } };
+        },
+      },
+      git: async (_cwd, args) => {
+        const command = args[0] === "-c" ? "commit" : args[0];
+        if (command === "rev-parse") return "abc123";
+        if (command === "diff") return "src/app.ts";
+        if (
+          command === "status" ||
+          command === "add" ||
+          command === "commit" ||
+          command === "push"
+        ) {
+          return "";
+        }
+        throw new Error(`unexpected git ${args.join(" ")}`);
+      },
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        const body = typeof init?.body === "string" ? init.body : undefined;
+        bodies.push(body ?? "");
+        if (url.includes("api.linear.app/graphql")) {
+          const query = body ? ((JSON.parse(body) as { query?: string }).query ?? "") : "";
+          if (query.includes("IssueStates")) {
+            return jsonResponse(200, {
+              data: {
+                issue: {
+                  team: {
+                    states: {
+                      nodes: [
+                        { id: "s-ip", name: "In Progress" },
+                        { id: "s-re", name: "Review" },
+                      ],
+                    },
+                  },
+                },
+              },
+            });
+          }
+          return jsonResponse(200, {
+            data: { commentCreate: { success: true }, issueUpdate: { success: true } },
+          });
+        }
+        if (method === "GET" && url.includes("/actions/runs")) {
+          return jsonResponse(200, { total_count: 0, workflow_runs: [] });
+        }
+        if (method === "GET" && url.includes("/check-runs")) {
+          return jsonResponse(200, { total_count: 0, check_runs: [] });
+        }
+        if (method === "GET" && url.endsWith("/status")) {
+          return jsonResponse(200, { state: "success", statuses: [] });
+        }
+        if (method === "GET" && url.endsWith("/reviews")) return jsonResponse(200, []);
+        if (method === "GET" && /\/pulls\/\d+$/.test(url)) {
+          return jsonResponse(200, { draft: true, node_id: "PR_node_69", number: 69 });
+        }
+        if (method === "POST" && url.endsWith("/graphql")) {
+          return jsonResponse(200, {
+            data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } },
+          });
+        }
+        if (method === "GET" && /\/issues\/\d+\/comments/.test(url)) return jsonResponse(200, []);
+        if (method === "POST" && url.endsWith("/requested_reviewers")) {
+          return jsonResponse(201, {});
+        }
+        if (method === "POST" && url.includes("/issues/") && url.endsWith("/comments")) {
+          return jsonResponse(201, { id: 1 });
+        }
+        return jsonResponse(500, { message: `unexpected ${method} ${url}` });
+      },
+    });
+    await expect(
+      handler.run({
+        ...step("ready", "record_ci_wait", taskId),
+        source: "linear",
+        linearIssueId: "2174add1-f7c8-44e3-bbf3-2d60b5ea8bc9",
+      }),
+    ).rejects.toThrow(/return_to_progress/);
+    const feedback = readFileSync(join(handle.path, "linear-review-feedback.md"), "utf8");
+    expect(feedback).toContain("Files: src/app.ts");
+    expect(feedback).toContain("Standards: Duplicated Code");
+    expect(feedback).toContain("Expected: extract the helper");
+    expect(feedback).toContain("in-task fix only");
+    expect(bodies.some((body) => body.includes("s-ip"))).toBe(true);
+    expect(bodies.some((body) => body.includes("s-re"))).toBe(false);
+    expect(bodies.some((body) => body.includes('"event":"APPROVE"'))).toBe(false);
+    expect(bodies.some((body) => body.includes("markPullRequestReadyForReview"))).toBe(true);
   });
 });
 

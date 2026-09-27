@@ -9,7 +9,10 @@ import {
   InMemoryHitlStore,
   InMemoryStepCursorStore,
   applyHitlDecision,
+  approveMergeForReviewAgent,
   createHitlQueuePort,
+  evaluateHitlGate,
+  CiPendingError,
   createIntakeServer,
   delayJobForApproval,
   loadHitlApprovalDdl,
@@ -379,6 +382,20 @@ describe("human approval gates", () => {
     expect(
       await delayJobForApproval(new Error("boom"), { async moveToDelayed() {} }, "t", 1000),
     ).toBe(false);
+
+    const ciMoves: number[] = [];
+    const waiting = await delayJobForApproval(
+      new CiPendingError("linear workflow ci_pending for t-1"),
+      {
+        async moveToDelayed(when) {
+          ciMoves.push(when);
+        },
+      },
+      "token-ci",
+      1000,
+    );
+    expect(waiting).toBe(true);
+    expect(ciMoves).toHaveLength(1);
   });
 
   it("re-adds a finished plan job and promotes a delayed implement job", async () => {
@@ -430,6 +447,38 @@ describe("human approval gates", () => {
     expect(ddl).toContain("CREATE TABLE IF NOT EXISTS hitl_approval");
     expect(ddl).toContain("timed_out");
     expect(ddl).not.toMatch(/sk-|ghp_|api_key/i);
+  });
+
+  it("auto-approves merge when Hannes passed, and leaves a rejection closed", async () => {
+    const events: HitlNotifyEvent[] = [];
+    const { hitl, state } = binding({
+      env: { OPTIO_HITL_MERGE: "always" },
+      events,
+    });
+    await approveMergeForReviewAgent(hitl, identity);
+    const gate = await evaluateHitlGate("merge", hitl, identity);
+    expect(gate.kind).toBe("continue");
+    expect(await state.get(identity.taskId, identity.sessionId, "merge")).toMatchObject({
+      status: "approved",
+      reason: "review_agent_approved",
+      source: "policy",
+    });
+    expect(events.some((event) => event.reason === "review_agent_approved")).toBe(true);
+
+    await state.save({
+      taskId: identity.taskId,
+      sessionId: identity.sessionId,
+      point: "merge",
+      status: "rejected",
+      reason: "human_reject",
+      source: "human",
+      requestedAt: "2026-09-26T12:00:00.000Z",
+      timeoutAt: "2026-09-27T12:00:00.000Z",
+    });
+    await approveMergeForReviewAgent(hitl, identity);
+    expect(await state.get(identity.taskId, identity.sessionId, "merge")).toMatchObject({
+      status: "rejected",
+    });
   });
 });
 

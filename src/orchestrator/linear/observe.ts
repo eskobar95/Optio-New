@@ -32,6 +32,7 @@ export async function enforceObservedLinearStatus(input: {
     markReady: unused,
     requestReviewers: unused,
     dispatchReview: unused,
+    noteFeedback: unused,
     merge: unused,
     rereview: unused,
     setStatus: unused,
