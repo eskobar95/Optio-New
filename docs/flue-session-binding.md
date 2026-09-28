@@ -51,7 +51,6 @@ Logs: task type, selected skills, outcome → `onLog` and `SkillPickLogStore` (`
 ## Non-goals
 
 - Real Flue agent loop / cursor-agent I/O (ENG-21)
-- Gates #4–5 (review pre-screen / intake)
 - Gate UX (ENG-34)
 - Schema migration (`durable_conversation_id` already on `flue.sessions` from ENG-24)
 - Merge/deploy from this ticket alone

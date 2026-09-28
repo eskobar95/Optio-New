@@ -2,7 +2,13 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import type { FlowJob } from "bullmq";
 import { afterEach, describe, expect, it } from "vitest";
-import { createIntakeServer, signLinearBody, signSlackBody } from "../src/index.js";
+import {
+  IntakeTriageTimeoutError,
+  createIntakeServer,
+  signLinearBody,
+  signSlackBody,
+  type IntakeTriageDecision,
+} from "../src/index.js";
 import { signIntakeWebhookBody } from "../src/orchestrator/intake/webhook-auth.js";
 import type { RepoCatalog } from "../src/orchestrator/repos/catalog.js";
 
@@ -72,8 +78,9 @@ describe("GitHub and Slack intake", () => {
     linearWebhookSecret?: string;
     linearApiKey?: string;
     linearDefaultRepoId?: string;
-    linearComment?: (issueId: string) => Promise<void>;
+    linearComment?: (issueId: string, body?: string) => Promise<void>;
     failEnqueue?: boolean;
+    intakeTriage?: Parameters<typeof createIntakeServer>[0]["intakeTriage"];
   }) {
     const added: FlowJob[] = [];
     const server = createIntakeServer({
@@ -85,6 +92,7 @@ describe("GitHub and Slack intake", () => {
       linearApiKey: extra?.linearApiKey,
       linearDefaultRepoId: extra?.linearDefaultRepoId,
       linearComment: extra?.linearComment,
+      intakeTriage: extra?.intakeTriage,
       enqueuer: {
         async add(flow) {
           if (extra?.failEnqueue) throw new Error("Job lin-ENG-12__plan already exists");
@@ -94,6 +102,28 @@ describe("GitHub and Slack intake", () => {
     });
     servers.push(server);
     return { added, server };
+  }
+
+  function engStatusPayload(overrides?: {
+    identifier?: string;
+    title?: string;
+    description?: string;
+  }): Buffer {
+    const identifier = overrides?.identifier ?? "ENG-12";
+    const payload = JSON.stringify({
+      action: "update",
+      type: "Issue",
+      url: `https://linear.app/findjobabroad/issue/${identifier}/ship`,
+      webhookTimestamp: Date.now(),
+      data: {
+        id: LINEAR_ISSUE_ID,
+        identifier,
+        title: overrides?.title ?? "Ship intake",
+        description: overrides?.description ?? "Status moved",
+      },
+      updatedFrom: { stateId: "previous-state" },
+    });
+    return Buffer.from(payload);
   }
 
   it("enqueues an opened GitHub issue and a labeled optio issue with HMAC", async () => {
@@ -321,6 +351,170 @@ describe("GitHub and Slack intake", () => {
     expect(workflowDefault.status).toBe(202);
     expect(await workflowDefault.json()).toMatchObject({ repoId: "workplace" });
     expect(added).toHaveLength(1);
+  });
+
+  it("skips enqueue and comments when intake triage rejects, clarifies, or escalates", async () => {
+    const cases: { triage: IntakeTriageDecision; expectLabel: string; body: string }[] = [
+      {
+        triage: {
+          action: "reject",
+          source: "intake_triage",
+          label: "reject",
+          confidence: 0.95,
+          notes: "spam",
+        },
+        expectLabel: "reject",
+        body: "[intake-triage] reject\nNotes: spam",
+      },
+      {
+        triage: {
+          action: "clarify",
+          source: "intake_triage",
+          label: "clarify",
+          confidence: 0.95,
+          notes: "need AC",
+        },
+        expectLabel: "clarify",
+        body: "[intake-triage] clarify\nNotes: need AC",
+      },
+      {
+        triage: {
+          action: "escalate",
+          source: "intake_triage",
+          reason: "needs_human",
+          confidence: 0.95,
+          notes: "policy",
+        },
+        expectLabel: "needs_human",
+        body: "[intake-triage] escalate\nNotes: policy",
+      },
+    ];
+    for (const row of cases) {
+      const comments: { issueId: string; body?: string }[] = [];
+      const { added, server } = start({
+        linearWebhookSecret: LINEAR_SECRET,
+        linearDefaultRepoId: "findjobabroad",
+        linearComment: async (issueId, body) => {
+          comments.push({ issueId, body });
+        },
+        intakeTriage: async () => row.triage,
+      });
+      const base = await listen(server);
+      const raw = engStatusPayload({
+        identifier: "ENG-99",
+        title: "Triage skip",
+        description: "noise",
+      });
+      const response = await fetch(`${base}/webhooks/linear`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "linear-signature": signLinearBody(LINEAR_SECRET, raw),
+        },
+        body: raw,
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        accepted: false,
+        reason: "intake_triage",
+        action: row.triage.action,
+        label: row.expectLabel,
+      });
+      expect(added).toHaveLength(0);
+      expect(comments).toEqual([{ issueId: LINEAR_ISSUE_ID, body: row.body }]);
+    }
+  });
+
+  it("fail-opens IntakeTriageTimeoutError to enqueue, rethrows unexpected triage errors", async () => {
+    const timeoutComments: { issueId: string; body?: string }[] = [];
+    const { added: timeoutAdded, server: timeoutServer } = start({
+      linearWebhookSecret: LINEAR_SECRET,
+      linearDefaultRepoId: "findjobabroad",
+      linearComment: async (issueId, body) => {
+        timeoutComments.push({ issueId, body });
+      },
+      intakeTriage: async () => {
+        throw new IntakeTriageTimeoutError("hard timeout");
+      },
+    });
+    const timeoutBase = await listen(timeoutServer);
+    const timeoutRaw = engStatusPayload({ identifier: "ENG-40" });
+    const timeoutRes = await fetch(`${timeoutBase}/webhooks/linear`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "linear-signature": signLinearBody(LINEAR_SECRET, timeoutRaw),
+      },
+      body: timeoutRaw,
+    });
+    expect(timeoutRes.status).toBe(200);
+    expect(await timeoutRes.json()).toMatchObject({
+      taskId: "lin-ENG-40",
+      repoId: "findjobabroad",
+    });
+    expect(timeoutAdded).toHaveLength(1);
+    expect(timeoutComments).toEqual([{ issueId: LINEAR_ISSUE_ID, body: "queued" }]);
+
+    const { added: boomAdded, server: boomServer } = start({
+      linearWebhookSecret: LINEAR_SECRET,
+      linearDefaultRepoId: "findjobabroad",
+      linearComment: async () => {},
+      intakeTriage: async () => {
+        throw new Error("unexpected triage bug");
+      },
+    });
+    const boomBase = await listen(boomServer);
+    const boomRaw = engStatusPayload({ identifier: "ENG-41" });
+    const boomRes = await fetch(`${boomBase}/webhooks/linear`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "linear-signature": signLinearBody(LINEAR_SECRET, boomRaw),
+      },
+      body: boomRaw,
+    });
+    expect(boomRes.status).toBe(500);
+    expect(await boomRes.json()).toMatchObject({ error: "enqueue_failed" });
+    expect(boomAdded).toHaveLength(0);
+  });
+
+  it("passthrough-enqueues when Jev API key is missing (no intakeTriage stub)", async () => {
+    const prevJev = process.env.OPTIO_NEW_JEV_API_KEY;
+    const prevAlt = process.env.JEV_API_KEY;
+    delete process.env.OPTIO_NEW_JEV_API_KEY;
+    delete process.env.JEV_API_KEY;
+    try {
+      const comments: { issueId: string; body?: string }[] = [];
+      const { added, server } = start({
+        linearWebhookSecret: LINEAR_SECRET,
+        linearDefaultRepoId: "findjobabroad",
+        linearComment: async (issueId, body) => {
+          comments.push({ issueId, body });
+        },
+      });
+      const base = await listen(server);
+      const raw = engStatusPayload({ identifier: "ENG-42" });
+      const response = await fetch(`${base}/webhooks/linear`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "linear-signature": signLinearBody(LINEAR_SECRET, raw),
+        },
+        body: raw,
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        taskId: "lin-ENG-42",
+        repoId: "findjobabroad",
+      });
+      expect(added).toHaveLength(1);
+      expect(comments).toEqual([{ issueId: LINEAR_ISSUE_ID, body: "queued" }]);
+    } finally {
+      if (prevJev === undefined) delete process.env.OPTIO_NEW_JEV_API_KEY;
+      else process.env.OPTIO_NEW_JEV_API_KEY = prevJev;
+      if (prevAlt === undefined) delete process.env.JEV_API_KEY;
+      else process.env.JEV_API_KEY = prevAlt;
+    }
   });
 
   it("enqueues an ENG status change and comments queued", async () => {

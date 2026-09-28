@@ -28,3 +28,21 @@ export {
   type SkillPickLogStore,
 } from "./skill-pick-log.js";
 export { createJevSkillPickPort, type CreateJevSkillPickPortOptions } from "./skill-pick-port.js";
+export {
+  ReviewPrescreenTimeoutError,
+  applyReviewPrescreen,
+  evaluateReviewPrescreenWithGate,
+  type ReviewPrescreenAction,
+  type ReviewPrescreenDecision,
+  type ReviewPrescreenLogEntry,
+  type ReviewPrescreenLogFn,
+} from "./review-prescreen-gate.js";
+export {
+  IntakeTriageTimeoutError,
+  applyIntakeTriage,
+  evaluateIntakeTriageWithGate,
+  type IntakeTriageAction,
+  type IntakeTriageDecision,
+  type IntakeTriageLogEntry,
+  type IntakeTriageLogFn,
+} from "./intake-triage-gate.js";
