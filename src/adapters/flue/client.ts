@@ -83,10 +83,14 @@ export interface FlueClient {
    * - if a session is already bound, retry `start` only (no orphan re-dispatch)
    * - otherwise retry `dispatch`
    * 4xx fails closed without retry.
+   * `onDispatched` runs once after the first successful dispatch (before start).
    */
   dispatchAndStart(
     dispatchBody: FlueDispatchRequest,
-    startExtras?: { taskId?: string },
+    startExtras?: {
+      taskId?: string;
+      onDispatched?: (dispatch: FlueDispatchResponse) => void;
+    },
   ): Promise<{ dispatch: FlueDispatchResponse; start: FlueStartResponse }>;
 }
 
@@ -182,15 +186,23 @@ export function createFlueClient(options: FlueClientOptions = {}): FlueClient {
 
   async function dispatchAndStart(
     dispatchBody: FlueDispatchRequest,
-    startExtras?: { taskId?: string },
+    startExtras?: {
+      taskId?: string;
+      onDispatched?: (dispatch: FlueDispatchResponse) => void;
+    },
   ): Promise<{ dispatch: FlueDispatchResponse; start: FlueStartResponse }> {
     let bound: FlueDispatchResponse | undefined;
+    let notified = false;
     let lastError: FlueHttpError | undefined;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         if (!bound) {
           bound = await dispatch(dispatchBody);
+          if (!notified) {
+            notified = true;
+            startExtras?.onDispatched?.(bound);
+          }
         }
         const started = await start({
           sessionId: bound.sessionId,
