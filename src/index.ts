@@ -399,6 +399,29 @@ export {
   type FlueUsageEvent,
 } from "./adapters/flue/contract.js";
 export {
+  FLUE_IMPLEMENT_BINDING_STAGE,
+  InMemoryFlueSessionBindingStore,
+  flueBindingKey,
+  type FlueBindingStage,
+  type FlueReviewFeedbackItem,
+  type FlueSessionBinding,
+  type FlueSessionBindingPut,
+  type FlueSessionBindingStore,
+} from "./adapters/flue/session-binding.js";
+export {
+  FlueReviewFeedbackSchema,
+  appendReviewFeedback,
+  formatAccumulatedFeedback,
+  type FlueReviewFeedback,
+} from "./adapters/flue/review-feedback.js";
+export {
+  createPassthroughJevSkillPick,
+  formatSkillPickInstructions,
+  type JevSkillPickInput,
+  type JevSkillPickPort,
+  type JevSkillPickResult,
+} from "./adapters/flue/jev-lazy-load.js";
+export {
   CURSOR_IMPLEMENT_ACI_POLICY,
   DEFAULT_SEARCH_SUMMARY_LIMIT,
   EMPTY_COMMAND_OBSERVATION,

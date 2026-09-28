@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { CodingAgentInput } from "../src/adapters/coding-agent.js";
 import { createFlueClient, FlueHttpError } from "../src/adapters/flue/client.js";
 import { createFlueAdapter } from "../src/adapters/flue/index.js";
+import {
+  FLUE_IMPLEMENT_BINDING_STAGE,
+  InMemoryFlueSessionBindingStore,
+} from "../src/adapters/flue/session-binding.js";
 import { createCodingAgent, resolveCodingBackend } from "../src/adapters/select.js";
 
 const sessionId = "22222222-2222-4222-8222-222222222222";
@@ -242,5 +246,41 @@ describe("Flue CodingAgent adapter", () => {
       },
     });
     expect(agent.id).toBe("flue");
+  });
+
+  it("second run dispatches with durableConversationId from the binding store", async () => {
+    const store = new InMemoryFlueSessionBindingStore();
+    const dispatchBodies: unknown[] = [];
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/dispatch") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}")) as Record<string, unknown>;
+        dispatchBodies.push(body);
+        const resume =
+          typeof body.durableConversationId === "string" ? body.durableConversationId : "";
+        return jsonResponse(200, {
+          sessionId,
+          durableConversationId: resume || "flue-conv-bound",
+          status: resume ? "resumed" : "accepted",
+        });
+      }
+      return jsonResponse(200, {
+        sessionId,
+        branch: "flue/t-flue",
+        usageEvents: [],
+        status: "succeeded",
+      });
+    });
+
+    const agent = createFlueAdapter({ flue: { fetchImpl, sessionBinding: store } });
+    await agent.run(sampleInput());
+    await agent.run(sampleInput());
+
+    expect(dispatchBodies).toHaveLength(2);
+    expect(dispatchBodies[0]).not.toHaveProperty("durableConversationId");
+    expect(dispatchBodies[1]).toMatchObject({ durableConversationId: "flue-conv-bound" });
+    expect(store.get("t-flue", FLUE_IMPLEMENT_BINDING_STAGE)?.durableConversationId).toBe(
+      "flue-conv-bound",
+    );
   });
 });

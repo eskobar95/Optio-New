@@ -1,7 +1,8 @@
 /**
- * Flue CodingAgent backend (ENG-26).
+ * Flue CodingAgent backend (ENG-26 + ENG-36 session binding).
  * Calls the Flue sidecar over HTTP; Cursor CLI is a tool Flue owns, not this adapter.
  * Re-dispatches on network / 5xx (see createFlueClient).
+ * Pause/approval/retry resume the same durable Flue conversation via SessionBindingStore.
  */
 
 import type {
@@ -18,10 +19,29 @@ import {
   type FlueClient,
   type FlueClientOptions,
 } from "./client.js";
-import type { FlueUsageEvent } from "./contract.js";
+import type { FlueDispatchRequest, FlueUsageEvent } from "./contract.js";
+import {
+  createPassthroughJevSkillPick,
+  formatSkillPickInstructions,
+  type JevSkillPickPort,
+} from "./jev-lazy-load.js";
+import { formatAccumulatedFeedback } from "./review-feedback.js";
+import {
+  FLUE_IMPLEMENT_BINDING_STAGE,
+  InMemoryFlueSessionBindingStore,
+  type FlueSessionBindingStore,
+} from "./session-binding.js";
 
 export interface FlueAdapterDeps extends CodingAgentDeps {
-  flue?: FlueClientOptions & { client?: FlueClient };
+  flue?: FlueClientOptions & {
+    client?: FlueClient;
+    /** Optio-side task → Flue session map. Defaults to a fresh in-memory store. */
+    sessionBinding?: FlueSessionBindingStore;
+    /** Injectable Jev skill-pick stub (ENG-25 owns the real client). */
+    skillPick?: JevSkillPickPort;
+    /** Optional skill registry passed to the skill-pick port. */
+    skillRegistry?: readonly string[];
+  };
 }
 
 function usageFromEvents(events: FlueUsageEvent[], modelId?: string): CodingAgentUsage {
@@ -66,7 +86,33 @@ function usageFromEvents(events: FlueUsageEvent[], modelId?: string): CodingAgen
   return usage;
 }
 
-function toDispatchBody(input: CodingAgentInput) {
+function mergeInstructionParts(...parts: Array<string | undefined>): string | undefined {
+  const merged = parts
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part && part.length > 0));
+  return merged.length > 0 ? merged.join("\n\n") : undefined;
+}
+
+async function toDispatchBody(
+  input: CodingAgentInput,
+  options: {
+    sessionBinding: FlueSessionBindingStore;
+    skillPick: JevSkillPickPort;
+    skillRegistry: readonly string[];
+  },
+): Promise<FlueDispatchRequest> {
+  const binding = options.sessionBinding.get(input.metadata.task_id, FLUE_IMPLEMENT_BINDING_STAGE);
+  const resumeId = binding?.durableConversationId?.trim();
+  const feedbackBlock = formatAccumulatedFeedback(binding?.feedback ?? []);
+
+  const pick = await options.skillPick.pickSkills({
+    taskId: input.metadata.task_id,
+    stage: FLUE_IMPLEMENT_BINDING_STAGE,
+    prompt: input.prompt,
+    registry: options.skillRegistry,
+  });
+  const skillBlock = formatSkillPickInstructions(pick);
+
   return {
     taskId: input.metadata.task_id,
     worktreeId: input.metadata.worktree_id,
@@ -76,9 +122,10 @@ function toDispatchBody(input: CodingAgentInput) {
     workspaceRef: input.worktree_path,
     sandboxMode: "local" as const,
     prompt: input.prompt,
-    instructions: input.instructions,
+    instructions: mergeInstructionParts(input.instructions, feedbackBlock, skillBlock),
     allowedTools: input.allowed_tools,
     modelId: input.metadata.model_id,
+    ...(resumeId ? { durableConversationId: resumeId } : {}),
   };
 }
 
@@ -100,14 +147,31 @@ export function createFlueAdapter(deps: FlueAdapterDeps = {}): CodingAgent {
       maxAttempts: flueOpts.maxAttempts,
       timeoutMs: flueOpts.timeoutMs,
     });
+  const sessionBinding = flueOpts.sessionBinding ?? new InMemoryFlueSessionBindingStore();
+  const skillPick = flueOpts.skillPick ?? createPassthroughJevSkillPick();
+  const skillRegistry = flueOpts.skillRegistry ?? [];
 
   return {
     id: "flue",
     async run(input: CodingAgentInput): Promise<CodingAgentOutput> {
       try {
-        const { start } = await client.dispatchAndStart(toDispatchBody(input), {
+        const dispatchBody = await toDispatchBody(input, {
+          sessionBinding,
+          skillPick,
+          skillRegistry,
+        });
+        const { dispatch, start } = await client.dispatchAndStart(dispatchBody, {
           taskId: input.metadata.task_id,
         });
+
+        // Persist accept/resume binding; preserve any accumulated review feedback.
+        sessionBinding.put({
+          taskId: input.metadata.task_id,
+          stage: FLUE_IMPLEMENT_BINDING_STAGE,
+          flueSessionId: dispatch.sessionId,
+          durableConversationId: dispatch.durableConversationId,
+        });
+
         const usage = usageFromEvents(start.usageEvents, input.metadata.model_id);
         const logs = mergeLogs(start.logs, start.prUrl);
         const succeeded = start.status === "succeeded";
