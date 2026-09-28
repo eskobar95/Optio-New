@@ -18,7 +18,6 @@ import {
   type RetryConfig,
   type SmartRoutingConfig,
   type SmartRoutingInput,
-  type WorkflowGateKind,
   type WorkflowGateResult,
 } from "./types.js";
 
@@ -65,18 +64,16 @@ export async function evaluateWorkflowGate(
   request: EvaluateWorkflowGateRequest,
   deps: EvaluateWorkflowGateDeps,
 ): Promise<WorkflowGateResult> {
-  const kind = WorkflowGateKindSchema.parse(request.kind) as WorkflowGateKind;
+  WorkflowGateKindSchema.parse(request.kind);
 
-  switch (kind) {
+  switch (request.kind) {
     case "approval": {
-      if (request.kind !== "approval") {
-        throw new WorkflowGateError("unknown_kind", "approval request mismatch");
-      }
       if (!request.action) {
         return pauseApproval({
           taskId: request.taskId,
           gateId: request.gateId,
           store: deps.store,
+          sessionBinding: deps.sessionBinding,
           now: deps.now,
         });
       }
@@ -90,19 +87,12 @@ export async function evaluateWorkflowGate(
         now: deps.now,
       });
     }
-    case "conditional": {
-      if (request.kind !== "conditional") {
-        throw new WorkflowGateError("unknown_kind", "conditional request mismatch");
-      }
+    case "conditional":
       return evaluateConditional({
         config: request.config,
         evidence: request.evidence,
       });
-    }
-    case "retry": {
-      if (request.kind !== "retry") {
-        throw new WorkflowGateError("unknown_kind", "retry request mismatch");
-      }
+    case "retry":
       return evaluateRetry({
         taskId: request.taskId,
         gateId: request.gateId,
@@ -113,20 +103,18 @@ export async function evaluateWorkflowGate(
         sessionBinding: deps.sessionBinding,
         now: deps.now,
       });
-    }
-    case "smart_routing": {
-      if (request.kind !== "smart_routing") {
-        throw new WorkflowGateError("unknown_kind", "smart_routing request mismatch");
-      }
+    case "smart_routing":
       return evaluateSmartRouting({
         input: request.input,
         config: request.config,
         router: deps.smartRouter,
       });
-    }
     default: {
-      const _exhaustive: never = kind;
-      throw new WorkflowGateError("unknown_kind", `Unknown workflow gate kind: ${_exhaustive}`);
+      const _exhaustive: never = request;
+      throw new WorkflowGateError(
+        "unknown_kind",
+        `Unknown workflow gate kind: ${JSON.stringify(_exhaustive)}`,
+      );
     }
   }
 }

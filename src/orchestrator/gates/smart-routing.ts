@@ -6,6 +6,8 @@
 import {
   SmartRoutingConfigSchema,
   SmartRoutingInputSchema,
+  SmartRoutingResultSchema,
+  WorkflowGateError,
   type SmartRoutingConfig,
   type SmartRoutingGateResult,
   type SmartRoutingInput,
@@ -46,16 +48,17 @@ export async function evaluateSmartRouting(
   const router = options.router ?? createPassthroughJevSmartRouting();
 
   try {
-    const result = await router.route(input);
+    const result = SmartRoutingResultSchema.parse(await router.route(input));
     return {
       kind: "smart_routing",
       outcome: "route",
       path: result.path,
       reason: result.reason ?? "routed",
     };
-  } catch {
+  } catch (err) {
+    if (err instanceof WorkflowGateError) throw err;
     if (config.failOpen === false) {
-      throw new Error("smart_routing_port_failed");
+      throw new WorkflowGateError("port_failed", "smart_routing_port_failed");
     }
     return {
       kind: "smart_routing",

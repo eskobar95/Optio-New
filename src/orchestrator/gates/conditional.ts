@@ -65,6 +65,7 @@ export function evaluateConditional(input: EvaluateConditionalInput): Conditiona
     }
     case "coverage_threshold": {
       const min = config.coverageMinPercent;
+      // Schema superRefine guarantees min; keep runtime guard for typed callers.
       if (min === undefined) {
         throw new WorkflowGateError(
           "invalid_config",

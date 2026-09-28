@@ -35,7 +35,12 @@ describe("approval gate", () => {
     const sessionBinding = new InMemoryFlueSessionBindingStore();
     bindImplement(sessionBinding);
 
-    const paused = pauseApproval({ taskId: "t-gates", gateId: "g-approve", store });
+    const paused = pauseApproval({
+      taskId: "t-gates",
+      gateId: "g-approve",
+      store,
+      sessionBinding,
+    });
     expect(paused.outcome).toBe("paused");
     expect(store.getApproval("t-gates", "g-approve")?.status).toBe("pending");
 
@@ -57,11 +62,48 @@ describe("approval gate", () => {
     expect(store.getApproval("t-gates", "g-approve")?.status).toBe("approved");
   });
 
+  it("pause is idempotent when already pending", () => {
+    const store = new InMemoryWorkflowGateStore();
+    const sessionBinding = new InMemoryFlueSessionBindingStore();
+    bindImplement(sessionBinding);
+    pauseApproval({ taskId: "t-gates", gateId: "g-idemp", store, sessionBinding });
+    const again = pauseApproval({
+      taskId: "t-gates",
+      gateId: "g-idemp",
+      store,
+      sessionBinding,
+    });
+    expect(again.outcome).toBe("paused");
+    expect(store.getApproval("t-gates", "g-idemp")?.status).toBe("pending");
+  });
+
+  it("pause refuses to overwrite a decided gate", () => {
+    const store = new InMemoryWorkflowGateStore();
+    const sessionBinding = new InMemoryFlueSessionBindingStore();
+    bindImplement(sessionBinding);
+    pauseApproval({ taskId: "t-gates", gateId: "g-decided", store, sessionBinding });
+    resumeApproval({
+      taskId: "t-gates",
+      gateId: "g-decided",
+      action: "approve",
+      store,
+      sessionBinding,
+    });
+    expect(() =>
+      pauseApproval({ taskId: "t-gates", gateId: "g-decided", store, sessionBinding }),
+    ).toThrow(WorkflowGateError);
+    try {
+      pauseApproval({ taskId: "t-gates", gateId: "g-decided", store, sessionBinding });
+    } catch (err) {
+      expect((err as WorkflowGateError).code).toBe("already_decided");
+    }
+  });
+
   it("reject stops but preserves Flue binding", () => {
     const store = new InMemoryWorkflowGateStore();
     const sessionBinding = new InMemoryFlueSessionBindingStore();
     bindImplement(sessionBinding);
-    pauseApproval({ taskId: "t-gates", gateId: "g-reject", store });
+    pauseApproval({ taskId: "t-gates", gateId: "g-reject", store, sessionBinding });
 
     const resumed = resumeApproval({
       taskId: "t-gates",
@@ -79,11 +121,11 @@ describe("approval gate", () => {
     );
   });
 
-  it("send_back appends feedback and returns same durableConversationId", () => {
+  it("send_back appends gate_send_back feedback and same durableConversationId", () => {
     const store = new InMemoryWorkflowGateStore();
     const sessionBinding = new InMemoryFlueSessionBindingStore();
     bindImplement(sessionBinding);
-    pauseApproval({ taskId: "t-gates", gateId: "g-send", store });
+    pauseApproval({ taskId: "t-gates", gateId: "g-send", store, sessionBinding });
 
     const resumed = resumeApproval({
       taskId: "t-gates",
@@ -100,15 +142,34 @@ describe("approval gate", () => {
 
     const binding = sessionBinding.get("t-gates", FLUE_IMPLEMENT_BINDING_STAGE);
     expect(binding?.feedback).toHaveLength(1);
+    expect(binding?.feedback[0]?.source).toBe("gate_send_back");
     expect(binding?.feedback[0]?.summary).toBe("fix the failing test");
     expect(binding?.feedback[0]?.verdict).toBe("send_back");
     expect(binding?.durableConversationId).toBe(DURABLE_ID);
   });
 
+  it("pause without Flue binding fails closed", () => {
+    const store = new InMemoryWorkflowGateStore();
+    const sessionBinding = new InMemoryFlueSessionBindingStore();
+    expect(() =>
+      pauseApproval({ taskId: "t-orphan", gateId: "g-orphan", store, sessionBinding }),
+    ).toThrow(WorkflowGateError);
+    try {
+      pauseApproval({ taskId: "t-orphan", gateId: "g-orphan", store, sessionBinding });
+    } catch (err) {
+      expect((err as WorkflowGateError).code).toBe("missing_flue_binding");
+    }
+  });
+
   it("resume without Flue binding fails closed", () => {
     const store = new InMemoryWorkflowGateStore();
     const sessionBinding = new InMemoryFlueSessionBindingStore();
-    pauseApproval({ taskId: "t-orphan", gateId: "g-orphan", store });
+    store.putApproval({
+      taskId: "t-orphan",
+      gateId: "g-orphan",
+      status: "pending",
+      openedAt: new Date().toISOString(),
+    });
 
     expect(() =>
       resumeApproval({
@@ -183,7 +244,7 @@ describe("conditional gate", () => {
 });
 
 describe("retry gate", () => {
-  it("retries under max with accumulated Flue feedback", () => {
+  it("retries under max with gate_retry Flue feedback", () => {
     const store = new InMemoryWorkflowGateStore();
     const sessionBinding = new InMemoryFlueSessionBindingStore();
     bindImplement(sessionBinding);
@@ -208,11 +269,27 @@ describe("retry gate", () => {
 
     const binding = sessionBinding.get("t-gates", FLUE_IMPLEMENT_BINDING_STAGE);
     expect(binding?.feedback).toHaveLength(1);
+    expect(binding?.feedback[0]?.source).toBe("gate_retry");
     expect(binding?.feedback[0]?.verdict).toBe("retry");
     expect(binding?.durableConversationId).toBe(DURABLE_ID);
   });
 
-  it("exhausts after maxAttempts", () => {
+  it("does not burn attempt when Flue binding missing", () => {
+    const store = new InMemoryWorkflowGateStore();
+    const sessionBinding = new InMemoryFlueSessionBindingStore();
+    expect(() =>
+      evaluateRetry({
+        taskId: "t-miss",
+        gateId: "g-miss",
+        lastError: "boom",
+        store,
+        sessionBinding,
+      }),
+    ).toThrow(WorkflowGateError);
+    expect(store.getRetry("t-miss", "g-miss")).toBeUndefined();
+  });
+
+  it("exhausts after maxAttempts without overflowing attempt", () => {
     const store = new InMemoryWorkflowGateStore();
     const sessionBinding = new InMemoryFlueSessionBindingStore();
     bindImplement(sessionBinding);
@@ -228,22 +305,25 @@ describe("retry gate", () => {
         sessionBinding,
       });
       expect(result.outcome).toBe("retry");
+      if (result.outcome === "retry") expect(result.attempt).toBe(i + 1);
     }
 
     const exhausted = evaluateRetry({
       taskId: "t-gates",
       gateId: "g-exhaust",
-      lastError: "err-4",
+      lastError: "err-final",
       config,
       store,
       sessionBinding,
     });
     expect(exhausted.outcome).toBe("exhausted");
     if (exhausted.outcome !== "exhausted") throw new Error("expected exhausted");
-    expect(exhausted.attempt).toBe(4);
+    expect(exhausted.attempt).toBe(3);
+    expect(exhausted.maxAttempts).toBe(3);
     expect(exhausted.action).toBe("escalate");
-    expect(exhausted.lastError).toBe("err-4");
-    expect(store.getRetry("t-gates", "g-exhaust")?.lastError).toBe("err-4");
+    expect(exhausted.lastError).toBe("err-final");
+    expect(store.getRetry("t-gates", "g-exhaust")?.attempt).toBe(3);
+    expect(store.getRetry("t-gates", "g-exhaust")?.lastError).toBe("err-final");
   });
 });
 
@@ -270,6 +350,35 @@ describe("smart routing gate", () => {
     const result = await evaluateSmartRouting({
       input: { taskId: "t-1", stage: "review", labels: ["p0"] },
       router: exploding,
+    });
+    expect(result.path).toBe("auto_continue");
+    expect(result.reason).toBe("smart_routing_fail_open");
+  });
+
+  it("failOpen false throws WorkflowGateError", async () => {
+    const exploding: JevSmartRoutingPort = {
+      async route() {
+        throw new Error("jev down");
+      },
+    };
+    await expect(
+      evaluateSmartRouting({
+        input: { taskId: "t-1", stage: "review", labels: [] },
+        config: { failOpen: false },
+        router: exploding,
+      }),
+    ).rejects.toMatchObject({ code: "port_failed" });
+  });
+
+  it("rejects invalid port payload then fail-opens", async () => {
+    const bad: JevSmartRoutingPort = {
+      async route() {
+        return { path: "not_a_path" as "auto_continue", reason: "x" };
+      },
+    };
+    const result = await evaluateSmartRouting({
+      input: { taskId: "t-1", stage: "review", labels: [] },
+      router: bad,
     });
     expect(result.path).toBe("auto_continue");
     expect(result.reason).toBe("smart_routing_fail_open");

@@ -407,12 +407,14 @@ export {
   getDefaultFlueSessionBindingStore,
   resetDefaultFlueSessionBindingStore,
   type FlueBindingStage,
+  type FlueFeedbackSource,
   type FlueReviewFeedbackItem,
   type FlueSessionBinding,
   type FlueSessionBindingPut,
   type FlueSessionBindingStore,
 } from "./adapters/flue/session-binding.js";
 export {
+  FlueFeedbackSourceSchema,
   FlueReviewFeedbackSchema,
   appendReviewFeedback,
   clearReviewFeedback,

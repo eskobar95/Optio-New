@@ -31,8 +31,8 @@ export interface EvaluateRetryInput {
 
 /**
  * Record a stage failure and decide retry vs exhaust.
- * On retry: append error into implement binding feedback so next Flue dispatch
- * carries accumulated context (same durableConversationId).
+ * Binding is required before mutating the retry counter (no burned attempts on miss).
+ * On retry: append `gate_retry` feedback so next Flue dispatch carries context.
  */
 export function evaluateRetry(input: EvaluateRetryInput): RetryGateResult {
   const config = RetryConfigSchema.parse(input.config ?? {});
@@ -43,25 +43,24 @@ export function evaluateRetry(input: EvaluateRetryInput): RetryGateResult {
   const lastError = input.lastError.trim() || "unknown_error";
 
   const prior = input.store.getRetry(input.taskId, input.gateId);
-  const nextAttempt = (prior?.attempt ?? 0) + 1;
+  const priorAttempt = prior?.attempt ?? 0;
 
-  input.store.putRetry({
-    taskId: input.taskId,
-    gateId: input.gateId,
-    stage,
-    attempt: nextAttempt,
-    maxAttempts,
-    lastError,
-    updatedAt,
-  });
-
-  if (nextAttempt > maxAttempts) {
+  if (priorAttempt >= maxAttempts) {
+    input.store.putRetry({
+      taskId: input.taskId,
+      gateId: input.gateId,
+      stage,
+      attempt: maxAttempts,
+      maxAttempts,
+      lastError,
+      updatedAt,
+    });
     return {
       kind: "retry",
       outcome: "exhausted",
       taskId: input.taskId,
       gateId: input.gateId,
-      attempt: nextAttempt,
+      attempt: maxAttempts,
       maxAttempts,
       lastError,
       action: "escalate",
@@ -73,8 +72,19 @@ export function evaluateRetry(input: EvaluateRetryInput): RetryGateResult {
     input.taskId,
   );
 
+  const nextAttempt = priorAttempt + 1;
+  input.store.putRetry({
+    taskId: input.taskId,
+    gateId: input.gateId,
+    stage,
+    attempt: nextAttempt,
+    maxAttempts,
+    lastError,
+    updatedAt,
+  });
+
   appendReviewFeedback(input.sessionBinding, input.taskId, {
-    source: "review",
+    source: "gate_retry",
     summary: `Retry attempt ${nextAttempt}/${maxAttempts}: ${lastError}`,
     mustFix: [lastError],
     verdict: "retry",

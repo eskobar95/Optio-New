@@ -14,9 +14,11 @@ import {
   type FlueSessionBindingStore,
 } from "./session-binding.js";
 
+export const FlueFeedbackSourceSchema = z.enum(["review", "gate_retry", "gate_send_back"]);
+
 export const FlueReviewFeedbackSchema = z
   .object({
-    source: z.literal("review"),
+    source: FlueFeedbackSourceSchema.default("review"),
     summary: z.string().min(1),
     mustFix: z.array(z.string().min(1)).default([]),
     verdict: z.string().min(1).optional(),
@@ -28,7 +30,8 @@ export const FlueReviewFeedbackSchema = z
 export type FlueReviewFeedback = z.infer<typeof FlueReviewFeedbackSchema>;
 
 /**
- * Append structured review feedback onto the implement binding for `taskId`.
+ * Append structured feedback onto the implement binding for `taskId`.
+ * Sources: `review` (ENG-36), `gate_retry` / `gate_send_back` (ENG-34).
  * If the implement session is not yet bound, creates a pending shell with empty
  * session ids so feedback is not lost before the first accept.
  * Newest {@link capFeedback} window is kept.
@@ -40,7 +43,7 @@ export function appendReviewFeedback(
 ): FlueSessionBinding {
   const parsed = FlueReviewFeedbackSchema.parse(payload);
   const item: FlueReviewFeedbackItem = {
-    source: "review",
+    source: parsed.source,
     summary: parsed.summary,
     mustFix: [...parsed.mustFix],
     ...(parsed.verdict !== undefined ? { verdict: parsed.verdict } : {}),
@@ -74,13 +77,25 @@ export function clearReviewFeedback(
   });
 }
 
+function feedbackHeading(source: FlueReviewFeedbackItem["source"], index: number): string {
+  switch (source) {
+    case "gate_retry":
+      return `### Gate retry feedback ${index + 1}`;
+    case "gate_send_back":
+      return `### Gate send-back feedback ${index + 1}`;
+    default:
+      return `### Review feedback ${index + 1}`;
+  }
+}
+
 /** Format accumulated feedback for injection into the next Flue dispatch. */
 export function formatAccumulatedFeedback(feedback: readonly FlueReviewFeedbackItem[]): string {
   if (feedback.length === 0) return "";
 
   const blocks = feedback.map((item, index) => {
     const lines = [
-      `### Review feedback ${index + 1}`,
+      feedbackHeading(item.source, index),
+      `Source: ${item.source}`,
       ...(item.verdict ? [`Verdict: ${item.verdict}`] : []),
       `Summary: ${item.summary}`,
     ];
@@ -95,5 +110,5 @@ export function formatAccumulatedFeedback(feedback: readonly FlueReviewFeedbackI
     return lines.join("\n");
   });
 
-  return ["## Accumulated review feedback (same Flue session)", "", ...blocks].join("\n");
+  return ["## Accumulated feedback (same Flue session)", "", ...blocks].join("\n");
 }

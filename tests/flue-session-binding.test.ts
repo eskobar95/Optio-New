@@ -115,7 +115,7 @@ describe("review → implement feedback stub", () => {
     expect(binding?.durableConversationId).toBe("flue-conv-fb");
 
     const formatted = formatAccumulatedFeedback(binding?.feedback ?? []);
-    expect(formatted).toContain("Accumulated review feedback");
+    expect(formatted).toContain("Accumulated feedback");
     expect(formatted).toContain("Verdict: fail");
     expect(formatted).toContain("merge helper");
     expect(formatted).toContain("still open");
@@ -255,7 +255,7 @@ describe("Flue adapter session continuity", () => {
     const agent = createFlueAdapter({ flue: { fetchImpl, sessionBinding: store } });
     await agent.run(sampleInput());
     expect(String(instructions)).toContain("follow spec");
-    expect(String(instructions)).toContain("Accumulated review feedback");
+    expect(String(instructions)).toContain("Accumulated feedback");
     expect(String(instructions)).toContain("fix seam overlap");
     expect(store.get("t-bind", FLUE_IMPLEMENT_BINDING_STAGE)?.feedback).toEqual([]);
   });

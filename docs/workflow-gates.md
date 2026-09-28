@@ -24,16 +24,17 @@ Distinct from:
 
 Pause/resume **must** reuse the ENG-36 implement binding:
 
-1. `resumeApproval` / retry path requires `sessionBinding.get(taskId, "implement")` with a non-empty `durableConversationId`.
+1. `pauseApproval` and `resumeApproval` / retry path require `sessionBinding.get(taskId, "implement")` with a non-empty `durableConversationId`.
 2. Missing binding → `WorkflowGateError` code `missing_flue_binding` (fail-closed).
 3. **Never** invent a new conversation id (no cold-start).
-4. `approve` → continue with same id.
-5. `reject` → stop; binding is preserved for inspect.
-6. `send_back` → `appendReviewFeedback` onto the implement binding, then continue with same id.
+4. Re-pause while `pending` is idempotent; pause after a decision → `already_decided`.
+5. `approve` → continue with same id.
+6. `reject` → stop; binding is preserved for inspect.
+7. `send_back` → `appendReviewFeedback` with `source: "gate_send_back"`, then continue with same id.
 
 ## Retry ↔ accumulated context
 
-Each `retry` outcome increments the attempt counter, stores `lastError` for later UI, and appends structured feedback via the ENG-36 review-feedback seam so the next Flue `dispatch` carries context. Exhaustion (`attempt > maxAttempts`) returns `exhausted` / `escalate` without cold-starting a session.
+Binding is checked **before** the retry counter mutates (no burned attempts on miss). Each `retry` outcome increments the attempt counter (capped at `maxAttempts`), stores `lastError` for later UI, and appends `source: "gate_retry"` feedback via the ENG-36 seam. Exhaustion (`prior.attempt >= maxAttempts`) returns `exhausted` / `escalate` with `attempt === maxAttempts`.
 
 ## Conditional presets
 
@@ -53,7 +54,7 @@ interface JevSmartRoutingPort {
 createPassthroughJevSmartRouting(); // auto_continue, no network
 ```
 
-Default **fail-open** → `auto_continue` if the port throws (set `failOpen: false` to surface the error). Real skill-pick / HTTP remains ENG-25 — do not invent a competing `jevClient` here.
+Default **fail-open** → `auto_continue` if the port throws or returns an invalid payload (set `failOpen: false` to raise `WorkflowGateError` `port_failed`). Real skill-pick / HTTP remains ENG-25 — do not invent a competing `jevClient` here.
 
 ## Store seam
 

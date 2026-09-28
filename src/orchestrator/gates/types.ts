@@ -47,7 +47,23 @@ export const ConditionalConfigSchema = z
     /** Required when preset is `custom` — opaque rule id for later evaluators. */
     customRuleId: z.string().min(1).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.preset === "coverage_threshold" && value.coverageMinPercent === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "coverage_threshold requires coverageMinPercent",
+        path: ["coverageMinPercent"],
+      });
+    }
+    if (value.preset === "custom" && !value.customRuleId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "custom preset requires customRuleId",
+        path: ["customRuleId"],
+      });
+    }
+  });
 export type ConditionalConfig = z.infer<typeof ConditionalConfigSchema>;
 
 export const ConditionalEvidenceSchema = z
@@ -103,7 +119,9 @@ export type SmartRoutingResult = z.infer<typeof SmartRoutingResultSchema>;
 export const WorkflowGateErrorCodeSchema = z.enum([
   "missing_flue_binding",
   "not_pending",
+  "already_decided",
   "invalid_config",
+  "port_failed",
   "unknown_kind",
 ]);
 export type WorkflowGateErrorCode = z.infer<typeof WorkflowGateErrorCodeSchema>;

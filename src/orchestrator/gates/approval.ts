@@ -21,6 +21,7 @@ export interface PauseApprovalInput {
   taskId: string;
   gateId: string;
   store: WorkflowGateStore;
+  sessionBinding: FlueSessionBindingStore;
   now?: () => Date;
 }
 
@@ -51,8 +52,30 @@ export function requireFlueDurableConversationId(
   return id;
 }
 
-/** Open an approval gate — flow pauses until resumeApproval. */
+/**
+ * Open an approval gate — flow pauses until resumeApproval.
+ * Requires an existing Flue binding (fail-closed). Idempotent if already pending.
+ */
 export function pauseApproval(input: PauseApprovalInput): ApprovalPauseResult {
+  requireFlueDurableConversationId(input.sessionBinding, input.taskId);
+
+  const existing = input.store.getApproval(input.taskId, input.gateId);
+  if (existing) {
+    if (existing.status === "pending") {
+      return {
+        kind: "approval",
+        outcome: "paused",
+        taskId: input.taskId,
+        gateId: input.gateId,
+        status: "pending",
+      };
+    }
+    throw new WorkflowGateError(
+      "already_decided",
+      `Approval gate ${input.gateId} for task ${input.taskId} is already ${existing.status}`,
+    );
+  }
+
   const now = input.now ?? (() => new Date());
   const openedAt = now().toISOString();
   input.store.putApproval({
@@ -130,7 +153,7 @@ export function resumeApproval(input: ResumeApprovalInput): ApprovalResumeResult
   }
 
   appendReviewFeedback(input.sessionBinding, input.taskId, {
-    source: "review",
+    source: "gate_send_back",
     summary: comment,
     mustFix: [comment],
     verdict: "send_back",
