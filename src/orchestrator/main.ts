@@ -179,12 +179,31 @@ export async function startOrchestrator(): Promise<void> {
 
   logStageEvent({ msg: "orchestrator listening", port });
 
+  // Optional catalog API (ENG-23) — separate port + own Drizzle pool (cursor pool stays separate).
+  let apiServer: import("node:http").Server | undefined;
+  let apiDb: import("../db/client.js").OptioDb | undefined;
+  let apiOwnsDb = false;
+  if (process.env.OPTIO_NEW_API_ENABLED?.trim() === "1") {
+    const { startOptioApiFromEnv } = await import("../api/http.js");
+    const started = await startOptioApiFromEnv(process.env);
+    apiServer = started.server;
+    apiDb = started.db;
+    apiOwnsDb = started.ownsDb;
+    logStageEvent({
+      msg: "optio-api listening",
+      host: started.host,
+      port: started.port,
+    });
+  }
+
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
     logStageEvent({ msg: "orchestrator stopping", signal });
     server.close();
+    apiServer?.close();
+    if (apiOwnsDb) await apiDb?.close();
     await Promise.all(workers.map((worker) => worker.close()));
     await flow.close();
     await Promise.all([planQueue.close(), implementQueue.close(), mergeQueue.close()]);

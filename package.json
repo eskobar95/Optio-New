@@ -24,6 +24,7 @@
     "learn-worker": "tsc -p tsconfig.learning-worker.json && node dist/main.js",
     "eve-runner": "tsc -p tsconfig.eve.json && node dist/src/eve/cli.js",
     "jev-mcp": "tsc -p tsconfig.jev-mcp.json && node dist/src/jev-mcp/main.js",
+    "optio-api": "tsc -p tsconfig.orchestrator.json && node dist/src/api/main.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
