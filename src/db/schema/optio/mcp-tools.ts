@@ -1,5 +1,6 @@
 import { boolean, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
+import { connections } from "./connections.js";
 import { optioSchema } from "./tenants.js";
 import { skills } from "./skills.js";
 import { workspaces } from "./workspaces.js";
@@ -8,6 +9,9 @@ import { workspaces } from "./workspaces.js";
  * MCP tool catalog entries — **capabilities**, not integrations (ADR-0002 / ENG-35).
  * Form-builder toggles these under Capabilities; GitHub/Linear/Slack stay on
  * `connections` at workflow/workspace level.
+ *
+ * Optional `connection_id` may point at a workspace `connections` row with
+ * `kind=mcp` for vaulted server secrets (Infisical path) — never store secrets here.
  */
 export const mcpTools = optioSchema.table(
   "mcp_tools",
@@ -21,6 +25,10 @@ export const mcpTools = optioSchema.table(
     description: text("description"),
     /** Non-secret endpoint / server locator (URLs, command stubs). */
     endpoint: text("endpoint").notNull(),
+    /** Optional vaulted MCP server connection (`kind=mcp`); write-path validates kind. */
+    connectionId: uuid("connection_id").references(() => connections.id, {
+      onDelete: "set null",
+    }),
     enabled: boolean("enabled").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

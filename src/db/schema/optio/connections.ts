@@ -33,8 +33,8 @@ export const connections = optioSchema.table(
 );
 
 /**
- * Agent allow-list of workspace integrations (github/linear/slack).
- * Prefer `agent_mcp_tools` for MCP capabilities (ADR-0002).
+ * Agent allow-list of workspace integrations (github/linear/slack only).
+ * Write-path must reject `kind=mcp` — use `agent_mcp_tools` (ADR-0002).
  */
 export const agentConnections = optioSchema.table(
   "agent_connections",
@@ -49,7 +49,10 @@ export const agentConnections = optioSchema.table(
   (t) => [primaryKey({ columns: [t.agentId, t.connectionId], name: "agent_connections_pkey" })],
 );
 
-/** Workflow-level binding to workspace integrations (GitHub / Linear / Slack). */
+/**
+ * Workflow-level binding to workspace integrations (GitHub / Linear / Slack).
+ * Write-path must reject `kind=mcp` rows.
+ */
 export const workflowConnections = optioSchema.table(
   "workflow_connections",
   {

@@ -6,7 +6,8 @@ import { workflows } from "./workflows.js";
 
 /**
  * Ordered stage inside a workflow vertical stack (ADR-0001 / ENG-35).
- * `sort_order` is the stack position; `stage_type` + `config` drive the row.
+ * `sort_order` is unique per workflow (stack position).
+ * App-layer: `stage_type=integration` ⇒ `connection_id`; agent/custom_agent ⇒ `agent_id`.
  */
 export const workflowStages = optioSchema.table(
   "workflow_stages",
@@ -31,7 +32,10 @@ export const workflowStages = optioSchema.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [unique("workflow_stages_workflow_id_slug_unique").on(t.workflowId, t.slug)],
+  (t) => [
+    unique("workflow_stages_workflow_id_slug_unique").on(t.workflowId, t.slug),
+    unique("workflow_stages_workflow_id_sort_order_unique").on(t.workflowId, t.sortOrder),
+  ],
 );
 
 /**

@@ -106,7 +106,14 @@ describe("drizzle catalog schemas (ENG-24 / ENG-35)", () => {
 
     const mcpCols = Object.keys(getTableColumns(mcpTools));
     expect(mcpCols).toEqual(
-      expect.arrayContaining(["name", "slug", "description", "endpoint", "enabled"]),
+      expect.arrayContaining([
+        "name",
+        "slug",
+        "description",
+        "endpoint",
+        "connectionId",
+        "enabled",
+      ]),
     );
     expect(mcpCols).not.toContain("infisicalSecretPath");
     expect(mcpCols).not.toContain("token");
@@ -125,6 +132,14 @@ describe("drizzle catalog schemas (ENG-24 / ENG-35)", () => {
       "branch",
       "integration",
     ]);
+    // Unique stack position per workflow (drizzle uniqueName).
+    expect(getTableUniqueName(workflowStages)).toBe("optio.workflow_stages");
+  });
+
+  it("rejects self-edges on agent_subagents via check constraint name", () => {
+    // Drizzle attaches Check builders on the table config; ensure table exports.
+    expect(getTableName(agentSubagents)).toBe("agent_subagents");
+    expect(getTableUniqueName(agentSubagents)).toBe("optio.agent_subagents");
   });
 
   it("models append-only transcript events with compaction counters", () => {

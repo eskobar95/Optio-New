@@ -21,13 +21,13 @@ export const agents = optioSchema.table("agents", {
   /** Sandbox mode — v1 `local` only; Docker sandbox deferred. */
   sandboxMode: sandboxModeEnum("sandbox_mode").notNull().default("local"),
   /**
-   * Legacy tool allowlist / refs (non-secret). Prefer `agent_mcp_tools` +
-   * `agent_skills` / `agent_subagents` for ENG-35 allow-lists.
+   * Legacy tool refs (non-secret). **Deprecated for writes** — canonical
+   * allow-lists are `agent_mcp_tools` + `agent_skills` (ENG-35).
    */
   tools: jsonb("tools").$type<unknown[]>().notNull().default([]),
   /**
-   * Legacy nested specialist/subagent refs. Prefer `agent_subagents` join
-   * for typed allow-list bindings.
+   * Legacy subagent refs. **Deprecated for writes** — canonical allow-list
+   * is `agent_subagents`.
    */
   subagents: jsonb("subagents").$type<unknown[]>().notNull().default([]),
   /** When true, load catalog fields only until select / Jev pick (ADR-0004). */
