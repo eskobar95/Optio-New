@@ -370,6 +370,34 @@ export {
   createCursorAdapter,
   cursorAdapter,
 } from "./adapters/cursor/index.js";
+export { createFlueAdapter, flueAdapter, type FlueAdapterDeps } from "./adapters/flue/index.js";
+export {
+  DEFAULT_FLUE_BASE_URL,
+  DEFAULT_FLUE_MAX_ATTEMPTS,
+  DEFAULT_FLUE_TIMEOUT_MS,
+  FlueHttpError,
+  createFlueClient,
+  resolveFlueBaseUrl,
+  type FlueClient,
+  type FlueClientOptions,
+  type FlueFetch,
+} from "./adapters/flue/client.js";
+export {
+  FlueDispatchRequestSchema,
+  FlueDispatchResponseSchema,
+  FlueHealthResponseSchema,
+  FlueSandboxModeSchema,
+  FlueStartRequestSchema,
+  FlueStartResponseSchema,
+  FlueUsageEventSchema,
+  type FlueDispatchRequest,
+  type FlueDispatchResponse,
+  type FlueHealthResponse,
+  type FlueSandboxMode,
+  type FlueStartRequest,
+  type FlueStartResponse,
+  type FlueUsageEvent,
+} from "./adapters/flue/contract.js";
 export {
   CURSOR_IMPLEMENT_ACI_POLICY,
   DEFAULT_SEARCH_SUMMARY_LIMIT,

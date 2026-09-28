@@ -75,6 +75,9 @@ describe("coding backend selection", () => {
       "cursor",
     );
     expect(resolveCodingBackend({ stepCodingBackend: "", defaultBackend: "codex" })).toBe("codex");
+    expect(resolveCodingBackend({ stepCodingBackend: "flue", defaultBackend: "cursor" })).toBe(
+      "flue",
+    );
   });
 });
 

@@ -4,7 +4,8 @@
  */
 import { z } from "zod";
 
-export const CodingBackendSchema = z.enum(["cursor", "codex", "sandbox"]);
+/** Hop-1 / Eve backends. `sandbox` is local Eve-only; `flue` is the ENG-26 sidecar. */
+export const CodingBackendSchema = z.enum(["cursor", "codex", "sandbox", "flue"]);
 
 export const EveStepInputSchema = z.object({
   taskId: z.string().min(1),
