@@ -8,7 +8,7 @@ export const skills = optioSchema.table(
     id: uuid("id").defaultRandom().primaryKey(),
     workspaceId: uuid("workspace_id")
       .notNull()
-      .references(() => workspaces.id),
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     /** Path to skill SoT (e.g. `.cursor/skills/<id>/SKILL.md`). */

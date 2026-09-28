@@ -1,6 +1,6 @@
 import { boolean, jsonb, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
-import { optioSchema } from "./tenants.js";
+import { connectionKindEnum, optioSchema } from "./tenants.js";
 import { workspaces } from "./workspaces.js";
 
 /**
@@ -13,9 +13,8 @@ export const connections = optioSchema.table(
     id: uuid("id").defaultRandom().primaryKey(),
     workspaceId: uuid("workspace_id")
       .notNull()
-      .references(() => workspaces.id),
-    /** github | linear | slack | mcp */
-    kind: text("kind").notNull(),
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    kind: connectionKindEnum("kind").notNull(),
     name: text("name").notNull(),
     /** Infisical secret path within the workspace environment. */
     infisicalSecretPath: text("infisical_secret_path").notNull(),
@@ -34,10 +33,10 @@ export const agentConnections = optioSchema.table(
   {
     agentId: uuid("agent_id")
       .notNull()
-      .references(() => agents.id),
+      .references(() => agents.id, { onDelete: "cascade" }),
     connectionId: uuid("connection_id")
       .notNull()
-      .references(() => connections.id),
+      .references(() => connections.id, { onDelete: "cascade" }),
   },
   (t) => [primaryKey({ columns: [t.agentId, t.connectionId], name: "agent_connections_pkey" })],
 );

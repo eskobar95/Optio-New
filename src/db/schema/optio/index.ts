@@ -1,4 +1,11 @@
-export { optioSchema, tenants } from "./tenants.js";
+export {
+  codingBackendEnum,
+  connectionKindEnum,
+  jevGateKindEnum,
+  optioSchema,
+  sandboxModeEnum,
+  tenants,
+} from "./tenants.js";
 export { workspaces } from "./workspaces.js";
 export { users } from "./users.js";
 export { workspaceMemberships } from "./workspace-memberships.js";

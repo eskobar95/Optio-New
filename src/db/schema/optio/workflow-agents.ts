@@ -8,10 +8,10 @@ export const workflowAgents = optioSchema.table(
   {
     workflowId: uuid("workflow_id")
       .notNull()
-      .references(() => workflows.id),
+      .references(() => workflows.id, { onDelete: "cascade" }),
     agentId: uuid("agent_id")
       .notNull()
-      .references(() => agents.id),
+      .references(() => agents.id, { onDelete: "cascade" }),
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.workflowId, t.agentId], name: "workflow_agents_pkey" })],

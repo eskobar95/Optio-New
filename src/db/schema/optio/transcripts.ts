@@ -1,13 +1,17 @@
 import { boolean, integer, jsonb, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { agents } from "./agents.js";
 import { optioSchema } from "./tenants.js";
 import { workspaces } from "./workspaces.js";
 
-/** Optio-authoritative transcript header (Flue keeps a session copy). */
+/**
+ * Optio-authoritative transcript header.
+ * Owner of the Flue link: `flue_session_id` only (no reverse column on flue.sessions).
+ */
 export const transcripts = optioSchema.table("transcripts", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: uuid("workspace_id")
     .notNull()
-    .references(() => workspaces.id),
+    .references(() => workspaces.id, { onDelete: "cascade" }),
   /** Soft link to flue.sessions.id — no cross-schema FK. */
   flueSessionId: uuid("flue_session_id"),
   taskId: text("task_id"),
@@ -18,8 +22,8 @@ export const transcripts = optioSchema.table("transcripts", {
 });
 
 /**
- * Append-only transcript turns. Compaction marks rows; never rewrite prior content.
- * Log compacted_tokens + cache_writes when a turn is compacted.
+ * Append-only transcript turns: never rewrite `content` after insert.
+ * Compaction may update metadata only (`compacted`, `compacted_tokens`, `cache_writes`).
  */
 export const transcriptEvents = optioSchema.table(
   "transcript_events",
@@ -27,7 +31,7 @@ export const transcriptEvents = optioSchema.table(
     id: uuid("id").defaultRandom().primaryKey(),
     transcriptId: uuid("transcript_id")
       .notNull()
-      .references(() => transcripts.id),
+      .references(() => transcripts.id, { onDelete: "cascade" }),
     seq: integer("seq").notNull(),
     role: text("role").notNull(),
     content: jsonb("content").$type<Record<string, unknown> | unknown[]>().notNull(),
@@ -44,10 +48,10 @@ export const skillPickLogs = optioSchema.table("skill_pick_logs", {
   id: uuid("id").defaultRandom().primaryKey(),
   workspaceId: uuid("workspace_id")
     .notNull()
-    .references(() => workspaces.id),
+    .references(() => workspaces.id, { onDelete: "cascade" }),
   taskId: text("task_id"),
   taskType: text("task_type"),
-  agentId: uuid("agent_id"),
+  agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
   selectedSkillIds: jsonb("selected_skill_ids").$type<string[]>().notNull().default([]),
   outcome: text("outcome"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

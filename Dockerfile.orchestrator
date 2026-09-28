@@ -49,6 +49,8 @@ COPY --from=build /app/dist ./dist
 # cursor.ts resolves the DDL three levels above its compiled file
 # (dist/src/orchestrator/jobs -> dist/state/migrations).
 COPY state/migrations ./dist/state/migrations
+# Forward Drizzle migrations (optio/flue); applied at orchestrator boot via migrate-cli.
+COPY drizzle ./drizzle
 # Team allowlist for POST /webhooks/linear. Resolved from the process cwd (/app).
 COPY config/linear-projects.yaml ./config/linear-projects.yaml
 USER node

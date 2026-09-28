@@ -8,10 +8,10 @@ export const agentSkills = optioSchema.table(
   {
     agentId: uuid("agent_id")
       .notNull()
-      .references(() => agents.id),
+      .references(() => agents.id, { onDelete: "cascade" }),
     skillId: uuid("skill_id")
       .notNull()
-      .references(() => skills.id),
+      .references(() => skills.id, { onDelete: "cascade" }),
   },
   (t) => [primaryKey({ columns: [t.agentId, t.skillId], name: "agent_skills_pkey" })],
 );

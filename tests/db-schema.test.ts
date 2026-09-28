@@ -1,12 +1,16 @@
 import { getTableColumns, getTableName, getTableUniqueName } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { resolveDatabaseUrl } from "../src/db/client.js";
+import { DEFAULT_LOCAL_DATABASE_URL, resolveDatabaseUrl } from "../src/db/database-url.js";
+import { resolveMigrationsFolder } from "../src/db/migrate-cli.js";
 import {
   agentConnections,
   agentSkills,
   agents,
+  codingBackendEnum,
+  connectionKindEnum,
   connections,
   flueSchema,
+  jevGateKindEnum,
   optioSchema,
   sessions,
   skillPickLogs,
@@ -90,15 +94,33 @@ describe("drizzle catalog schemas (ENG-24)", () => {
     expect(Object.keys(getTableColumns(stageJevGates))).toEqual(
       expect.arrayContaining(["gateKind", "timeoutMs", "passthroughOnTimeout"]),
     );
-    expect(Object.keys(getTableColumns(sessions))).toEqual(
-      expect.arrayContaining(["optioTranscriptId", "durableConversationId"]),
-    );
+    const sessionCols = Object.keys(getTableColumns(sessions));
+    expect(sessionCols).toContain("durableConversationId");
+    expect(sessionCols).not.toContain("optioTranscriptId");
+    expect(Object.keys(getTableColumns(skillPickLogs))).toContain("agentId");
   });
 
-  it("resolves OPTIO_NEW_DATABASE_URL with local compose fallback", () => {
+  it("exposes closed enums for backend, connection, sandbox, and jev gates", () => {
+    expect(codingBackendEnum.enumValues).toEqual(["cursor-cli", "flue", "codex"]);
+    expect(connectionKindEnum.enumValues).toEqual(["github", "linear", "slack", "mcp"]);
+    expect(jevGateKindEnum.enumValues).toEqual([
+      "backend_cascade",
+      "plan",
+      "skill_pick",
+      "review_prescreen",
+      "intake",
+    ]);
+  });
+
+  it("resolves OPTIO_NEW_DATABASE_URL with Compose-aligned fallback", () => {
     expect(resolveDatabaseUrl({ OPTIO_NEW_DATABASE_URL: "postgresql://x/y" })).toBe(
       "postgresql://x/y",
     );
-    expect(resolveDatabaseUrl({})).toBe("postgresql://optio:optio@127.0.0.1:5432/optio_new");
+    expect(resolveDatabaseUrl({})).toBe(DEFAULT_LOCAL_DATABASE_URL);
+    expect(DEFAULT_LOCAL_DATABASE_URL).toContain(":changeme@");
+  });
+
+  it("resolves drizzle migrations folder from repo root", () => {
+    expect(resolveMigrationsFolder()).toMatch(/drizzle$/);
   });
 });

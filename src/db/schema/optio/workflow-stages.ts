@@ -1,6 +1,6 @@
 import { boolean, integer, jsonb, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
-import { optioSchema } from "./tenants.js";
+import { jevGateKindEnum, optioSchema } from "./tenants.js";
 import { workflows } from "./workflows.js";
 
 /** Configurable stage inside a workflow (plan, implement, review, …). */
@@ -10,12 +10,12 @@ export const workflowStages = optioSchema.table(
     id: uuid("id").defaultRandom().primaryKey(),
     workflowId: uuid("workflow_id")
       .notNull()
-      .references(() => workflows.id),
+      .references(() => workflows.id, { onDelete: "cascade" }),
     slug: text("slug").notNull(),
     name: text("name").notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
     /** Optional primary agent for this stage. */
-    agentId: uuid("agent_id").references(() => agents.id),
+    agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
     enabled: boolean("enabled").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -25,7 +25,7 @@ export const workflowStages = optioSchema.table(
 
 /**
  * Jev gate config attached per stage.
- * gate_kind: backend_cascade | plan | skill_pick | review_prescreen | intake
+ * Soft gates use timeout → passthrough (`passthrough_on_timeout`).
  */
 export const stageJevGates = optioSchema.table(
   "stage_jev_gates",
@@ -33,9 +33,9 @@ export const stageJevGates = optioSchema.table(
     id: uuid("id").defaultRandom().primaryKey(),
     workflowStageId: uuid("workflow_stage_id")
       .notNull()
-      .references(() => workflowStages.id),
-    gateKind: text("gate_kind").notNull(),
-    /** Thresholds and routing knobs — no manual day-one tuning required to store. */
+      .references(() => workflowStages.id, { onDelete: "cascade" }),
+    gateKind: jevGateKindEnum("gate_kind").notNull(),
+    /** Thresholds and routing knobs — stored; no day-one manual tuning required. */
     config: jsonb("config").$type<Record<string, unknown>>().notNull().default({}),
     timeoutMs: integer("timeout_ms").notNull().default(30_000),
     passthroughOnTimeout: boolean("passthrough_on_timeout").notNull().default(true),

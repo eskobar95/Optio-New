@@ -145,7 +145,7 @@ INTAKE_PR_E2E=1 bash scripts/secrets.sh run -- bash scripts/intake-pr-e2e.sh
 
 Apply `state/migrations/001_pipeline_step_cursor.sql`, `state/migrations/003_pipeline_stage_run.sql`, and `state/migrations/004_session_artifacts.sql` before using Postgres. `openOrchestratorDatabase` runs the cursor and session-artifact DDL on connect. `createPgStageRunStore` runs the stage-run DDL. `createPgStepCursorStore` still runs only the cursor DDL.
 
-Forward catalog migrations (schemas `optio` + `flue`: tenants, workspaces, agents, skills, workflows) live under `drizzle/` and run via `npm run db:migrate` (`drizzle-kit migrate`). Legacy `state/migrations/*.sql` stay frozen for `public.*` DDL-on-connect stores; see `state/README.md`.
+Forward catalog migrations (schemas `optio` + `flue`) live under `drizzle/` and run via `npm run db:migrate` (`drizzle-kit migrate`) or automatically at orchestrator boot (`runDrizzleMigrations`). Tables: tenants, workspaces, users, workspace_memberships, agents, skills, workflows, stages, connections, stage_jev_gates, transcripts / transcript_events, skill_pick_logs, flue.sessions. Legacy `state/migrations/*.sql` stay frozen for `public.*` DDL-on-connect stores; see `state/README.md`.
 
 ## Spans
 
