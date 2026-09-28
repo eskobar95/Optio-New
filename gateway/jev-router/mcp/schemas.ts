@@ -15,7 +15,7 @@ export type JevMidrunKind = z.infer<typeof JevMidrunKindSchema>;
 
 const SHORT = z.string().max(500);
 
-/** Compact state; extras allowed but not required. */
+/** Compact state only — no extras (token floor). */
 export const JevMidrunStateSchema = z
   .object({
     task_id: SHORT.optional(),
@@ -23,7 +23,7 @@ export const JevMidrunStateSchema = z
     file_path: SHORT.optional(),
     summary: SHORT.optional(),
   })
-  .passthrough();
+  .strict();
 export type JevMidrunState = z.infer<typeof JevMidrunStateSchema>;
 
 export const DEFAULT_MIDRUN_MIN_CONFIDENCE = 0.7;
@@ -66,6 +66,9 @@ export const JevDecideActionSchema = z.enum([
 ]);
 export type JevDecideAction = z.infer<typeof JevDecideActionSchema>;
 
+/** Actions that can appear on a `decided` outcome (not escalate/defer). */
+export type JevDecideResolvedAction = Exclude<JevDecideAction, "escalate" | "defer">;
+
 export const JevDecideAnswerSchema = z
   .object({
     action: JevDecideActionSchema,
@@ -92,17 +95,12 @@ export type JevEvaluateOutcome =
       confidence?: number;
       status?: number;
       message?: string;
-    }
-  | {
-      kind: "error";
-      reason: "timeout";
-      message?: string;
     };
 
 export type JevDecideOutcome =
   | {
       kind: "decided";
-      action: Exclude<JevDecideAction, "escalate">;
+      action: JevDecideResolvedAction;
       confidence: number;
       file_path?: string;
       note?: string;
@@ -119,11 +117,6 @@ export type JevDecideOutcome =
       confidence?: number;
       status?: number;
       message?: string;
-    }
-  | {
-      kind: "error";
-      reason: "timeout";
-      message?: string;
     };
 
 /** Minimal JSON Schema fragments for MCP tools/list (token floor). */
@@ -138,6 +131,7 @@ export const JEV_EVALUATE_INPUT_JSON_SCHEMA = {
     },
     state: {
       type: "object",
+      additionalProperties: false,
       properties: {
         task_id: { type: "string", maxLength: 500 },
         step_id: { type: "string", maxLength: 500 },

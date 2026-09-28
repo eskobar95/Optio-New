@@ -9,6 +9,7 @@ import {
   encodeContentLengthMessage,
   JevMidrunInputSchema,
   JEV_MCP_TOOLS,
+  MAX_MCP_CONTENT_LENGTH,
   runJevDecide,
   runJevEvaluate,
   startJevMcpStdio,
@@ -49,6 +50,15 @@ describe("Jev MCP schemas", () => {
         state: { task_id: "t1", summary: "tests look ok" },
       }),
     ).toMatchObject({ kind: "tests_green_enough" });
+  });
+
+  it("rejects unknown state keys (strict token floor)", () => {
+    expect(() =>
+      JevMidrunInputSchema.parse({
+        kind: "next_file",
+        state: { task_id: "t1", extra_blob: "nope" },
+      }),
+    ).toThrow();
   });
 });
 
@@ -167,6 +177,32 @@ describe("runJevEvaluate / runJevDecide", () => {
       }),
     ).resolves.toMatchObject({ kind: "passthrough", reason: "low_confidence" });
   });
+
+  it("still returns outcome when telemetry throws", async () => {
+    const fetchImpl: JevFetchLike = async () =>
+      jsonResponse({
+        answers: {
+          midrun_evaluate: { recommendation: "continue", confidence: 0.99 },
+        },
+      });
+    const client = createJevClient({
+      env: { OPTIO_NEW_JEV_BASE_URL: "https://jev.test" },
+      fetchImpl,
+    });
+    const telemetry: JevMcpTelemetry = {
+      record() {
+        throw new Error("otel down");
+      },
+    };
+
+    await expect(
+      runJevEvaluate({
+        client,
+        input: { kind: "continue_vs_escalate", state: { task_id: "tel-1" } },
+        telemetry,
+      }),
+    ).resolves.toMatchObject({ kind: "evaluated", recommendation: "continue" });
+  });
 });
 
 describe("createJevMcpServer protocol", () => {
@@ -276,6 +312,93 @@ describe("createJevMcpServer protocol", () => {
 
     handle.close();
     stdin.end();
+  });
+
+  it("serializes concurrent tools/call so stdout frames stay ordered", async () => {
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let calls = 0;
+    const fetchImpl: JevFetchLike = async () => {
+      calls += 1;
+      if (calls === 1) await firstGate;
+      return jsonResponse({
+        answers: {
+          midrun_decide: { action: "continue", confidence: 0.9, note: `n${calls}` },
+        },
+      });
+    };
+
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const chunks: Buffer[] = [];
+    stdout.on("data", (c: Buffer) => chunks.push(Buffer.from(c)));
+
+    const handle = startJevMcpStdio({
+      stdin,
+      stdout,
+      stderr: new PassThrough(),
+      client: createJevClient({
+        env: { OPTIO_NEW_JEV_BASE_URL: "https://jev.test" },
+        fetchImpl,
+      }),
+    });
+
+    stdin.write(
+      encodeContentLengthMessage({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "jev_decide",
+          arguments: { kind: "continue_vs_escalate", state: { task_id: "a" } },
+        },
+      }),
+    );
+    stdin.write(
+      encodeContentLengthMessage({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: {
+          name: "jev_decide",
+          arguments: { kind: "continue_vs_escalate", state: { task_id: "b" } },
+        },
+      }),
+    );
+
+    await vi.waitFor(() => expect(calls).toBe(1));
+    expect(Buffer.concat(chunks).length).toBe(0);
+
+    releaseFirst();
+
+    await vi.waitFor(() => {
+      const raw = Buffer.concat(chunks).toString("utf8");
+      expect(raw).toContain('"id":1');
+      expect(raw).toContain('"id":2');
+    });
+
+    const raw = Buffer.concat(chunks).toString("utf8");
+    expect(raw.indexOf('"id":1')).toBeLessThan(raw.indexOf('"id":2'));
+
+    handle.close();
+    stdin.end();
+  });
+
+  it("drops oversized Content-Length frames", () => {
+    const parser = new ContentLengthParser();
+    const huge = `Content-Length: ${MAX_MCP_CONTENT_LENGTH + 1}\r\n\r\n`;
+    expect(parser.push(huge)).toEqual([]);
+    expect(
+      parser.push(
+        encodeContentLengthMessage({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "ping",
+        }),
+      ),
+    ).toEqual([{ jsonrpc: "2.0", id: 1, method: "ping" }]);
   });
 });
 

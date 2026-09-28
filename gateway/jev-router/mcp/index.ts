@@ -13,6 +13,7 @@ export {
   type JevDecideAction,
   type JevDecideAnswer,
   type JevDecideOutcome,
+  type JevDecideResolvedAction,
   type JevEvaluateAnswer,
   type JevEvaluateOutcome,
   type JevEvaluateRecommendation,
@@ -35,6 +36,7 @@ export {
 } from "./telemetry.js";
 export {
   ContentLengthParser,
+  MAX_MCP_CONTENT_LENGTH,
   encodeContentLengthMessage,
   errorResult,
   okResult,

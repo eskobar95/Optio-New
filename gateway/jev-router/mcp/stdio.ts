@@ -36,10 +36,13 @@ export function startJevMcpStdio(options: JevMcpStdioOptions = {}): JevMcpStdioH
     closedResolve = resolve;
   });
 
+  /** Serialize dispatches so concurrent tools/call cannot interleave stdout frames. */
+  let chain: Promise<void> = Promise.resolve();
+
   const onData = (chunk: Buffer | string) => {
     const messages = parser.push(chunk);
     for (const message of messages) {
-      void dispatch(message);
+      chain = chain.then(() => dispatch(message));
     }
   };
 
@@ -57,7 +60,7 @@ export function startJevMcpStdio(options: JevMcpStdioOptions = {}): JevMcpStdioH
 
   const onEnd = () => {
     cleanup();
-    closedResolve?.();
+    void chain.finally(() => closedResolve?.());
   };
 
   const cleanup = () => {

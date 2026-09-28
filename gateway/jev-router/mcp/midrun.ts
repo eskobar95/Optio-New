@@ -3,7 +3,7 @@
  * Soft: transport errors / low confidence / undecided → passthrough.
  */
 
-import type { JevClient, JevClientErrorReason, JevClientResult } from "../jev-client.js";
+import type { JevClient, JevClientResult } from "../jev-client.js";
 import {
   DEFAULT_MIDRUN_MIN_CONFIDENCE,
   DEFAULT_MIDRUN_TIMEOUT_MS,
@@ -12,6 +12,7 @@ import {
   JevMidrunInputSchema,
   type JevDecideAnswer,
   type JevDecideOutcome,
+  type JevDecideResolvedAction,
   type JevEvaluateAnswer,
   type JevEvaluateOutcome,
   type JevMidrunInput,
@@ -19,7 +20,7 @@ import {
   type JevMidrunPassthroughReason,
   type JevMidrunState,
 } from "./schemas.js";
-import type { JevMcpTelemetry } from "./telemetry.js";
+import type { JevMcpDecisionEvent, JevMcpTelemetry, JevMcpToolName } from "./telemetry.js";
 import { noopJevMcpTelemetry } from "./telemetry.js";
 
 export const MIDRUN_EVALUATE_QUESTION = {
@@ -82,7 +83,7 @@ function passthroughFromClientError(result: Extract<JevClientResult, { ok: false
 } {
   return {
     kind: "passthrough",
-    reason: result.reason as JevClientErrorReason,
+    reason: result.reason,
     ...(result.status !== undefined ? { status: result.status } : {}),
     ...(result.message !== undefined ? { message: result.message } : {}),
   };
@@ -100,11 +101,79 @@ function taskIdOf(state: JevMidrunState): string {
   return typeof state.task_id === "string" ? state.task_id : "";
 }
 
-export async function runJevEvaluate(input: {
+async function recordSoft(telemetry: JevMcpTelemetry, event: JevMcpDecisionEvent): Promise<void> {
+  try {
+    await telemetry.record(event);
+  } catch {
+    /* soft gate: telemetry must never fail the tool call */
+  }
+}
+
+function mapEvaluateOutcome(result: JevClientResult, minConfidence: number): JevEvaluateOutcome {
+  if (!result.ok) return passthroughFromClientError(result);
+  const answer = parseEvaluateAnswer(result.payload);
+  if (!answer) return { kind: "passthrough", reason: "undecided" };
+  if (answer.confidence < minConfidence) {
+    return {
+      kind: "passthrough",
+      reason: "low_confidence",
+      confidence: answer.confidence,
+    };
+  }
+  return {
+    kind: "evaluated",
+    recommendation: answer.recommendation,
+    confidence: answer.confidence,
+    ...(answer.note !== undefined ? { note: answer.note } : {}),
+  };
+}
+
+function mapDecideOutcome(result: JevClientResult, minConfidence: number): JevDecideOutcome {
+  if (!result.ok) return passthroughFromClientError(result);
+  const answer = parseDecideAnswer(result.payload);
+  if (!answer) return { kind: "passthrough", reason: "undecided" };
+  if (answer.confidence < minConfidence) {
+    return {
+      kind: "passthrough",
+      reason: "low_confidence",
+      confidence: answer.confidence,
+    };
+  }
+  if (answer.action === "escalate") {
+    return {
+      kind: "escalate",
+      action: "escalate",
+      confidence: answer.confidence,
+      ...(answer.note !== undefined ? { note: answer.note } : {}),
+    };
+  }
+  if (answer.action === "defer") {
+    return {
+      kind: "passthrough",
+      reason: "undecided",
+      confidence: answer.confidence,
+      message: answer.note,
+    };
+  }
+  const action: JevDecideResolvedAction = answer.action;
+  return {
+    kind: "decided",
+    action,
+    confidence: answer.confidence,
+    ...(answer.file_path !== undefined ? { file_path: answer.file_path } : {}),
+    ...(answer.note !== undefined ? { note: answer.note } : {}),
+  };
+}
+
+async function runMidrun<TOutcome extends JevEvaluateOutcome | JevDecideOutcome>(input: {
   client: JevClient;
   input: unknown;
   telemetry?: JevMcpTelemetry;
-}): Promise<JevEvaluateOutcome> {
+  tool: JevMcpToolName;
+  questionKey: "midrun_evaluate" | "midrun_decide";
+  mode: "evaluate" | "decide";
+  mapOutcome: (result: JevClientResult, minConfidence: number) => TOutcome;
+}): Promise<TOutcome> {
   const parsed = JevMidrunInputSchema.parse(input.input);
   const telemetry = input.telemetry ?? noopJevMcpTelemetry;
   const timeoutMs = resolveTimeoutMs(parsed, input.client);
@@ -113,43 +182,39 @@ export async function runJevEvaluate(input: {
   const result = await input.client.postSystemOne({
     state: parsed.state,
     questions: {
-      midrun_evaluate: questionForKind(parsed.kind, "evaluate"),
+      [input.questionKey]: questionForKind(parsed.kind, input.mode),
     },
     timeoutMs,
   });
 
-  let outcome: JevEvaluateOutcome;
-  if (!result.ok) {
-    outcome = passthroughFromClientError(result);
-  } else {
-    const answer = parseEvaluateAnswer(result.payload);
-    if (!answer) {
-      outcome = { kind: "passthrough", reason: "undecided" };
-    } else if (answer.confidence < minConfidence) {
-      outcome = {
-        kind: "passthrough",
-        reason: "low_confidence",
-        confidence: answer.confidence,
-      };
-    } else {
-      outcome = {
-        kind: "evaluated",
-        recommendation: answer.recommendation,
-        confidence: answer.confidence,
-        ...(answer.note !== undefined ? { note: answer.note } : {}),
-      };
-    }
-  }
+  const outcome = input.mapOutcome(result, minConfidence);
+  const reason = outcome.kind === "passthrough" ? outcome.reason : outcome.kind;
 
-  await telemetry.record({
-    tool: "jev_evaluate",
+  await recordSoft(telemetry, {
+    tool: input.tool,
     taskId: taskIdOf(parsed.state),
     outcome: outcome.kind,
-    reason: outcome.kind === "passthrough" ? outcome.reason : outcome.kind,
+    reason,
     midrunKind: parsed.kind,
   });
 
   return outcome;
+}
+
+export async function runJevEvaluate(input: {
+  client: JevClient;
+  input: unknown;
+  telemetry?: JevMcpTelemetry;
+}): Promise<JevEvaluateOutcome> {
+  return runMidrun({
+    client: input.client,
+    input: input.input,
+    telemetry: input.telemetry,
+    tool: "jev_evaluate",
+    questionKey: "midrun_evaluate",
+    mode: "evaluate",
+    mapOutcome: mapEvaluateOutcome,
+  });
 }
 
 export async function runJevDecide(input: {
@@ -157,64 +222,13 @@ export async function runJevDecide(input: {
   input: unknown;
   telemetry?: JevMcpTelemetry;
 }): Promise<JevDecideOutcome> {
-  const parsed = JevMidrunInputSchema.parse(input.input);
-  const telemetry = input.telemetry ?? noopJevMcpTelemetry;
-  const timeoutMs = resolveTimeoutMs(parsed, input.client);
-  const minConfidence = resolveMinConfidence(parsed);
-
-  const result = await input.client.postSystemOne({
-    state: parsed.state,
-    questions: {
-      midrun_decide: questionForKind(parsed.kind, "decide"),
-    },
-    timeoutMs,
-  });
-
-  let outcome: JevDecideOutcome;
-  if (!result.ok) {
-    outcome = passthroughFromClientError(result);
-  } else {
-    const answer = parseDecideAnswer(result.payload);
-    if (!answer) {
-      outcome = { kind: "passthrough", reason: "undecided" };
-    } else if (answer.confidence < minConfidence) {
-      outcome = {
-        kind: "passthrough",
-        reason: "low_confidence",
-        confidence: answer.confidence,
-      };
-    } else if (answer.action === "escalate") {
-      outcome = {
-        kind: "escalate",
-        action: "escalate",
-        confidence: answer.confidence,
-        ...(answer.note !== undefined ? { note: answer.note } : {}),
-      };
-    } else if (answer.action === "defer") {
-      outcome = {
-        kind: "passthrough",
-        reason: "undecided",
-        confidence: answer.confidence,
-        message: answer.note,
-      };
-    } else {
-      outcome = {
-        kind: "decided",
-        action: answer.action,
-        confidence: answer.confidence,
-        ...(answer.file_path !== undefined ? { file_path: answer.file_path } : {}),
-        ...(answer.note !== undefined ? { note: answer.note } : {}),
-      };
-    }
-  }
-
-  await telemetry.record({
+  return runMidrun({
+    client: input.client,
+    input: input.input,
+    telemetry: input.telemetry,
     tool: "jev_decide",
-    taskId: taskIdOf(parsed.state),
-    outcome: outcome.kind,
-    reason: outcome.kind === "passthrough" ? outcome.reason : outcome.kind,
-    midrunKind: parsed.kind,
+    questionKey: "midrun_decide",
+    mode: "decide",
+    mapOutcome: mapDecideOutcome,
   });
-
-  return outcome;
 }

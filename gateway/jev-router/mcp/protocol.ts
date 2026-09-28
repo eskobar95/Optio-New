@@ -3,6 +3,9 @@
  * No @modelcontextprotocol/sdk — keep the stub tiny.
  */
 
+/** Hard cap on a single framed body (bytes). Prevents unbounded buffer growth. */
+export const MAX_MCP_CONTENT_LENGTH = 1_048_576;
+
 export interface JsonRpcRequest {
   jsonrpc?: "2.0";
   id?: string | number | null;
@@ -36,6 +39,11 @@ export class ContentLengthParser {
     const messages: JsonRpcRequest[] = [];
 
     while (true) {
+      if (this.buffer.length > MAX_MCP_CONTENT_LENGTH * 2) {
+        this.buffer = Buffer.alloc(0);
+        break;
+      }
+
       const headerEnd = indexOfHeaderEnd(this.buffer);
       if (headerEnd < 0) break;
 
@@ -50,6 +58,11 @@ export class ContentLengthParser {
       }
 
       const length = Number(match[1]);
+      if (!Number.isFinite(length) || length < 0 || length > MAX_MCP_CONTENT_LENGTH) {
+        this.buffer = Buffer.alloc(0);
+        break;
+      }
+
       const bodyStart = headerEnd + 4; // \r\n\r\n
       if (this.buffer.length < bodyStart + length) break;
 

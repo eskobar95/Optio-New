@@ -66,7 +66,8 @@ export function createJevMcpServer(options: JevMcpServerOptions = {}): JevMcpSer
 
     async handle(message: JsonRpcRequest): Promise<JsonRpcResponse | null> {
       const { method, id } = message;
-      const isNotification = id === undefined || id === null;
+      // JSON-RPC notifications omit `id`; null is not a notification — still reply.
+      const isNotification = !("id" in message) || id === undefined;
 
       if (method === "notifications/initialized" || method === "initialized") {
         return null;
