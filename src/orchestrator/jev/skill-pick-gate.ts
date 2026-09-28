@@ -127,6 +127,15 @@ function logHardTimeout(state: SkillPickGateState, message?: string): SkillPickL
   };
 }
 
+function assertLogStoreConfig(options: {
+  logStore?: SkillPickLogStore;
+  workspaceId?: string;
+}): void {
+  if (options.logStore && !options.workspaceId) {
+    throw new Error("SkillPickLogStore requires workspaceId");
+  }
+}
+
 async function emitLog(
   entry: SkillPickLogEntry,
   options: {
@@ -136,16 +145,20 @@ async function emitLog(
     agentId?: string;
   },
 ): Promise<void> {
-  await options.onLog?.(entry);
-  if (options.logStore && options.workspaceId) {
-    await options.logStore.append({
-      workspaceId: options.workspaceId,
-      taskId: entry.task_id,
-      taskType: entry.task_type,
-      agentId: options.agentId,
-      selectedSkillIds: entry.selected_skill_ids,
-      outcome: entry.outcome,
-    });
+  try {
+    await options.onLog?.(entry);
+    if (options.logStore && options.workspaceId) {
+      await options.logStore.append({
+        workspaceId: options.workspaceId,
+        taskId: entry.task_id,
+        taskType: entry.task_type,
+        agentId: options.agentId,
+        selectedSkillIds: entry.selected_skill_ids,
+        outcome: entry.outcome,
+      });
+    }
+  } catch {
+    // Logging must not fail the pick decision after a successful gate outcome.
   }
 }
 
@@ -163,6 +176,8 @@ export async function evaluateSkillPickWithGate(input: {
   workspaceId?: string;
   agentId?: string;
 }): Promise<SkillPickDecision> {
+  assertLogStoreConfig(input);
+
   const outcome = await runSkillPickGate({
     client: input.client,
     state: input.state,

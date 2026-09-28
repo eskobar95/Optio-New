@@ -1,7 +1,10 @@
 /**
  * Append-only skill-pick feedback log (ENG-25 gate #3 → ENG-24 `optio.skill_pick_logs`).
- * In-memory store for tests/local; inject a DB-backed store in workers.
+ * In-memory for tests; Drizzle writer for workers.
  */
+
+import type { OptioDb } from "../../db/client.js";
+import { skillPickLogs } from "../../db/schema/optio/transcripts.js";
 
 export interface SkillPickLogRecord {
   workspaceId: string;
@@ -22,7 +25,7 @@ export interface InMemorySkillPickLogStore extends SkillPickLogStore {
   clear(): void;
 }
 
-/** Process-local ring for unit tests and smoke paths (no DB). */
+/** Process-local store for unit tests and smoke paths (no DB). */
 export function createInMemorySkillPickLogStore(): InMemorySkillPickLogStore {
   const entries: SkillPickLogRecord[] = [];
   return {
@@ -39,6 +42,22 @@ export function createInMemorySkillPickLogStore(): InMemorySkillPickLogStore {
         ...(record.taskType !== undefined ? { taskType: record.taskType } : {}),
         ...(record.agentId !== undefined ? { agentId: record.agentId } : {}),
         selectedSkillIds: [...record.selectedSkillIds],
+        outcome: record.outcome,
+      });
+    },
+  };
+}
+
+/** Persist picks into `optio.skill_pick_logs` via Drizzle. */
+export function createDrizzleSkillPickLogStore(db: OptioDb): SkillPickLogStore {
+  return {
+    async append(record: SkillPickLogRecord): Promise<void> {
+      await db.insert(skillPickLogs).values({
+        workspaceId: record.workspaceId,
+        taskId: record.taskId,
+        taskType: record.taskType,
+        agentId: record.agentId,
+        selectedSkillIds: record.selectedSkillIds,
         outcome: record.outcome,
       });
     },

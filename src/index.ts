@@ -422,10 +422,9 @@ export {
   type FlueReviewFeedback,
 } from "./adapters/flue/review-feedback.js";
 export {
-  createJevSkillPickPort,
   createPassthroughJevSkillPick,
   formatSkillPickInstructions,
-  type CreateJevSkillPickPortOptions,
+  narrowAllowedTools,
   type JevSkillPickInput,
   type JevSkillPickPort,
   type JevSkillPickResult,
@@ -635,9 +634,12 @@ export { createOtelJevMcpTelemetry } from "./jev-mcp/otel-telemetry.js";
 export {
   applyPlanGate,
   applySkillPick,
+  createDrizzleSkillPickLogStore,
   createInMemorySkillPickLogStore,
+  createJevSkillPickPort,
   evaluatePlanWithGate,
   evaluateSkillPickWithGate,
+  type CreateJevSkillPickPortOptions,
   type PlanGateAction,
   type PlanGateDecision,
   type PlanGateLogEntry,

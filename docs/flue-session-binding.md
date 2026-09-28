@@ -42,10 +42,11 @@ On the next implement `dispatch`, `formatAccumulatedFeedback` is merged into `in
 `JevSkillPickPort.pickSkills({ taskId, stage, prompt, registry, mcpRegistry? })` is injectable.
 
 - Default `createPassthroughJevSkillPick()` returns `{ skillIds: [] }` with no network.
-- Prefer `createJevSkillPickPort({ client, … })` — runs Jev (`jev-1.13.0`) over the full allow-list registry and returns a per-task subset. Soft timeout → empty selection (no cold reload of the whole library). Hard timeout throws; adapter **fail-opens** to empty skills if the port throws.
-- Chosen ids are merged into `dispatch` `instructions` via `formatSkillPickInstructions` before `start` (catalog ids only — not full skill bodies).
+- Prefer `createJevSkillPickPort({ client, … })` from orchestrator — runs Jev (`jev-1.13.0`) over the full allow-list registry and returns a per-task subset. Soft timeout → empty selection. Hard `SkillPickTimeoutError` is **rethrown** by Flue; other port errors fail-open to empty skills.
+- Chosen skill ids go into `dispatch` `instructions`. MCP ids also narrow `allowedTools` when they overlap the request allow-list (else advisory-only in instructions).
+- `task_type` defaults to `metadata.step_id` (override via `flue.taskType`).
 
-Logs: task type, selected skills, outcome → `onLog` and optional `SkillPickLogStore` (`optio.skill_pick_logs`).
+Logs: task type, selected skills, outcome → `onLog` and `SkillPickLogStore` (`createDrizzleSkillPickLogStore` → `optio.skill_pick_logs`; requires `workspaceId`).
 
 ## Non-goals
 

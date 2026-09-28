@@ -15,7 +15,7 @@ import {
 } from "./types.js";
 
 export const SKILL_PICK_QUESTION = {
-  type: "choice",
+  type: "subset",
   instructions:
     "Dynamic skill / MCP pick. Observe the full skill_registry and mcp_registry (allow-list max). Select only the subset needed for this task. Do not return the entire allow-list. Prefer empty arrays over speculative loads.",
   criteria: {
@@ -26,7 +26,14 @@ export const SKILL_PICK_QUESTION = {
 } as const;
 
 export type SkillPickPassthroughReason =
-  "timeout" | "http" | "network" | "invalid_url" | "invalid_body" | "low_confidence" | "undecided";
+  | "timeout"
+  | "http"
+  | "network"
+  | "invalid_url"
+  | "invalid_body"
+  | "low_confidence"
+  | "undecided"
+  | "filtered_empty";
 
 export type SkillPickOutcome =
   | {
@@ -143,6 +150,16 @@ export async function runSkillPickGate(input: {
 
   const skillIds = filterToRegistry(answer.skill_ids, state.skill_registry ?? []);
   const mcpToolIds = filterToRegistry(answer.mcp_tool_ids ?? [], state.mcp_registry ?? []);
+
+  // All ids outside allow-lists → treat as soft miss (do not claim a successful pick).
+  if (skillIds.length === 0 && mcpToolIds.length === 0) {
+    return {
+      kind: "passthrough",
+      reason: "filtered_empty",
+      confidence: answer.confidence,
+      notes: answer.notes ?? "filtered_empty",
+    };
+  }
 
   return {
     kind: "decided",

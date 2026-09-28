@@ -129,6 +129,31 @@ describe("runSkillPickGate", () => {
     expect(() => applySkillPick(outcome)).toThrow(SkillPickTimeoutError);
   });
 
+  it("passthrough filtered_empty when all ids outside registries", async () => {
+    const client = createJevClient({
+      env: { OPTIO_NEW_JEV_BASE_URL: "https://jev.test" },
+      fetchImpl: async () =>
+        jsonResponse({
+          answers: {
+            skill_pick: {
+              skill_ids: ["evil"],
+              mcp_tool_ids: ["bogus"],
+              confidence: 0.95,
+            },
+          },
+        }),
+    });
+    const outcome = await runSkillPickGate({
+      client,
+      state: { skill_registry: ["tdd"], mcp_registry: ["read"] },
+    });
+    expect(outcome).toMatchObject({
+      kind: "passthrough",
+      reason: "filtered_empty",
+      confidence: 0.95,
+    });
+  });
+
   it("passthrough on low confidence", async () => {
     const client = createJevClient({
       env: { OPTIO_NEW_JEV_BASE_URL: "https://jev.test" },
@@ -293,6 +318,19 @@ describe("evaluateSkillPickWithGate (opt-in)", () => {
 });
 
 describe("createJevSkillPickPort", () => {
+  it("throws when logStore is set without workspaceId", () => {
+    const client = createJevClient({
+      env: { OPTIO_NEW_JEV_BASE_URL: "https://jev.test" },
+      fetchImpl: async () => jsonResponse({ answers: {} }),
+    });
+    expect(() =>
+      createJevSkillPickPort({
+        client,
+        logStore: createInMemorySkillPickLogStore(),
+      }),
+    ).toThrow(/workspaceId/);
+  });
+
   it("implements JevSkillPickPort and formats instructions without stub label", async () => {
     const client = createJevClient({
       env: { OPTIO_NEW_JEV_BASE_URL: "https://jev.test" },

@@ -171,11 +171,11 @@ SystemOne body: `{ state, questions: { skill_pick: … }, model: "jev-1.13.0" }`
 
 ### Output
 
-| Outcome       | When                                                                          | Caller action (`applySkillPick`)                                        |
-| ------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `decided`     | confidence ≥ min; ids filtered to registries                                  | `source: "skill_pick"` + subset `skillIds` / `mcpToolIds`               |
-| `passthrough` | timeout (when enabled), HTTP/network, invalid body, undecided, low confidence | `source: "passthrough"` + **empty** ids (do not inject full allow-list) |
-| `error`       | timeout when `passthroughOnTimeout: false`                                    | throws `SkillPickTimeoutError` (still logged via `onLog` / log store)   |
+| Outcome       | When                                                                        | Caller action (`applySkillPick`)                                        |
+| ------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `decided`     | confidence ≥ min; ≥1 id remains after registry filter                       | `source: "skill_pick"` + subset `skillIds` / `mcpToolIds`               |
+| `passthrough` | timeout (soft), HTTP/network, undecided, low confidence, **filtered_empty** | `source: "passthrough"` + **empty** ids (do not inject full allow-list) |
+| `error`       | timeout when `passthroughOnTimeout: false`                                  | throws `SkillPickTimeoutError` (Flue rethrows; still logged)            |
 
 Selected ids outside the registries are dropped (`filterToRegistry`).
 
@@ -241,5 +241,7 @@ Mid-run Cursor MCP soft tools: [jev-mcp.md](jev-mcp.md) (ENG-27).
 - Hop-1 helper: `src/adapters/select.ts` (`applyBackendCascade`)
 - Plan seam: `src/orchestrator/jev/plan-gate.ts` (`applyPlanGate`, `evaluatePlanWithGate`)
 - Skill-pick seam: `src/orchestrator/jev/skill-pick-gate.ts` (`applySkillPick`, `evaluateSkillPickWithGate`)
-- Flue port: `src/adapters/flue/jev-lazy-load.ts` (`createJevSkillPickPort`)
+- Flue port types: `src/adapters/flue/jev-lazy-load.ts`
+- Port factory: `src/orchestrator/jev/skill-pick-port.ts` (`createJevSkillPickPort`)
+- Log store: `src/orchestrator/jev/skill-pick-log.ts` (`createDrizzleSkillPickLogStore`)
 - Hop-2 (unchanged fail-closed): `gateway/jev-router/systemone.ts`
