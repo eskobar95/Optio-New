@@ -3,8 +3,10 @@ import { createFlueAdapter } from "../src/adapters/flue/index.js";
 import {
   createPassthroughJevSkillPick,
   formatSkillPickInstructions,
+  narrowAllowedTools,
   type JevSkillPickPort,
 } from "../src/adapters/flue/jev-lazy-load.js";
+import { SkillPickTimeoutError } from "../src/index.js";
 import {
   appendReviewFeedback,
   formatAccumulatedFeedback,
@@ -158,7 +160,7 @@ describe("Jev skill-pick port stub", () => {
       prompt: "do the thing",
       registry: ["tdd", "code-review"],
     });
-    expect(result).toEqual({ skillIds: [], reason: "passthrough_stub" });
+    expect(result).toEqual({ skillIds: [], mcpToolIds: [], reason: "passthrough_stub" });
     expect(formatSkillPickInstructions(result)).toBe("");
   });
 
@@ -166,6 +168,12 @@ describe("Jev skill-pick port stub", () => {
     expect(
       formatSkillPickInstructions({ skillIds: ["tdd", "bot-session"], reason: "mock" }),
     ).toContain("Skills: tdd, bot-session");
+  });
+
+  it("narrowAllowedTools intersects when mcp pick overlaps", () => {
+    expect(narrowAllowedTools(["read", "shell", "edit"], ["read", "bogus"])).toEqual(["read"]);
+    expect(narrowAllowedTools(["read", "shell"], ["mcp-other"])).toEqual(["read", "shell"]);
+    expect(narrowAllowedTools(["read"], [])).toEqual(["read"]);
   });
 });
 
@@ -360,16 +368,20 @@ describe("Flue adapter session continuity", () => {
   it("calls injectable skill-pick and attaches chosen skills to instructions", async () => {
     const store = new InMemoryFlueSessionBindingStore();
     const skillPick: JevSkillPickPort = {
-      async pickSkills() {
-        return { skillIds: ["tdd"], reason: "unit_test_mock" };
+      async pickSkills(input) {
+        expect(input.taskType).toBe("implementation");
+        return { skillIds: ["tdd"], mcpToolIds: ["edit"], reason: "unit_test_mock" };
       },
     };
 
     let instructions: unknown;
+    let allowedTools: unknown;
     const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/dispatch")) {
-        instructions = parseBody(init).instructions;
+        const body = parseBody(init);
+        instructions = body.instructions;
+        allowedTools = body.allowedTools;
         return jsonResponse(200, {
           sessionId: sessionIdA,
           durableConversationId: "flue-conv-skills",
@@ -390,10 +402,27 @@ describe("Flue adapter session continuity", () => {
         sessionBinding: store,
         skillPick,
         skillRegistry: ["tdd", "code-review"],
+        mcpRegistry: ["edit", "read"],
       },
     });
     await agent.run(sampleInput());
-    expect(String(instructions)).toContain("Jev skill pick (stub)");
+    expect(String(instructions)).toContain("Jev skill pick");
     expect(String(instructions)).toContain("Skills: tdd");
+    expect(String(instructions)).toContain("MCP tools: edit");
+    expect(String(instructions)).not.toContain("(stub)");
+    expect(allowedTools).toEqual(["edit"]);
+  });
+
+  it("rethrows SkillPickTimeoutError from hard timeout", async () => {
+    const store = new InMemoryFlueSessionBindingStore();
+    const skillPick: JevSkillPickPort = {
+      async pickSkills() {
+        throw new SkillPickTimeoutError("hard timeout");
+      },
+    };
+    const agent = createFlueAdapter({
+      flue: { fetchImpl: async () => jsonResponse(200, {}), sessionBinding: store, skillPick },
+    });
+    await expect(agent.run(sampleInput())).rejects.toBeInstanceOf(SkillPickTimeoutError);
   });
 });

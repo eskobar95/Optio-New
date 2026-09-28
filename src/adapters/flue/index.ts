@@ -20,9 +20,11 @@ import {
   type FlueClientOptions,
 } from "./client.js";
 import type { FlueDispatchRequest, FlueUsageEvent } from "./contract.js";
+import { SkillPickTimeoutError } from "../../../gateway/jev-router/gates/skill-pick.js";
 import {
   createPassthroughJevSkillPick,
   formatSkillPickInstructions,
+  narrowAllowedTools,
   type JevSkillPickPort,
   type JevSkillPickResult,
 } from "./jev-lazy-load.js";
@@ -42,10 +44,17 @@ export interface FlueAdapterDeps extends CodingAgentDeps {
      * Inject a durable store for multi-process workers.
      */
     sessionBinding?: FlueSessionBindingStore;
-    /** Injectable Jev skill-pick stub (ENG-25 owns the real client). */
+    /**
+     * Injectable Jev skill-pick port.
+     * Default: passthrough stub. Prefer `createJevSkillPickPort` (ENG-25 gate #3).
+     */
     skillPick?: JevSkillPickPort;
-    /** Optional skill registry passed to the skill-pick port. */
+    /** Full skill registry (allow-list max) passed to the skill-pick port. */
     skillRegistry?: readonly string[];
+    /** Full MCP capability/tool registry (allow-list max) passed to the skill-pick port. */
+    mcpRegistry?: readonly string[];
+    /** Optional task_type for skill-pick logs (falls back to `metadata.step_id`). */
+    taskType?: string;
   };
 }
 
@@ -98,7 +107,10 @@ function mergeInstructionParts(...parts: Array<string | undefined>): string | un
   return merged.length > 0 ? merged.join("\n\n") : undefined;
 }
 
-/** Soft fail-open: skill-pick errors must not block implement (ENG-25 soft-gate). */
+/**
+ * Soft fail-open for transport/logic errors.
+ * Hard `SkillPickTimeoutError` (passthroughOnTimeout: false) is rethrown.
+ */
 async function pickSkillsFailOpen(
   skillPick: JevSkillPickPort,
   input: {
@@ -106,12 +118,17 @@ async function pickSkillsFailOpen(
     stage: string;
     prompt: string;
     registry: readonly string[];
+    mcpRegistry?: readonly string[];
+    taskType?: string;
+    workflowId?: string;
+    stepId?: string;
   },
 ): Promise<JevSkillPickResult> {
   try {
     return await skillPick.pickSkills(input);
-  } catch {
-    return { skillIds: [], reason: "skill_pick_fail_open" };
+  } catch (error) {
+    if (error instanceof SkillPickTimeoutError) throw error;
+    return { skillIds: [], mcpToolIds: [], reason: "skill_pick_fail_open" };
   }
 }
 
@@ -121,6 +138,8 @@ async function toDispatchBody(
     sessionBinding: FlueSessionBindingStore;
     skillPick: JevSkillPickPort;
     skillRegistry: readonly string[];
+    mcpRegistry: readonly string[];
+    taskType?: string;
   },
 ): Promise<FlueDispatchRequest> {
   const binding = options.sessionBinding.get(input.metadata.task_id, FLUE_IMPLEMENT_BINDING_STAGE);
@@ -132,6 +151,10 @@ async function toDispatchBody(
     stage: FLUE_IMPLEMENT_BINDING_STAGE,
     prompt: input.prompt,
     registry: options.skillRegistry,
+    mcpRegistry: options.mcpRegistry,
+    taskType: options.taskType ?? input.metadata.step_id,
+    workflowId: input.metadata.workflow_id,
+    stepId: input.metadata.step_id,
   });
   const skillBlock = formatSkillPickInstructions(pick);
 
@@ -145,7 +168,7 @@ async function toDispatchBody(
     sandboxMode: "local" as const,
     prompt: input.prompt,
     instructions: mergeInstructionParts(input.instructions, feedbackBlock, skillBlock),
-    allowedTools: input.allowed_tools,
+    allowedTools: narrowAllowedTools(input.allowed_tools, pick.mcpToolIds),
     modelId: input.metadata.model_id,
     ...(resumeId ? { durableConversationId: resumeId } : {}),
   };
@@ -172,6 +195,8 @@ export function createFlueAdapter(deps: FlueAdapterDeps = {}): CodingAgent {
   const sessionBinding = flueOpts.sessionBinding ?? getDefaultFlueSessionBindingStore();
   const skillPick = flueOpts.skillPick ?? createPassthroughJevSkillPick();
   const skillRegistry = flueOpts.skillRegistry ?? [];
+  const mcpRegistry = flueOpts.mcpRegistry ?? [];
+  const taskType = flueOpts.taskType;
 
   return {
     id: "flue",
@@ -181,6 +206,8 @@ export function createFlueAdapter(deps: FlueAdapterDeps = {}): CodingAgent {
           sessionBinding,
           skillPick,
           skillRegistry,
+          mcpRegistry,
+          taskType,
         });
         const { start } = await client.dispatchAndStart(dispatchBody, {
           taskId: input.metadata.task_id,
@@ -211,6 +238,8 @@ export function createFlueAdapter(deps: FlueAdapterDeps = {}): CodingAgent {
           ...(succeeded ? {} : { error_class: start.errorClass ?? "flue_run_failed" }),
         };
       } catch (error) {
+        // Hard skill-pick timeout must surface (passthroughOnTimeout: false).
+        if (error instanceof SkillPickTimeoutError) throw error;
         const flueError = error instanceof FlueHttpError ? error : undefined;
         return {
           pr_ready: false,

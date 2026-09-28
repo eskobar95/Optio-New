@@ -16,6 +16,14 @@ export {
   type PlanGatePassthroughReason,
 } from "./plan.js";
 export {
+  SKILL_PICK_QUESTION,
+  SkillPickTimeoutError,
+  filterToRegistry,
+  runSkillPickGate,
+  type SkillPickOutcome,
+  type SkillPickPassthroughReason,
+} from "./skill-pick.js";
+export {
   BackendCascadeAnswerSchema,
   BackendCascadeConfigSchema,
   BackendCascadeLabelSchema,
@@ -25,6 +33,8 @@ export {
   DEFAULT_CASCADE_TIMEOUT_MS,
   DEFAULT_PLAN_MIN_CONFIDENCE,
   DEFAULT_PLAN_TIMEOUT_MS,
+  DEFAULT_SKILL_PICK_MIN_CONFIDENCE,
+  DEFAULT_SKILL_PICK_TIMEOUT_MS,
   IntakeTriageAnswerSchema,
   JEV_GATE_SEQUENCE,
   JevGateKindSchema,
@@ -35,6 +45,9 @@ export {
   PlanGateSystemOneResponseSchema,
   ReviewPrescreenAnswerSchema,
   SkillPickGateAnswerSchema,
+  SkillPickGateConfigSchema,
+  SkillPickGateStateSchema,
+  SkillPickGateSystemOneResponseSchema,
   type BackendCascadeAnswer,
   type BackendCascadeConfig,
   type BackendCascadeLabel,
@@ -47,4 +60,6 @@ export {
   type PlanGateState,
   type ReviewPrescreenAnswer,
   type SkillPickGateAnswer,
+  type SkillPickGateConfig,
+  type SkillPickGateState,
 } from "./types.js";

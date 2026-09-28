@@ -15,4 +15,6 @@ Gate sequence (cascade → plan → skill pick → review pre-screen → intake)
 
 **Gate #2 (plan) opt-in seam:** `src/orchestrator/jev/plan-gate.ts` — `evaluatePlanWithGate` / `applyPlanGate` after planner, before implement. Not wired into `processStageJob` by default.
 
+**Gate #3 (skill / MCP pick) opt-in seam:** `src/orchestrator/jev/skill-pick-gate.ts` + `skill-pick-port.ts` (`createJevSkillPickPort`). Inject via `createFlueAdapter({ flue: { skillPick, skillRegistry, mcpRegistry, taskType? } })`. Soft timeout → empty selection; hard timeout rethrows. Logs: `onLog` + `createInMemorySkillPickLogStore` / `createDrizzleSkillPickLogStore` → `optio.skill_pick_logs` (requires `workspaceId`). See [docs/jev-gates.md](../../docs/jev-gates.md).
+
 See `docs/SPEC.md` §9 and §14.3.
