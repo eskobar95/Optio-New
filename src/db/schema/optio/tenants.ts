@@ -25,6 +25,16 @@ export const jevGateKindEnum = optioSchema.enum("jev_gate_kind", [
   "intake",
 ]);
 
+/** Vertical-stack stage kinds (ENG-28 / ENG-35) — not freeform canvas nodes. */
+export const workflowStageTypeEnum = optioSchema.enum("workflow_stage_type", [
+  "agent",
+  "custom_agent",
+  "gate",
+  "aggregator",
+  "branch",
+  "integration",
+]);
+
 export const tenants = optioSchema.table("tenants", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),

@@ -50,8 +50,9 @@ Product: **Optio-New** · Compose: `optio-new` · Package: `@optio-new/harness`
 | `gateway/jev-router/`                                 | §14.3–§14.4       | Plugins: jev, poorjev, laya, rules                                        |
 | `deploy/laya/`                                        | §14.3             | Optional Compose profile `laya` CPU placeholder (`docs/laya.md`)          |
 | `state/`                                              | §11, §10          | Legacy frozen SQL for `public.*` DDL-on-connect stores                    |
-| `src/db/`                                             | §11               | Drizzle client + `optio`/`flue` catalog schemas (ENG-24)                  |
+| `src/db/`                                             | §11               | Drizzle client + `optio`/`flue` catalog schemas (ENG-24 / ENG-35)          |
 | `drizzle/`                                            | §11               | Forward Drizzle migrations (`npm run db:generate` / `db:migrate`)         |
+| `docs/data-model.md`                                  | §11               | Catalog schema note (ENG-24 lock + ENG-35 MCP/lazy-load/stack)            |
 | `docs/SPEC.md`                                        | (this document)   | Full skeleton specification                                               |
 | `specs/agent-harness-skeleton-spec.md`                | —                 | Spec copy under specs/                                                    |
 | `specs/harness-working-skills/`                       | §6 (staging)      | Historical skills snapshot                                                |

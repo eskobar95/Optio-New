@@ -1,9 +1,14 @@
 import { boolean, integer, jsonb, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
-import { jevGateKindEnum, optioSchema } from "./tenants.js";
+import { connections } from "./connections.js";
+import { jevGateKindEnum, optioSchema, workflowStageTypeEnum } from "./tenants.js";
 import { workflows } from "./workflows.js";
 
-/** Configurable stage inside a workflow (plan, implement, review, …). */
+/**
+ * Ordered stage inside a workflow vertical stack (ADR-0001 / ENG-35).
+ * `sort_order` is unique per workflow (stack position).
+ * App-layer: `stage_type=integration` ⇒ `connection_id`; agent/custom_agent ⇒ `agent_id`.
+ */
 export const workflowStages = optioSchema.table(
   "workflow_stages",
   {
@@ -14,13 +19,23 @@ export const workflowStages = optioSchema.table(
     slug: text("slug").notNull(),
     name: text("name").notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
-    /** Optional primary agent for this stage. */
+    stageType: workflowStageTypeEnum("stage_type").notNull().default("agent"),
+    /** Stage-specific knobs (gate rules, custom-agent toggles, integration action). */
+    config: jsonb("config").$type<Record<string, unknown>>().notNull().default({}),
+    /** Optional primary agent for agent / custom_agent stages. */
     agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
+    /** Optional integration ref for integration stages (GitHub/Linear/Slack). */
+    connectionId: uuid("connection_id").references(() => connections.id, {
+      onDelete: "set null",
+    }),
     enabled: boolean("enabled").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [unique("workflow_stages_workflow_id_slug_unique").on(t.workflowId, t.slug)],
+  (t) => [
+    unique("workflow_stages_workflow_id_slug_unique").on(t.workflowId, t.slug),
+    unique("workflow_stages_workflow_id_sort_order_unique").on(t.workflowId, t.sortOrder),
+  ],
 );
 
 /**

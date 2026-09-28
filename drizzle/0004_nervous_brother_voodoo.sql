@@ -1,0 +1,4 @@
+ALTER TABLE "optio"."mcp_tools" ADD COLUMN "connection_id" uuid;--> statement-breakpoint
+ALTER TABLE "optio"."mcp_tools" ADD CONSTRAINT "mcp_tools_connection_id_connections_id_fk" FOREIGN KEY ("connection_id") REFERENCES "optio"."connections"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "optio"."workflow_stages" ADD CONSTRAINT "workflow_stages_workflow_id_sort_order_unique" UNIQUE("workflow_id","sort_order");--> statement-breakpoint
+ALTER TABLE "optio"."agent_subagents" ADD CONSTRAINT "agent_subagents_no_self" CHECK ("optio"."agent_subagents"."agent_id" <> "optio"."agent_subagents"."subagent_id");
