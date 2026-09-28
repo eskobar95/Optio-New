@@ -22,7 +22,8 @@
     "specialists/**/*.ts",
     "gateway/**/*.ts",
     "tests/**/*.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "drizzle.config.ts"
   ],
   "exclude": ["node_modules", "dist"]
 }
