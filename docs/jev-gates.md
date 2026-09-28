@@ -13,8 +13,8 @@ DB attachment: `optio.stage_jev_gates.gate_kind` (`jev_gate_kind` enum from ENG-
 | 1   | `backend_cascade`  | Backend / model cascade per issue complexity               | `flue_cheap` \| `cursor_composer` \| `cursor_frontier` \| `needs_human` | **Implemented** |
 | 2   | `plan`             | Plan / spec quality; auto-clear high-confidence safe plans | `auto_clear` \| `needs_revision` \| `needs_human`                       | **Implemented** |
 | 3   | `skill_pick`       | Which skills / MCP tools to inject before spawn            | `skill_ids[]` + optional `mcp_tool_ids[]` + confidence                  | **Implemented** |
-| 4   | `review_prescreen` | Filter diffs before human review (Hannes)                  | `forward` \| `filter` \| `needs_human`                                  | Stub types only |
-| 5   | `intake`           | Classify Linear / intake issues                            | `enqueue` \| `clarify` \| `reject` \| `needs_human`                     | Stub types only |
+| 4   | `review_prescreen` | Filter diffs before human review (Hannes)                  | `forward` \| `filter` \| `needs_human`                                  | **Implemented** |
+| 5   | `intake`           | Classify Linear / intake issues                            | `enqueue` \| `clarify` \| `reject` \| `needs_human`                     | **Implemented** |
 
 ## Shared mechanics
 
@@ -26,6 +26,8 @@ DB attachment: `optio.stage_jev_gates.gate_kind` (`jev_gate_kind` enum from ENG-
 | `minConfidence` (cascade) | `0.7`             | Below threshold → passthrough               |
 | `minConfidence` (plan)    | `0.7`             | Below threshold → passthrough               |
 | `minConfidence` (skill)   | `0.7`             | Below threshold → passthrough               |
+| `minConfidence` (review)  | `0.7`             | Below threshold → passthrough               |
+| `minConfidence` (intake)  | `0.7`             | Below threshold → passthrough               |
 | Base URL                  | Vercel AI Gateway | Same env chain as Hop-2 `resolveJevBaseUrl` |
 
 Confidence thresholds are **configurable per gate / stage** (JSON `config` on `stage_jev_gates`). No day-one manual threshold tuning required — ship defaults; learn from logs later.
@@ -218,16 +220,117 @@ createFlueAdapter({ flue: { skillPick, skillRegistry: […], mcpRegistry: […] 
 
 Logs: `onLog` always; optional `SkillPickLogStore.append` → `optio.skill_pick_logs` (`task_type`, `selected_skill_ids`, `outcome`).
 
-## Gates #4–5 (documented stubs)
+## Gate #4 — review pre-screen
 
-Zod answer shapes live in `gateway/jev-router/gates/types.ts` (`ReviewPrescreenAnswerSchema`, `IntakeTriageAnswerSchema`). No runners in this PR.
+Runs in `dispatchReview` **before** Hannes / the review coding agent. Scores the diff; may filter paths or escalate to a human. Soft timeout / missing `OPTIO_NEW_JEV_API_KEY` → forward all paths (fail-open). Pin **`jev-1.13.0`**. Jev is never the Cursor session LLM.
+
+### Input
+
+```ts
+{
+  state: {
+    task_id?: string;
+    diff_paths?: string[];     // allow-list max for filter
+    diff_summary?: string;
+    issue_title?: string;
+    issue_body?: string;
+    task_type?: string;
+  };
+  config?: {
+    minConfidence?: number;      // default 0.7
+    timeoutMs?: number;          // default 30000
+    passthroughOnTimeout?: boolean; // default true
+  };
+}
+```
+
+SystemOne body: `{ state, questions: { review_prescreen: … }, model: "jev-1.13.0" }`.
+
+### Output
+
+| Outcome                    | When                                                                        | Caller action (`applyReviewPrescreen`)                          |
+| -------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `decided` + `forward`      | confidence ≥ min                                                            | Dispatch Hannes on the full path set                            |
+| `decided` + `filter`       | confidence ≥ min; ≥1 path remains after registry filter                     | Dispatch Hannes focused on `filtered_paths`                     |
+| `escalate` + `needs_human` | confidence ≥ min                                                            | Skip Hannes auto-dispatch; leave Review for a human             |
+| `passthrough`              | timeout (soft), HTTP/network, undecided, low confidence, **filtered_empty** | `action: "forward"` + `source: "passthrough"` — full path set   |
+| `error`                    | timeout when `passthroughOnTimeout: false`                                  | throws `ReviewPrescreenTimeoutError` (still logged via `onLog`) |
+
+### Hook
+
+```ts
+import { createJevClient, evaluateReviewPrescreenWithGate } from "@optio/…";
+
+const decision = await evaluateReviewPrescreenWithGate({
+  client: createJevClient({ fetchImpl, env }),
+  state: { task_id: "t1", diff_paths: ["src/a.ts", "docs/x.md"] },
+  onLog: (entry) => {
+    /* task_type + outcome + paths */
+  },
+});
+// decision.action === "forward" | "filter" | "escalate"
+```
+
+Wired in `createProductionStageHandler` → `dispatchReview`. Inject `reviewPrescreen` for tests. Without `OPTIO_NEW_JEV_API_KEY`, the seam passthrough-forwards immediately.
+
+## Gate #5 — intake triage
+
+Runs on the Linear status-change enqueue path **before** `enqueueIntakePipeline`. Classifies the issue. Soft timeout / missing API key → enqueue (fail-open) so Phase 1 still posts `queued`. Pin **`jev-1.13.0`**.
+
+### Input
+
+```ts
+{
+  state: {
+    task_id?: string;
+    issue_title?: string;
+    issue_body?: string;
+    issue_identifier?: string;
+    source?: string;
+    to_status?: string;
+    task_type?: string;
+  };
+  config?: { minConfidence?: number; timeoutMs?: number; passthroughOnTimeout?: boolean };
+}
+```
+
+SystemOne body: `{ state, questions: { intake: … }, model: "jev-1.13.0" }`.
+
+### Output
+
+| Outcome                    | When                                                    | Caller action (`applyIntakeTriage`)                               |
+| -------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------- |
+| `decided` + `enqueue`      | confidence ≥ min                                        | Continue Phase 1: enqueue + `queued` comment                      |
+| `decided` + `clarify`      | confidence ≥ min                                        | Respond `accepted: false` — **no** enqueue, **no** `queued`       |
+| `decided` + `reject`       | confidence ≥ min                                        | Respond `accepted: false` — **no** enqueue, **no** `queued`       |
+| `escalate` + `needs_human` | confidence ≥ min                                        | Respond `accepted: false` — **no** enqueue, **no** `queued`       |
+| `passthrough`              | timeout (soft), HTTP/network, undecided, low confidence | `action: "enqueue"` + `source: "passthrough"` — Phase 1 continues |
+| `error`                    | timeout when `passthroughOnTimeout: false`              | HTTP seam still fail-opens to enqueue (does not block Phase 1)    |
+
+### Hook
+
+```ts
+import { createJevClient, evaluateIntakeTriageWithGate } from "@optio/…";
+
+const decision = await evaluateIntakeTriageWithGate({
+  client: createJevClient({ fetchImpl, env }),
+  state: { task_id: "lin-ENG-25", issue_title: "…", source: "linear" },
+  onLog: (entry) => {
+    /* task_id + outcome */
+  },
+});
+// Continue Phase 1 only when decision.action === "enqueue".
+```
+
+Wired in `createIntakeServer` → `enqueueAdapter` for `source: "linear"`. Inject `intakeTriage` for tests. Slack/GitHub intake paths are unchanged.
 
 ## Non-goals (this slice)
 
 - Jev as Cursor session LLM
 - Code generation via Jev
 - ENG-36 Flue session store ownership
-- UI
+- UI / Glass
+- ENG-32 / ENG-29
 - Rewriting kit-harness `/v1/route-model` Hop-1 labels (`cursor_subscription` / `codex_gateway`)
 
 Mid-run Cursor MCP soft tools: [jev-mcp.md](jev-mcp.md) (ENG-27).
@@ -238,9 +341,13 @@ Mid-run Cursor MCP soft tools: [jev-mcp.md](jev-mcp.md) (ENG-27).
 - Cascade: `gateway/jev-router/gates/cascade.ts`
 - Plan: `gateway/jev-router/gates/plan.ts`
 - Skill pick: `gateway/jev-router/gates/skill-pick.ts`
+- Review pre-screen: `gateway/jev-router/gates/review-prescreen.ts`
+- Intake triage: `gateway/jev-router/gates/intake.ts`
 - Hop-1 helper: `src/adapters/select.ts` (`applyBackendCascade`)
 - Plan seam: `src/orchestrator/jev/plan-gate.ts` (`applyPlanGate`, `evaluatePlanWithGate`)
 - Skill-pick seam: `src/orchestrator/jev/skill-pick-gate.ts` (`applySkillPick`, `evaluateSkillPickWithGate`)
+- Review seam: `src/orchestrator/jev/review-prescreen-gate.ts` (`applyReviewPrescreen`, `evaluateReviewPrescreenWithGate`)
+- Intake seam: `src/orchestrator/jev/intake-triage-gate.ts` (`applyIntakeTriage`, `evaluateIntakeTriageWithGate`)
 - Flue port types: `src/adapters/flue/jev-lazy-load.ts`
 - Port factory: `src/orchestrator/jev/skill-pick-port.ts` (`createJevSkillPickPort`)
 - Log store: `src/orchestrator/jev/skill-pick-log.ts` (`createDrizzleSkillPickLogStore`)

@@ -1,6 +1,6 @@
 /**
  * Jev gate sequence contracts (ENG-25).
- * Gates #1–3 implemented; #4–5 are typed stubs only.
+ * Gates #1–5 implemented (soft fail-open).
  */
 
 import { z } from "zod";
@@ -184,22 +184,112 @@ export const SkillPickGateSystemOneResponseSchema = z
   })
   .passthrough();
 
-// --- Stub contracts for gates #4–5 (types only; not implemented this PR) ---
+// --- Gate #4 — review pre-screen (before Hannes) ---
+
+/** Gate #4 labels — score/filter diffs before the review agent. */
+export const ReviewPrescreenLabelSchema = z.enum(["forward", "filter", "needs_human"]);
+export type ReviewPrescreenLabel = z.infer<typeof ReviewPrescreenLabelSchema>;
+
+export const DEFAULT_REVIEW_PRESCREEN_MIN_CONFIDENCE = 0.7;
+export const DEFAULT_REVIEW_PRESCREEN_TIMEOUT_MS = 30_000;
+
+export const ReviewPrescreenConfigSchema = z
+  .object({
+    minConfidence: z.number().min(0).max(1).default(DEFAULT_REVIEW_PRESCREEN_MIN_CONFIDENCE),
+    timeoutMs: z.number().int().positive().default(DEFAULT_REVIEW_PRESCREEN_TIMEOUT_MS),
+    passthroughOnTimeout: z.boolean().default(true),
+  })
+  .strict();
+export type ReviewPrescreenConfig = z.infer<typeof ReviewPrescreenConfigSchema>;
+
+export const ReviewPrescreenStateSchema = z
+  .object({
+    task_id: z.string().optional(),
+    workflow_id: z.string().optional(),
+    step_id: z.string().optional(),
+    /** Changed paths in the PR / worktree diff (allow-list max for filtering). */
+    diff_paths: z.array(z.string().min(1)).optional(),
+    diff_summary: z.string().optional(),
+    issue_title: z.string().optional(),
+    issue_body: z.string().optional(),
+    task_type: z.string().optional(),
+  })
+  .passthrough();
+export type ReviewPrescreenState = z.infer<typeof ReviewPrescreenStateSchema>;
 
 export const ReviewPrescreenAnswerSchema = z
   .object({
-    choice: z.enum(["forward", "filter", "needs_human"]),
+    choice: ReviewPrescreenLabelSchema,
     confidence: z.number().min(0).max(1),
+    /** Subset of diff_paths when choice is `filter`. */
     filtered_paths: z.array(z.string()).optional(),
+    notes: z.string().optional(),
   })
   .strict();
 export type ReviewPrescreenAnswer = z.infer<typeof ReviewPrescreenAnswerSchema>;
 
+/** Wire response fragment under answers.review_prescreen. */
+export const ReviewPrescreenSystemOneResponseSchema = z
+  .object({
+    answers: z
+      .object({
+        review_prescreen: ReviewPrescreenAnswerSchema,
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
+// --- Gate #5 — intake triage (Linear status-change path) ---
+
+/** Gate #5 labels — classify intake before enqueue. */
+export const IntakeTriageLabelSchema = z.enum(["enqueue", "clarify", "reject", "needs_human"]);
+export type IntakeTriageLabel = z.infer<typeof IntakeTriageLabelSchema>;
+
+export const DEFAULT_INTAKE_TRIAGE_MIN_CONFIDENCE = 0.7;
+export const DEFAULT_INTAKE_TRIAGE_TIMEOUT_MS = 30_000;
+
+export const IntakeTriageConfigSchema = z
+  .object({
+    minConfidence: z.number().min(0).max(1).default(DEFAULT_INTAKE_TRIAGE_MIN_CONFIDENCE),
+    timeoutMs: z.number().int().positive().default(DEFAULT_INTAKE_TRIAGE_TIMEOUT_MS),
+    passthroughOnTimeout: z.boolean().default(true),
+  })
+  .strict();
+export type IntakeTriageConfig = z.infer<typeof IntakeTriageConfigSchema>;
+
+export const IntakeTriageStateSchema = z
+  .object({
+    task_id: z.string().optional(),
+    workflow_id: z.string().optional(),
+    step_id: z.string().optional(),
+    issue_title: z.string().optional(),
+    issue_body: z.string().optional(),
+    issue_identifier: z.string().optional(),
+    source: z.string().optional(),
+    team_key: z.string().optional(),
+    to_status: z.string().optional(),
+    task_type: z.string().optional(),
+  })
+  .passthrough();
+export type IntakeTriageState = z.infer<typeof IntakeTriageStateSchema>;
+
 export const IntakeTriageAnswerSchema = z
   .object({
-    choice: z.enum(["enqueue", "clarify", "reject", "needs_human"]),
+    choice: IntakeTriageLabelSchema,
     confidence: z.number().min(0).max(1),
     labels: z.array(z.string()).optional(),
+    notes: z.string().optional(),
   })
   .strict();
 export type IntakeTriageAnswer = z.infer<typeof IntakeTriageAnswerSchema>;
+
+/** Wire response fragment under answers.intake. */
+export const IntakeTriageSystemOneResponseSchema = z
+  .object({
+    answers: z
+      .object({
+        intake: IntakeTriageAnswerSchema,
+      })
+      .passthrough(),
+  })
+  .passthrough();

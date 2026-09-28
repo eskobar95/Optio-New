@@ -74,6 +74,7 @@ describe("GitHub and Slack intake", () => {
     linearDefaultRepoId?: string;
     linearComment?: (issueId: string) => Promise<void>;
     failEnqueue?: boolean;
+    intakeTriage?: Parameters<typeof createIntakeServer>[0]["intakeTriage"];
   }) {
     const added: FlowJob[] = [];
     const server = createIntakeServer({
@@ -85,6 +86,7 @@ describe("GitHub and Slack intake", () => {
       linearApiKey: extra?.linearApiKey,
       linearDefaultRepoId: extra?.linearDefaultRepoId,
       linearComment: extra?.linearComment,
+      intakeTriage: extra?.intakeTriage,
       enqueuer: {
         async add(flow) {
           if (extra?.failEnqueue) throw new Error("Job lin-ENG-12__plan already exists");
@@ -321,6 +323,57 @@ describe("GitHub and Slack intake", () => {
     expect(workflowDefault.status).toBe(202);
     expect(await workflowDefault.json()).toMatchObject({ repoId: "workplace" });
     expect(added).toHaveLength(1);
+  });
+
+  it("skips enqueue and queued when intake triage rejects", async () => {
+    const comments: string[] = [];
+    const { added, server } = start({
+      linearWebhookSecret: LINEAR_SECRET,
+      linearDefaultRepoId: "findjobabroad",
+      linearComment: async (issueId) => {
+        comments.push(issueId);
+      },
+      intakeTriage: async () => ({
+        action: "reject",
+        source: "intake_triage",
+        label: "reject",
+        confidence: 0.95,
+        notes: "spam",
+      }),
+    });
+    const base = await listen(server);
+    const now = Date.now();
+    const payload = JSON.stringify({
+      action: "update",
+      type: "Issue",
+      url: "https://linear.app/findjobabroad/issue/ENG-99/spam",
+      webhookTimestamp: now,
+      data: {
+        id: LINEAR_ISSUE_ID,
+        identifier: "ENG-99",
+        title: "Spam",
+        description: "noise",
+      },
+      updatedFrom: { stateId: "previous-state" },
+    });
+    const raw = Buffer.from(payload);
+    const response = await fetch(`${base}/webhooks/linear`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "linear-signature": signLinearBody(LINEAR_SECRET, raw),
+      },
+      body: raw,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      accepted: false,
+      reason: "intake_triage",
+      action: "reject",
+      label: "reject",
+    });
+    expect(added).toHaveLength(0);
+    expect(comments).toEqual([]);
   });
 
   it("enqueues an ENG status change and comments queued", async () => {

@@ -25,6 +25,12 @@ import { SLACK_WEBHOOK_PATH, handleSlackWebhook } from "./adapters/slack.js";
 import type { IntakeAdapterResult } from "./adapters/shared.js";
 import { commentQueuedOnIssue } from "../linear/comment.js";
 import { enforceObservedLinearStatus } from "../linear/observe.js";
+import { createJevClient } from "../../../gateway/jev-router/jev-client.js";
+import {
+  evaluateIntakeTriageWithGate,
+  type IntakeTriageDecision,
+  type IntakeTriageLogFn,
+} from "../jev/intake-triage-gate.js";
 import { redactSecrets } from "./redact.js";
 import {
   authorizeIntakeWebhook,
@@ -117,6 +123,20 @@ export interface IntakeServerOptions {
   linearComment?: (issueId: string) => Promise<void>;
   /** GraphQL fetch for the Linear comment. Defaults to global fetch. */
   linearFetch?: typeof fetch;
+  /**
+   * ENG-25 gate #5 — Jev intake triage on Linear enqueue path.
+   * Omitted → createJevClient from env (soft timeout → enqueue / Phase 1 `queued`).
+   * Inject a stub in tests.
+   */
+  intakeTriage?: (input: {
+    taskId: string;
+    title: string;
+    description: string;
+    source: string;
+    linearToStatus?: string;
+  }) => Promise<IntakeTriageDecision>;
+  /** Optional log sink for intake triage decisions (defaults to console.log JSON). */
+  onIntakeTriageLog?: IntakeTriageLogFn;
   /** When set, GET/POST /approvals reads and decides human gates. Omitted means 404. */
   approvals?: {
     list(taskId: string, sessionId: string): Promise<unknown>;
@@ -284,11 +304,103 @@ async function deliverLinearQueuedComment(
   await commentQueuedOnIssue({ apiKey, issueId, fetchImpl: options.linearFetch });
 }
 
+async function runIntakeTriage(
+  result: Extract<IntakeAdapterResult, { action: "enqueue" }>,
+  options: IntakeServerOptions,
+): Promise<IntakeTriageDecision> {
+  if (options.intakeTriage) {
+    return options.intakeTriage({
+      taskId: result.intake.taskId,
+      title: result.intake.title,
+      description: result.intake.description,
+      source: result.intake.source,
+      ...(result.linearToStatus ? { linearToStatus: result.linearToStatus } : {}),
+    });
+  }
+
+  const onLog: IntakeTriageLogFn =
+    options.onIntakeTriageLog ??
+    ((entry) => {
+      console.log(JSON.stringify({ msg: "intake triage", ...entry }));
+    });
+
+  // No API key → soft passthrough (Phase 1 enqueue + `queued`). Avoids cold HTTP in tests/dev.
+  const apiKey = process.env.OPTIO_NEW_JEV_API_KEY?.trim() || process.env.JEV_API_KEY?.trim() || "";
+  if (!apiKey) {
+    const decision: IntakeTriageDecision = {
+      action: "enqueue",
+      source: "passthrough",
+      reason: "undecided",
+      message: "jev_unconfigured",
+    };
+    onLog({
+      task_id: result.intake.taskId,
+      outcome: "passthrough",
+      reason: "undecided",
+      message: "jev_unconfigured",
+    });
+    return decision;
+  }
+
+  const client = createJevClient({ env: process.env });
+  return evaluateIntakeTriageWithGate({
+    client,
+    state: {
+      task_id: result.intake.taskId,
+      issue_title: result.intake.title,
+      issue_body: result.intake.description,
+      source: result.intake.source,
+      ...(result.linearToStatus ? { to_status: result.linearToStatus } : {}),
+    },
+    onLog,
+  });
+}
+
 async function enqueueAdapter(
   result: Extract<IntakeAdapterResult, { action: "enqueue" }>,
   res: ServerResponse,
   options: IntakeServerOptions,
 ): Promise<void> {
+  // Gate #5 only on Linear status-change intake. Soft fail-open → enqueue.
+  if (result.intake.source === "linear" && result.linearIssueId) {
+    let triage: IntakeTriageDecision;
+    try {
+      triage = await runIntakeTriage(result, options);
+    } catch (error) {
+      // Soft seam: hard timeout must not block Phase 1 — passthrough to enqueue.
+      console.log(
+        JSON.stringify({
+          msg: "intake triage",
+          task_id: result.intake.taskId,
+          outcome: "passthrough",
+          reason: "timeout",
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      triage = {
+        action: "enqueue",
+        source: "passthrough",
+        reason: "timeout",
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+    if (triage.action !== "enqueue") {
+      sendJson(res, 200, {
+        accepted: false,
+        reason: "intake_triage",
+        action: triage.action,
+        source: triage.source,
+        ...(triage.action === "escalate"
+          ? { label: "needs_human", confidence: triage.confidence }
+          : { label: triage.label, confidence: triage.confidence }),
+        ...(triage.notes !== undefined ? { notes: triage.notes } : {}),
+        taskId: result.intake.taskId,
+        repoId: result.intake.repoId,
+      });
+      return;
+    }
+  }
+
   let taskId = result.intake.taskId;
   let sessionId = result.intake.taskId;
   try {

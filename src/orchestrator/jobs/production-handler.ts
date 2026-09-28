@@ -91,6 +91,11 @@ import {
 } from "./run-stage.js";
 import { logStageEvent } from "./stage-log.js";
 import { attachStepUsage, type StageStepResult, type StageStepUsage } from "./stage-result.js";
+import { createJevClient } from "../../../gateway/jev-router/jev-client.js";
+import {
+  evaluateReviewPrescreenWithGate,
+  type ReviewPrescreenDecision,
+} from "../jev/review-prescreen-gate.js";
 
 export class StageCredentialsError extends Error {
   readonly error_class = "missing_credentials";
@@ -132,6 +137,17 @@ export interface ProductionStageOptions {
    * Omitted loads `OPTIO_NEW_REPOS` from `env`.
    */
   catalog?: RepoCatalog;
+  /**
+   * ENG-25 gate #4 — Jev review pre-screen before Hannes.
+   * Omitted → createJevClient from env (soft timeout → forward all paths).
+   * Inject a stub in tests.
+   */
+  reviewPrescreen?: (input: {
+    taskId: string;
+    diffPaths: readonly string[];
+    title?: string;
+    description?: string;
+  }) => Promise<ReviewPrescreenDecision>;
 }
 
 const E2E_TASK = /^e2e-[A-Za-z0-9._-]+$/;
@@ -260,11 +276,58 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     throw error;
   }
 
+  async function runReviewPrescreen(
+    ctx: StageStepContext,
+    diffPaths: readonly string[],
+  ): Promise<ReviewPrescreenDecision> {
+    if (options.reviewPrescreen) {
+      return options.reviewPrescreen({
+        taskId: ctx.taskId,
+        diffPaths,
+        title: ctx.title,
+        description: ctx.description,
+      });
+    }
+    const apiKey = env.OPTIO_NEW_JEV_API_KEY?.trim() || env.JEV_API_KEY?.trim() || "";
+    if (!apiKey) {
+      const decision: ReviewPrescreenDecision = {
+        action: "forward",
+        source: "passthrough",
+        reason: "undecided",
+        paths: [...diffPaths],
+        message: "jev_unconfigured",
+      };
+      logStageEvent({
+        msg: "review pre-screen",
+        taskId: ctx.taskId,
+        outcome: "passthrough",
+        reason: "undecided",
+        message: "jev_unconfigured",
+      });
+      return decision;
+    }
+    const client = createJevClient({ env, fetchImpl });
+    return evaluateReviewPrescreenWithGate({
+      client,
+      state: {
+        task_id: ctx.taskId,
+        step_id: "dispatch_review",
+        diff_paths: [...diffPaths],
+        ...(ctx.title?.trim() ? { issue_title: ctx.title.trim() } : {}),
+        ...(ctx.description?.trim() ? { issue_body: ctx.description.trim().slice(0, 4000) } : {}),
+      },
+      onLog: (entry) => {
+        logStageEvent({ msg: "review pre-screen", taskId: ctx.taskId, ...entry });
+      },
+    });
+  }
+
   async function runReviewDispatch(
     ctx: StageStepContext,
     handle: WorktreeHandle,
     sha: string,
     specialists: readonly string[],
+    focusPaths: readonly string[] = [],
   ): Promise<CodingAgentOutput> {
     const backend = resolveCodingBackend({
       defaultBackend: env.OPTIO_NEW_CODING_BACKEND?.trim() || "cursor",
@@ -275,7 +338,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
     const agent = options.codingAgent ?? createCodingAgent(backend, { env });
     const output = await agent.run({
       worktree_path: handle.path,
-      prompt: reviewDispatchPrompt(ctx, sha, specialists),
+      prompt: reviewDispatchPrompt(ctx, sha, specialists, focusPaths),
       instructions:
         "Review only. Read .cursor/skills/code-review/SKILL.md and review Standards, Spec, and Slop. Do not edit files, push, undraft, request reviewers, or merge.",
       allowed_tools: ["read"],
@@ -948,9 +1011,25 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
           ["diff", "--name-only", `${stored.base}...HEAD`],
           [github.token],
         );
-        const specialists = reviewSpecialistsForPaths(diffNames.split("\n"));
+        const allPaths = diffNames
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+        const prescreen = await runReviewPrescreen(ctx, allPaths);
+        if (prescreen.action === "escalate") {
+          logStageEvent({
+            msg: "review pre-screen escalate; skipping Hannes",
+            taskId: ctx.taskId,
+            sha,
+            confidence: prescreen.confidence,
+            notes: prescreen.notes,
+          });
+          return;
+        }
+        const reviewPaths = prescreen.paths.length > 0 ? prescreen.paths : allPaths;
+        const specialists = reviewSpecialistsForPaths(reviewPaths);
         const reviewers = readReviewGithubLogins(env);
-        const output = await runReviewDispatch(ctx, handle, sha, specialists);
+        const output = await runReviewDispatch(ctx, handle, sha, specialists, reviewPaths);
         const text = reviewDispatchText(output);
         await mapGithub(() =>
           commentOnGithubPullRequest({
@@ -1340,6 +1419,7 @@ function reviewDispatchPrompt(
   ctx: StageStepContext,
   sha: string,
   specialists: readonly string[],
+  focusPaths: readonly string[] = [],
 ): string {
   const lines = [
     `Task ${ctx.taskId}.`,
@@ -1357,6 +1437,11 @@ function reviewDispatchPrompt(
     "Slop: none, or the filler to remove",
     "Expected: the fix, one or two lines",
   ];
+  if (focusPaths.length > 0) {
+    lines.push(
+      `Jev review pre-screen focus paths (prioritize these): ${focusPaths.slice(0, 80).join(", ")}.`,
+    );
+  }
   if (specialists.length > 0) {
     lines.push(
       `This diff also needs these specialists: ${specialists.join(", ")}. Read each specialist instructions.md and apply it only where the diff matches that responsibility.`,
