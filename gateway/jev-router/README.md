@@ -4,6 +4,8 @@ Swappable Hop 2 `JevRouter` plugins (SPEC §14.3–§14.6). CodingAgent adapters
 
 Hop 1 (which CodingAgent backend) is served by the kit-harness sidecar, not this folder. See `docs/kit-harness.md`.
 
+**Soft Jev gates (ENG-25):** ordered cascade / plan / skill-pick / review / intake contracts live in `gates/` with shared `createJevClient` (`jev-1.13.0`, timeout → passthrough). Documented in [docs/jev-gates.md](../../docs/jev-gates.md). Only gate #1 (`backend_cascade`) is implemented in this slice; Hop-2 plugins above stay fail-closed and unchanged.
+
 ```ts
 interface JevRouter {
   decide(state: RoutingState): Promise<RoutingDecision>;

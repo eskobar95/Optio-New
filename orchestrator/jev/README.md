@@ -11,4 +11,6 @@ Do **not** point at TypeSafe direct in v1. Swap via env when access reopens. Sha
 
 Hop 2 plugins (`jev`, `poorjev`, `laya`, `rules`) live in `gateway/jev-router/`. `jev` and `laya` POST `{base}/v1/systemone`. Select one with `OPTIO_NEW_JEV_ROUTER`.
 
+Gate sequence (cascade → plan → skill pick → review pre-screen → intake): [docs/jev-gates.md](../../docs/jev-gates.md). Shared client: `gateway/jev-router/jev-client.ts` (`createJevClient`, pin `jev-1.13.0`).
+
 See `docs/SPEC.md` §9 and §14.3.
