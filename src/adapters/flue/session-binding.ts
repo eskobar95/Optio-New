@@ -15,9 +15,12 @@ export type FlueBindingStage = string;
 /** Soft cap so accumulated review feedback cannot unbounded-bloat dispatch instructions. */
 export const FLUE_FEEDBACK_MAX_ITEMS = 20;
 
-/** Structured review feedback accumulated on the implement binding. */
+/** Who appended feedback onto the durable implement binding. */
+export type FlueFeedbackSource = "review" | "gate_retry" | "gate_send_back";
+
+/** Structured feedback accumulated on the implement binding (review + workflow gates). */
 export interface FlueReviewFeedbackItem {
-  source: "review";
+  source: FlueFeedbackSource;
   summary: string;
   mustFix: string[];
   verdict?: string;
@@ -108,7 +111,7 @@ export function capFeedback(
 
 function cloneFeedback(item: FlueReviewFeedbackItem): FlueReviewFeedbackItem {
   return {
-    source: "review",
+    source: item.source,
     summary: item.summary,
     mustFix: [...item.mustFix],
     ...(item.verdict !== undefined ? { verdict: item.verdict } : {}),

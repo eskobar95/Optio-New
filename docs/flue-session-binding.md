@@ -33,7 +33,7 @@ Types/store: `src/adapters/flue/session-binding.ts` (`FlueSessionBindingStore`, 
 
 ## Review feedback → implement session
 
-Structured payload (`source: "review"`, `summary`, `mustFix[]`, optional `verdict` / `files` / `at`) is appended via `appendReviewFeedback` onto the implement binding (capped at `FLUE_FEEDBACK_MAX_ITEMS`).
+Structured payload (`source: "review" | "gate_retry" | "gate_send_back"`, `summary`, `mustFix[]`, optional `verdict` / `files` / `at`) is appended via `appendReviewFeedback` onto the implement binding (capped at `FLUE_FEEDBACK_MAX_ITEMS`). Gate sources are used by ENG-34 approval send_back / retry so review and gate context stay distinguishable.
 
 On the next implement `dispatch`, `formatAccumulatedFeedback` is merged into `instructions` so retry re-enters Flue with **accumulated context**, not a new task. After a **successful** `start`, feedback is cleared (`clearReviewFeedback`) so the next review cycle starts fresh. No new Flue HTTP endpoint in this stub.
 
