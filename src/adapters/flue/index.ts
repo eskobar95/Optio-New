@@ -29,23 +29,39 @@ function usageFromEvents(events: FlueUsageEvent[], modelId?: string): CodingAgen
   let output_tokens = 0;
   let cached_tokens = 0;
   let cost_usd = 0;
+  let sawInput = false;
+  let sawOutput = false;
+  let sawCached = false;
+  let sawCost = false;
   let provider = "flue";
   let lastModel = modelId;
 
   for (const event of events) {
-    if (event.inputTokens != null) input_tokens += event.inputTokens;
-    if (event.outputTokens != null) output_tokens += event.outputTokens;
-    if (event.cachedTokens != null) cached_tokens += event.cachedTokens;
-    if (event.costUsd != null) cost_usd += event.costUsd;
+    if (event.inputTokens != null) {
+      sawInput = true;
+      input_tokens += event.inputTokens;
+    }
+    if (event.outputTokens != null) {
+      sawOutput = true;
+      output_tokens += event.outputTokens;
+    }
+    if (event.cachedTokens != null) {
+      sawCached = true;
+      cached_tokens += event.cachedTokens;
+    }
+    if (event.costUsd != null) {
+      sawCost = true;
+      cost_usd += event.costUsd;
+    }
     if (event.provider) provider = event.provider;
     if (event.modelId) lastModel = event.modelId;
   }
 
   const usage: CodingAgentUsage = { provider };
-  if (input_tokens > 0) usage.input_tokens = input_tokens;
-  if (output_tokens > 0) usage.output_tokens = output_tokens;
-  if (cached_tokens > 0) usage.cached_tokens = cached_tokens;
-  if (cost_usd > 0) usage.cost_usd = cost_usd;
+  if (sawInput) usage.input_tokens = input_tokens;
+  if (sawOutput) usage.output_tokens = output_tokens;
+  if (sawCached) usage.cached_tokens = cached_tokens;
+  if (sawCost) usage.cost_usd = cost_usd;
   if (lastModel) usage.model_id = lastModel;
   return usage;
 }
@@ -66,6 +82,13 @@ function toDispatchBody(input: CodingAgentInput) {
   };
 }
 
+function mergeLogs(logs: string | undefined, prUrl: string | undefined): string | undefined {
+  const parts = [logs?.trim(), prUrl ? `prUrl=${prUrl}` : undefined].filter(
+    (part): part is string => Boolean(part && part.length > 0),
+  );
+  return parts.length > 0 ? parts.join("\n") : undefined;
+}
+
 export function createFlueAdapter(deps: FlueAdapterDeps = {}): CodingAgent {
   const env = deps.env ?? process.env;
   const flueOpts = deps.flue ?? {};
@@ -75,6 +98,7 @@ export function createFlueAdapter(deps: FlueAdapterDeps = {}): CodingAgent {
       baseUrl: flueOpts.baseUrl ?? resolveFlueBaseUrl(env),
       fetchImpl: flueOpts.fetchImpl,
       maxAttempts: flueOpts.maxAttempts,
+      timeoutMs: flueOpts.timeoutMs,
     });
 
   return {
@@ -85,23 +109,15 @@ export function createFlueAdapter(deps: FlueAdapterDeps = {}): CodingAgent {
           taskId: input.metadata.task_id,
         });
         const usage = usageFromEvents(start.usageEvents, input.metadata.model_id);
-        if (start.status === "failed") {
-          return {
-            branch: start.branch,
-            pr_ready: Boolean(start.prUrl),
-            logs: start.logs,
-            usage,
-            status: "failed",
-            error_class: start.errorClass ?? "flue_run_failed",
-          };
-        }
+        const logs = mergeLogs(start.logs, start.prUrl);
+        const succeeded = start.status === "succeeded";
         return {
           branch: start.branch,
-          pr_ready: Boolean(start.prUrl),
-          logs: start.logs,
+          pr_ready: succeeded && Boolean(start.prUrl),
+          logs,
           usage,
-          status: "succeeded",
-          ...(start.prUrl ? { diff_summary: `pr: ${start.prUrl}` } : {}),
+          status: succeeded ? "succeeded" : "failed",
+          ...(succeeded ? {} : { error_class: start.errorClass ?? "flue_run_failed" }),
         };
       } catch (error) {
         const flueError = error instanceof FlueHttpError ? error : undefined;

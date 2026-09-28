@@ -53,7 +53,7 @@ Implement session is durable (`flue.sessions.durable_conversation_id`). Review i
 
 ## Failure / re-dispatch
 
-A Flue crash must not take Optio down. The Optio CodingAgent client retries **dispatch+start** up to **3** attempts on network failure, timeout, or HTTP 5xx. HTTP 4xx fails closed without retry.
+A Flue crash must not take Optio down. The Optio CodingAgent client retries up to **3** attempts on network failure, timeout (`AbortSignal`, default 60s), or HTTP 5xx. After a successful `dispatch`, retries hit **`start` only** (same session) to avoid orphan sessions. HTTP 4xx fails closed without retry.
 
 ## Non-goals
 

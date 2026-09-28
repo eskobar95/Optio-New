@@ -17,10 +17,6 @@ import {
 
 const BODY_LIMIT_BYTES = 65_536;
 
-export interface FlueServerOptions {
-  env?: NodeJS.ProcessEnv;
-}
-
 export function resolveFlueListen(env: NodeJS.ProcessEnv = process.env): {
   host: string;
   port: number;
@@ -80,7 +76,7 @@ type SessionRecord = {
   workspaceRef: string;
 };
 
-export function createFlueServer(_options: FlueServerOptions = {}): Server {
+export function createFlueServer(): Server {
   const sessions = new Map<string, SessionRecord>();
 
   return createServer((req, res) => {
@@ -145,10 +141,10 @@ async function handle(
       sendJson(res, 400, { error: "invalid_request", issues: body.error.issues });
       return;
     }
-    const durableConversationId =
-      body.data.durableConversationId?.trim() || `flue-conv-${randomUUID()}`;
+    const resumeId = body.data.durableConversationId?.trim();
+    const durableConversationId = resumeId || `flue-conv-${randomUUID()}`;
     const sessionId = randomUUID();
-    const status = body.data.durableConversationId ? ("resumed" as const) : ("accepted" as const);
+    const status = resumeId ? ("resumed" as const) : ("accepted" as const);
     sessions.set(sessionId, {
       sessionId,
       durableConversationId,

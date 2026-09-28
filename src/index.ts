@@ -374,6 +374,7 @@ export { createFlueAdapter, flueAdapter, type FlueAdapterDeps } from "./adapters
 export {
   DEFAULT_FLUE_BASE_URL,
   DEFAULT_FLUE_MAX_ATTEMPTS,
+  DEFAULT_FLUE_TIMEOUT_MS,
   FlueHttpError,
   createFlueClient,
   resolveFlueBaseUrl,

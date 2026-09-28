@@ -90,4 +90,30 @@ describe("flue stub HTTP", () => {
       expect(start.status).toBe(404);
     });
   });
+
+  it("treats whitespace-only durableConversationId as accepted not resumed", async () => {
+    await withServer(async (base) => {
+      const dispatch = await fetch(`${base}/dispatch`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          taskId: "t-ws",
+          worktreeId: "wt-1",
+          workflowId: "default-task",
+          stepId: "implementation",
+          agentId: "agents/implementation",
+          workspaceRef: "/tmp/wt",
+          prompt: "stub",
+          durableConversationId: "   ",
+        }),
+      });
+      expect(dispatch.status).toBe(200);
+      const body = (await dispatch.json()) as {
+        status: string;
+        durableConversationId: string;
+      };
+      expect(body.status).toBe("accepted");
+      expect(body.durableConversationId).toMatch(/^flue-conv-/);
+    });
+  });
 });

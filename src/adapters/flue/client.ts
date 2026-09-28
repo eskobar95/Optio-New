@@ -17,14 +17,18 @@ import {
 
 export const DEFAULT_FLUE_BASE_URL = "http://127.0.0.1:3220";
 export const DEFAULT_FLUE_MAX_ATTEMPTS = 3;
+/** Per-request wall clock. Abort → retryable `flue_timeout`. */
+export const DEFAULT_FLUE_TIMEOUT_MS = 60_000;
 
 export type FlueFetch = typeof fetch;
 
 export interface FlueClientOptions {
   baseUrl?: string;
   fetchImpl?: FlueFetch;
-  /** Max attempts for re-dispatch on network / 5xx. Default 3. */
+  /** Max attempts for dispatch/start on network / timeout / 5xx. Default 3. */
   maxAttempts?: number;
+  /** AbortSignal.timeout budget per HTTP call. Default 60s. */
+  timeoutMs?: number;
 }
 
 export class FlueHttpError extends Error {
@@ -49,12 +53,35 @@ export function resolveFlueBaseUrl(env: NodeJS.ProcessEnv = process.env): string
   return fromEnv && fromEnv.length > 0 ? fromEnv.replace(/\/$/, "") : DEFAULT_FLUE_BASE_URL;
 }
 
+function isAbortError(cause: unknown): boolean {
+  if (!cause || typeof cause !== "object") return false;
+  const name = "name" in cause ? String(cause.name) : "";
+  return name === "AbortError" || name === "TimeoutError";
+}
+
+function networkError(message: string, cause: unknown): FlueHttpError {
+  if (isAbortError(cause)) {
+    return new FlueHttpError(message, {
+      retryable: true,
+      errorClass: "flue_timeout",
+      cause,
+    });
+  }
+  return new FlueHttpError(message, {
+    retryable: true,
+    errorClass: "flue_network_error",
+    cause,
+  });
+}
+
 export interface FlueClient {
   health(): Promise<FlueHealthResponse>;
   dispatch(body: FlueDispatchRequest): Promise<FlueDispatchResponse>;
   start(body: FlueStartRequest): Promise<FlueStartResponse>;
   /**
-   * Dispatch then start. On network / timeout / 5xx, re-dispatches up to maxAttempts.
+   * Dispatch then start. On network / timeout / 5xx:
+   * - if a session is already bound, retry `start` only (no orphan re-dispatch)
+   * - otherwise retry `dispatch`
    * 4xx fails closed without retry.
    */
   dispatchAndStart(
@@ -67,21 +94,25 @@ export function createFlueClient(options: FlueClientOptions = {}): FlueClient {
   const baseUrl = (options.baseUrl ?? DEFAULT_FLUE_BASE_URL).replace(/\/$/, "");
   const fetchImpl = options.fetchImpl ?? fetch;
   const maxAttempts = Math.max(1, options.maxAttempts ?? DEFAULT_FLUE_MAX_ATTEMPTS);
+  const timeoutMs = Math.max(1, options.timeoutMs ?? DEFAULT_FLUE_TIMEOUT_MS);
 
-  async function postJson<T>(path: string, body: unknown, parse: (raw: unknown) => T): Promise<T> {
+  async function request(
+    path: string,
+    init: { method: "GET" | "POST"; body?: unknown },
+  ): Promise<{ status: number; json: unknown }> {
     let response: Response;
     try {
       response = await fetchImpl(`${baseUrl}${path}`, {
-        method: "POST",
-        headers: { "content-type": "application/json; charset=utf-8", accept: "application/json" },
-        body: JSON.stringify(body),
+        method: init.method,
+        headers: {
+          accept: "application/json",
+          ...(init.body !== undefined ? { "content-type": "application/json; charset=utf-8" } : {}),
+        },
+        body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (cause) {
-      throw new FlueHttpError("flue request failed", {
-        retryable: true,
-        errorClass: "flue_network_error",
-        cause,
-      });
+      throw networkError(`flue ${path} request failed`, cause);
     }
 
     const text = await response.text();
@@ -108,11 +139,16 @@ export function createFlueClient(options: FlueClientOptions = {}): FlueClient {
       });
     }
 
+    return { status: response.status, json };
+  }
+
+  async function postJson<T>(path: string, body: unknown, parse: (raw: unknown) => T): Promise<T> {
+    const { status, json } = await request(path, { method: "POST", body });
     try {
       return parse(json);
     } catch (cause) {
       throw new FlueHttpError("flue response failed schema validation", {
-        statusCode: response.status,
+        statusCode: status,
         retryable: false,
         errorClass: "flue_schema_error",
         cause,
@@ -120,61 +156,59 @@ export function createFlueClient(options: FlueClientOptions = {}): FlueClient {
     }
   }
 
-  return {
-    async health(): Promise<FlueHealthResponse> {
-      let response: Response;
-      try {
-        response = await fetchImpl(`${baseUrl}/health`, {
-          method: "GET",
-          headers: { accept: "application/json" },
-        });
-      } catch (cause) {
-        throw new FlueHttpError("flue health failed", {
-          retryable: true,
-          errorClass: "flue_network_error",
-          cause,
-        });
-      }
-      const json = (await response.json()) as unknown;
-      if (!response.ok) {
-        throw new FlueHttpError(`flue /health returned ${response.status}`, {
-          statusCode: response.status,
-          retryable: response.status >= 500,
-          errorClass: "flue_server_error",
-        });
-      }
+  async function dispatch(body: FlueDispatchRequest): Promise<FlueDispatchResponse> {
+    const requestBody = FlueDispatchRequestSchema.parse(body);
+    return postJson("/dispatch", requestBody, (raw) => FlueDispatchResponseSchema.parse(raw));
+  }
+
+  async function start(body: FlueStartRequest): Promise<FlueStartResponse> {
+    const requestBody = FlueStartRequestSchema.parse(body);
+    return postJson("/start", requestBody, (raw) => FlueStartResponseSchema.parse(raw));
+  }
+
+  async function health(): Promise<FlueHealthResponse> {
+    const { status, json } = await request("/health", { method: "GET" });
+    try {
       return FlueHealthResponseSchema.parse(json);
-    },
+    } catch (cause) {
+      throw new FlueHttpError("flue /health failed schema validation", {
+        statusCode: status,
+        retryable: false,
+        errorClass: "flue_schema_error",
+        cause,
+      });
+    }
+  }
 
-    async dispatch(body: FlueDispatchRequest): Promise<FlueDispatchResponse> {
-      const request = FlueDispatchRequestSchema.parse(body);
-      return postJson("/dispatch", request, (raw) => FlueDispatchResponseSchema.parse(raw));
-    },
+  async function dispatchAndStart(
+    dispatchBody: FlueDispatchRequest,
+    startExtras?: { taskId?: string },
+  ): Promise<{ dispatch: FlueDispatchResponse; start: FlueStartResponse }> {
+    let bound: FlueDispatchResponse | undefined;
+    let lastError: FlueHttpError | undefined;
 
-    async start(body: FlueStartRequest): Promise<FlueStartResponse> {
-      const request = FlueStartRequestSchema.parse(body);
-      return postJson("/start", request, (raw) => FlueStartResponseSchema.parse(raw));
-    },
-
-    async dispatchAndStart(dispatchBody, startExtras) {
-      let lastError: FlueHttpError | undefined;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          const dispatch = await this.dispatch(dispatchBody);
-          const start = await this.start({
-            sessionId: dispatch.sessionId,
-            durableConversationId: dispatch.durableConversationId,
-            taskId: startExtras?.taskId ?? dispatchBody.taskId,
-          });
-          return { dispatch, start };
-        } catch (error) {
-          if (!(error instanceof FlueHttpError) || !error.retryable || attempt >= maxAttempts) {
-            throw error;
-          }
-          lastError = error;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        if (!bound) {
+          bound = await dispatch(dispatchBody);
         }
+        const started = await start({
+          sessionId: bound.sessionId,
+          durableConversationId: bound.durableConversationId,
+          taskId: startExtras?.taskId ?? dispatchBody.taskId,
+        });
+        return { dispatch: bound, start: started };
+      } catch (error) {
+        if (!(error instanceof FlueHttpError) || !error.retryable || attempt >= maxAttempts) {
+          throw error;
+        }
+        lastError = error;
+        // Keep `bound` so the next attempt retries start only (avoids orphan sessions).
       }
-      throw lastError ?? new FlueHttpError("flue re-dispatch exhausted", { retryable: false });
-    },
-  };
+    }
+
+    throw lastError ?? new FlueHttpError("flue re-dispatch exhausted", { retryable: false });
+  }
+
+  return { health, dispatch, start, dispatchAndStart };
 }
