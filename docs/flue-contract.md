@@ -51,6 +51,8 @@ planner → builder specialists → TDD skill (default, Jev-waivable) → CI gre
 
 Implement session is durable (`flue.sessions.durable_conversation_id`). Review is a separate session that posts structured feedback to the implement session id. Jev routes minimal fix vs full re-run vs human.
 
+See also: [`flue-session-binding.md`](./flue-session-binding.md) (ENG-36) — Optio-side `taskId`→session binding store, resume vs accept, review-feedback accumulation, and the injectable Jev skill-pick port (stub only; ENG-25 owns the real client).
+
 ## Failure / re-dispatch
 
 A Flue crash must not take Optio down. The Optio CodingAgent client retries up to **3** attempts on network failure, timeout (`AbortSignal`, default 60s), or HTTP 5xx. After a successful `dispatch`, retries hit **`start` only** (same session) to avoid orphan sessions. HTTP 4xx fails closed without retry.

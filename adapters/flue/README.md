@@ -6,4 +6,4 @@ TypeScript source: `../../src/adapters/flue/`. HTTP contract: [`docs/flue-contra
 
 Pick it with `resolveCodingBackend({ stepCodingBackend: "flue" })`. Base URL: `FLUE_BASE_URL` (default `http://127.0.0.1:3220`). Compose: `--profile flue`.
 
-This PR ships a stub sidecar only. No real Flue loop, no ENG-21 cursor-agent I/O, no ENG-25 Jev gates.
+Stub sidecar + ENG-36 Optio-side session binding (resume same `durableConversationId`, review feedback accumulation, injectable Jev skill-pick port). No real Flue loop, no ENG-21 cursor-agent I/O, no ENG-25 Jev gates. See [`docs/flue-session-binding.md`](../../docs/flue-session-binding.md).
