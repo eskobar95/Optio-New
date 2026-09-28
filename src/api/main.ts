@@ -16,7 +16,7 @@ console.log(
 const shutdown = async (signal: string) => {
   console.log(JSON.stringify({ msg: "optio-api stopping", signal }));
   started.server.close();
-  await started.db.close();
+  if (started.ownsDb) await started.db.close();
   process.exit(0);
 };
 

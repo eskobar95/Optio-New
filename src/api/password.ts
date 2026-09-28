@@ -10,6 +10,12 @@ const SCRYPT_P = 1;
 const KEY_LEN = 64;
 const SALT_LEN = 16;
 
+/** Reject attacker-controlled cost params in stored hashes (DB DoS). */
+const MAX_N = 65_536;
+const MAX_R = 16;
+const MAX_P = 4;
+const MIN_N = 1_024;
+
 function scryptAsync(
   password: string,
   salt: Buffer,
@@ -49,6 +55,9 @@ export async function verifyPassword(password: string, encoded: string): Promise
   const r = Number(parts[2]);
   const p = Number(parts[3]);
   if (!Number.isInteger(n) || !Number.isInteger(r) || !Number.isInteger(p)) return false;
+  if (n < MIN_N || n > MAX_N || r < 1 || r > MAX_R || p < 1 || p > MAX_P) return false;
+  // scrypt N must be power of 2
+  if ((n & (n - 1)) !== 0) return false;
   let salt: Buffer;
   let expected: Buffer;
   try {
@@ -57,8 +66,16 @@ export async function verifyPassword(password: string, encoded: string): Promise
   } catch {
     return false;
   }
-  if (salt.length === 0 || expected.length === 0) return false;
+  if (salt.length === 0 || expected.length === 0 || expected.length > 128) return false;
   const derived = await scryptAsync(password, salt, expected.length, { N: n, r, p });
   if (derived.length !== expected.length) return false;
   return timingSafeEqual(derived, expected);
+}
+
+let dummyHashPromise: Promise<string> | undefined;
+
+/** Stable dummy hash for login timing equalization when the user row is missing. */
+export function getDummyPasswordHash(): Promise<string> {
+  dummyHashPromise ??= hashPassword("optio-timing-dummy-not-a-real-password");
+  return dummyHashPromise;
 }

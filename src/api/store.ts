@@ -77,7 +77,31 @@ export interface MembershipView extends MembershipRow {
   workspace: WorkspaceRow;
 }
 
+export interface RegisterBootstrapInput {
+  tenantName: string;
+  tenantSlug: string;
+  email: string;
+  passwordHash: string;
+  workspace?: {
+    name: string;
+    slug: string;
+    infisicalEnvSlug?: string;
+  };
+}
+
+export interface RegisterBootstrapResult {
+  tenant: TenantRow;
+  user: UserRow;
+  workspace?: WorkspaceRow;
+}
+
 export interface OptioApiStore {
+  /**
+   * Atomically create tenant + user (+ optional workspace/membership).
+   * Drizzle uses a DB transaction; memory rolls back on failure.
+   */
+  registerBootstrap(input: RegisterBootstrapInput): Promise<RegisterBootstrapResult>;
+
   createTenant(input: { name: string; slug: string }): Promise<TenantRow>;
   findTenantBySlug(slug: string): Promise<TenantRow | undefined>;
   findTenantById(id: string): Promise<TenantRow | undefined>;

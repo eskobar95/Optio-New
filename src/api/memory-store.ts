@@ -12,6 +12,8 @@ import {
   type MembershipRow,
   type MembershipView,
   type OptioApiStore,
+  type RegisterBootstrapInput,
+  type RegisterBootstrapResult,
   type SkillCatalogRow,
   type TenantRow,
   type UserRow,
@@ -33,6 +35,47 @@ export class MemoryOptioApiStore implements OptioApiStore {
 
   private membershipKey(userId: string, workspaceId: string): string {
     return `${userId}:${workspaceId}`;
+  }
+
+  async registerBootstrap(input: RegisterBootstrapInput): Promise<RegisterBootstrapResult> {
+    const tenant = await this.createTenant({ name: input.tenantName, slug: input.tenantSlug });
+    try {
+      const user = await this.createUser({
+        tenantId: tenant.id,
+        email: input.email,
+        passwordHash: input.passwordHash,
+      });
+      if (!input.workspace) {
+        return { tenant, user };
+      }
+      const workspace = await this.createWorkspace({
+        tenantId: tenant.id,
+        name: input.workspace.name,
+        slug: input.workspace.slug,
+        infisicalEnvSlug: input.workspace.infisicalEnvSlug ?? input.workspace.slug,
+      });
+      await this.upsertMembership({
+        userId: user.id,
+        workspaceId: workspace.id,
+        role: "owner",
+      });
+      return { tenant, user, workspace };
+    } catch (error) {
+      // Roll back partial writes so failed register leaves no orphan rows.
+      for (const [key, membership] of this.memberships) {
+        if (this.users.get(membership.userId)?.tenantId === tenant.id) {
+          this.memberships.delete(key);
+        }
+      }
+      for (const [id, workspace] of this.workspaces) {
+        if (workspace.tenantId === tenant.id) this.workspaces.delete(id);
+      }
+      for (const [id, user] of this.users) {
+        if (user.tenantId === tenant.id) this.users.delete(id);
+      }
+      this.tenants.delete(tenant.id);
+      throw error;
+    }
   }
 
   async createTenant(input: { name: string; slug: string }): Promise<TenantRow> {

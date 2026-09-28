@@ -76,12 +76,20 @@ describe("optio catalog API (ENG-23)", () => {
     expect(await verifyPassword("wrong", hash)).toBe(false);
   });
 
-  it("rejects plaintext secret keys in connection payloads", () => {
+  it("rejects plaintext secret keys and known secret values", () => {
     expect(() => assertNoPlaintextSecrets({ token: "ghp_x" })).toThrow(ApiHttpError);
     expect(() => assertNoPlaintextSecrets({ config: { apiKey: "x" } })).toThrow(ApiHttpError);
     expect(() =>
+      assertNoPlaintextSecrets({ config: { note: "ghp_abcdefghijklmnopqrstuvwxyz12" } }),
+    ).toThrow(ApiHttpError);
+    expect(() =>
       assertNoPlaintextSecrets({ config: { baseUrl: "https://api.github.com" } }),
     ).not.toThrow();
+  });
+
+  it("rejects scrypt hashes with uncapped cost params", async () => {
+    const hugeN = "scrypt$1048576$8$1$YWJjZGVmZ2hpams$YWJjZGVmZ2hpams";
+    expect(await verifyPassword("anything", hugeN)).toBe(false);
   });
 
   it("register → login → list/switch memberships → CRUD connections → list agents/skills", async () => {
@@ -123,8 +131,13 @@ describe("optio catalog API (ENG-23)", () => {
         }),
       });
       expect(login.status).toBe(200);
-      const loginBody = (await login.json()) as { token: string; memberships: unknown[] };
+      const loginBody = (await login.json()) as {
+        token: string;
+        memberships: unknown[];
+        activeWorkspaceId: string | null;
+      };
       expect(loginBody.memberships).toHaveLength(1);
+      expect(loginBody.activeWorkspaceId).toBe(workspace.id);
 
       const me = await fetch(`${base}/auth/me`, {
         headers: { authorization: `Bearer ${loginBody.token}` },
@@ -297,6 +310,112 @@ describe("optio catalog API (ENG-23)", () => {
     await withServer(store, async (base) => {
       const res = await fetch(`${base}/memberships`);
       expect(res.status).toBe(401);
+    });
+  });
+
+  it("rejects half-set workspace on register without writing orphans", async () => {
+    const store = new MemoryOptioApiStore();
+    await withServer(store, async (base) => {
+      const res = await fetch(`${base}/auth/register`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: "ops@example.com",
+          password: "correct-horse",
+          tenantName: "Acme",
+          tenantSlug: "acme",
+          workspaceName: "Only name",
+        }),
+      });
+      expect(res.status).toBe(400);
+      expect(store.tenants.size).toBe(0);
+      expect(store.users.size).toBe(0);
+    });
+  });
+
+  it("returns 404 for non-uuid workspace path and 403 for viewer connection writes", async () => {
+    const store = new MemoryOptioApiStore();
+    await withServer(store, async (base) => {
+      const created = await register(base, {
+        email: "owner@example.com",
+        tenantSlug: "acme-roles",
+      });
+      expect(created.status).toBe(201);
+      const workspace = created.body.workspace as { id: string };
+      const ownerToken = created.body.token as string;
+
+      const badUuid = await fetch(`${base}/workspaces/not-a-uuid/connections`, {
+        headers: { authorization: `Bearer ${ownerToken}` },
+      });
+      expect(badUuid.status).toBe(404);
+
+      const viewer = await store.createUser({
+        tenantId: (created.body.tenant as { id: string }).id,
+        email: "viewer@example.com",
+        passwordHash: await hashPassword("correct-horse"),
+      });
+      await store.upsertMembership({
+        userId: viewer.id,
+        workspaceId: workspace.id,
+        role: "viewer",
+      });
+      const viewerLogin = await fetch(`${base}/auth/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: "viewer@example.com",
+          password: "correct-horse",
+          tenantSlug: "acme-roles",
+        }),
+      });
+      const viewerBody = (await viewerLogin.json()) as { token: string };
+      const denied = await fetch(`${base}/workspaces/${workspace.id}/connections`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${viewerBody.token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          kind: "slack",
+          name: "ops",
+          infisicalSecretPath: "/workspaces/software-factory/slack",
+        }),
+      });
+      expect(denied.status).toBe(403);
+    });
+  });
+
+  it("login with multiple memberships leaves activeWorkspaceId null until switch", async () => {
+    const store = new MemoryOptioApiStore();
+    await withServer(store, async (base) => {
+      const created = await register(base, { tenantSlug: "multi-ws" });
+      const token = created.body.token as string;
+      const second = await fetch(`${base}/workspaces`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ name: "Marketing", slug: "marketing-factory" }),
+      });
+      expect(second.status).toBe(201);
+
+      const login = await fetch(`${base}/auth/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: "ops@example.com",
+          password: "correct-horse",
+          tenantSlug: "multi-ws",
+        }),
+      });
+      expect(login.status).toBe(200);
+      const body = (await login.json()) as {
+        activeWorkspaceId: string | null;
+        memberships: unknown[];
+      };
+      expect(body.memberships).toHaveLength(2);
+      expect(body.activeWorkspaceId).toBeNull();
     });
   });
 });

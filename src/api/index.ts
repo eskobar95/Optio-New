@@ -11,7 +11,7 @@ export {
 } from "./http.js";
 export { createDrizzleOptioApiStore } from "./drizzle-store.js";
 export { MemoryOptioApiStore } from "./memory-store.js";
-export { hashPassword, verifyPassword } from "./password.js";
+export { getDummyPasswordHash, hashPassword, verifyPassword } from "./password.js";
 export {
   mintSessionToken,
   resolveSessionSecret,

@@ -22,6 +22,8 @@ import {
   type MembershipRow,
   type MembershipView,
   type OptioApiStore,
+  type RegisterBootstrapInput,
+  type RegisterBootstrapResult,
   type SkillCatalogRow,
   type TenantRow,
   type UserRow,
@@ -97,6 +99,55 @@ function mapConnection(row: typeof connections.$inferSelect): ConnectionRow {
 
 export function createDrizzleOptioApiStore(db: OptioDb): OptioApiStore {
   return {
+    async registerBootstrap(input: RegisterBootstrapInput): Promise<RegisterBootstrapResult> {
+      try {
+        return await db.transaction(async (tx) => {
+          const [tenantRow] = await tx
+            .insert(tenants)
+            .values({ name: input.tenantName, slug: input.tenantSlug })
+            .returning();
+          if (!tenantRow) throw new Error("tenant insert returned no row");
+          const [userRow] = await tx
+            .insert(users)
+            .values({
+              tenantId: tenantRow.id,
+              email: input.email.toLowerCase(),
+              passwordHash: input.passwordHash,
+            })
+            .returning();
+          if (!userRow) throw new Error("user insert returned no row");
+          if (!input.workspace) {
+            return { tenant: mapTenant(tenantRow), user: mapUser(userRow) };
+          }
+          const [workspaceRow] = await tx
+            .insert(workspaces)
+            .values({
+              tenantId: tenantRow.id,
+              name: input.workspace.name,
+              slug: input.workspace.slug,
+              infisicalEnvSlug: input.workspace.infisicalEnvSlug ?? input.workspace.slug,
+            })
+            .returning();
+          if (!workspaceRow) throw new Error("workspace insert returned no row");
+          await tx.insert(workspaceMemberships).values({
+            userId: userRow.id,
+            workspaceId: workspaceRow.id,
+            role: "owner",
+          });
+          return {
+            tenant: mapTenant(tenantRow),
+            user: mapUser(userRow),
+            workspace: mapWorkspace(workspaceRow),
+          };
+        });
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new StoreConflictError("tenant slug or user email already exists");
+        }
+        throw error;
+      }
+    },
+
     async createTenant(input) {
       try {
         const [row] = await db

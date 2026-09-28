@@ -7,7 +7,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { ZodError, z } from "zod";
 import { createDb, type OptioDb } from "../db/client.js";
 import { createDrizzleOptioApiStore } from "./drizzle-store.js";
-import { hashPassword, verifyPassword } from "./password.js";
+import { getDummyPasswordHash, hashPassword, verifyPassword } from "./password.js";
 import {
   mintSessionToken,
   resolveSessionSecret,
@@ -54,17 +54,40 @@ const FORBIDDEN_SECRET_KEYS = new Set([
   "webhook_secret",
 ]);
 
-const SlugSchema = z.string().min(1).max(64).regex(SLUG_RE, "slug must be lowercase kebab-case");
+/** Known secret value shapes — block even under innocuous keys. */
+const SECRET_VALUE_PATTERNS = [
+  /\bghp_[A-Za-z0-9_]{20,}\b/,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/i,
+  /\blin_api_[A-Za-z0-9_]{20,}\b/,
+  /\bsk-[A-Za-z0-9]{20,}\b/,
+  /\bBearer\s+[A-Za-z0-9._\-+/=]{20,}\b/i,
+];
 
-const RegisterSchema = z.object({
-  email: z.string().email().max(320),
-  password: z.string().min(8).max(200),
-  tenantName: z.string().min(1).max(200),
-  tenantSlug: SlugSchema,
-  workspaceName: z.string().min(1).max(200).optional(),
-  workspaceSlug: SlugSchema.optional(),
-  infisicalEnvSlug: z.string().min(1).max(128).optional(),
-});
+const SlugSchema = z.string().min(1).max(64).regex(SLUG_RE, "slug must be lowercase kebab-case");
+const UuidSchema = z.string().uuid();
+
+const RegisterSchema = z
+  .object({
+    email: z.string().email().max(320),
+    password: z.string().min(8).max(200),
+    tenantName: z.string().min(1).max(200),
+    tenantSlug: SlugSchema,
+    workspaceName: z.string().min(1).max(200).optional(),
+    workspaceSlug: SlugSchema.optional(),
+    infisicalEnvSlug: z.string().min(1).max(128).optional(),
+  })
+  .superRefine((body, ctx) => {
+    const hasName = body.workspaceName !== undefined;
+    const hasSlug = body.workspaceSlug !== undefined;
+    if (hasName !== hasSlug) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "workspaceName and workspaceSlug must both be set",
+        path: hasName ? ["workspaceSlug"] : ["workspaceName"],
+      });
+    }
+  });
 
 const LoginSchema = z.object({
   email: z.string().email().max(320),
@@ -174,12 +197,17 @@ export function createDrizzleOptioApiServer(
 
 export async function startOptioApiFromEnv(
   env: NodeJS.ProcessEnv = process.env,
-): Promise<{ server: Server; db: OptioDb; host: string; port: number }> {
-  const databaseUrl = env.OPTIO_NEW_DATABASE_URL?.trim();
-  if (!databaseUrl) {
-    throw new Error("OPTIO_NEW_DATABASE_URL is required for the catalog API");
+  options?: { db?: OptioDb },
+): Promise<{ server: Server; db: OptioDb; host: string; port: number; ownsDb: boolean }> {
+  const ownsDb = !options?.db;
+  let db = options?.db;
+  if (!db) {
+    const databaseUrl = env.OPTIO_NEW_DATABASE_URL?.trim();
+    if (!databaseUrl) {
+      throw new Error("OPTIO_NEW_DATABASE_URL is required for the catalog API");
+    }
+    db = createDb(databaseUrl);
   }
-  const db = createDb(databaseUrl);
   const { host, port } = resolveOptioApiListen(env);
   const server = createDrizzleOptioApiServer(db, {
     sessionSecret: resolveSessionSecret(env),
@@ -188,7 +216,7 @@ export async function startOptioApiFromEnv(
     server.once("error", reject);
     server.listen(port, host, () => resolve());
   });
-  return { server, db, host, port };
+  return { server, db, host, port, ownsDb };
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -208,6 +236,7 @@ async function readRawBody(req: IncomingMessage): Promise<Buffer> {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buf.length;
     if (size > MAX_BODY_BYTES) {
+      req.destroy();
       throw new ApiHttpError(413, {
         error: "payload_too_large",
         message: "Request body exceeds 64 KiB",
@@ -216,6 +245,26 @@ async function readRawBody(req: IncomingMessage): Promise<Buffer> {
     chunks.push(buf);
   }
   return Buffer.concat(chunks);
+}
+
+function parsePathUuid(raw: string, label: string): string {
+  const parsed = UuidSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new ApiHttpError(404, { error: "not_found", message: `${label} not found` });
+  }
+  return parsed.data;
+}
+
+function canCreateWorkspace(memberships: MembershipView[]): boolean {
+  // Bootstrap (no memberships yet) or owner/admin of any workspace in the tenant.
+  return (
+    memberships.length === 0 || memberships.some((m) => m.role === "owner" || m.role === "admin")
+  );
+}
+
+function resolveActiveWorkspaceId(memberships: MembershipView[]): string | undefined {
+  // Single membership → auto-select. Multiple → require explicit switch (no unordered pick).
+  return memberships.length === 1 ? memberships[0]!.workspaceId : undefined;
 }
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
@@ -296,9 +345,22 @@ function publicConnection(row: ConnectionRow) {
   };
 }
 
-/** Reject plaintext secret keys anywhere in a JSON object tree. */
+function looksLikeSecretValue(value: string): boolean {
+  return SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+/** Reject plaintext secret keys/values anywhere in a JSON object tree. */
 export function assertNoPlaintextSecrets(value: unknown, path = "body"): void {
   if (value === null || value === undefined) return;
+  if (typeof value === "string") {
+    if (looksLikeSecretValue(value)) {
+      throw new ApiHttpError(400, {
+        error: "plaintext_secret_rejected",
+        message: `Value at '${path}' looks like a plaintext secret — store it in Infisical and pass infisicalSecretPath only`,
+      });
+    }
+    return;
+  }
   if (Array.isArray(value)) {
     value.forEach((item, index) => assertNoPlaintextSecrets(item, `${path}[${index}]`));
     return;
@@ -364,46 +426,37 @@ async function handleOptioApiRequest(
 
   if (path === "/auth/register" && method === "POST") {
     const body = RegisterSchema.parse(await readJsonBody(req));
-    const tenant = await store.createTenant({ name: body.tenantName, slug: body.tenantSlug });
     const passwordHash = await hashPassword(body.password);
-    const user = await store.createUser({
-      tenantId: tenant.id,
+    const bootstrap = await store.registerBootstrap({
+      tenantName: body.tenantName,
+      tenantSlug: body.tenantSlug,
       email: body.email,
       passwordHash,
+      ...(body.workspaceName && body.workspaceSlug
+        ? {
+            workspace: {
+              name: body.workspaceName,
+              slug: body.workspaceSlug,
+              ...(body.infisicalEnvSlug ? { infisicalEnvSlug: body.infisicalEnvSlug } : {}),
+            },
+          }
+        : {}),
     });
-    let workspace: WorkspaceRow | undefined;
-    if (body.workspaceName && body.workspaceSlug) {
-      workspace = await store.createWorkspace({
-        tenantId: tenant.id,
-        name: body.workspaceName,
-        slug: body.workspaceSlug,
-        infisicalEnvSlug: body.infisicalEnvSlug ?? body.workspaceSlug,
-      });
-      await store.upsertMembership({
-        userId: user.id,
-        workspaceId: workspace.id,
-        role: "owner",
-      });
-    } else if (body.workspaceName || body.workspaceSlug) {
-      throw new ApiHttpError(400, {
-        error: "invalid_request",
-        message: "workspaceName and workspaceSlug must both be set",
-      });
-    }
-    const memberships = await store.listMemberships(user.id);
+    const memberships = await store.listMemberships(bootstrap.user.id);
+    const activeWorkspaceId = resolveActiveWorkspaceId(memberships);
     const token = mintSessionToken(
       {
-        userId: user.id,
-        tenantId: tenant.id,
-        ...(workspace ? { workspaceId: workspace.id } : {}),
+        userId: bootstrap.user.id,
+        tenantId: bootstrap.tenant.id,
+        ...(activeWorkspaceId ? { workspaceId: activeWorkspaceId } : {}),
       },
       secret,
     );
     sendJson(res, 201, {
       token,
-      user: publicUser(user),
-      tenant: publicTenant(tenant),
-      workspace: workspace ? publicWorkspace(workspace) : null,
+      user: publicUser(bootstrap.user),
+      tenant: publicTenant(bootstrap.tenant),
+      workspace: bootstrap.workspace ? publicWorkspace(bootstrap.workspace) : null,
       memberships: memberships.map(publicMembership),
     });
     return;
@@ -412,15 +465,17 @@ async function handleOptioApiRequest(
   if (path === "/auth/login" && method === "POST") {
     const body = LoginSchema.parse(await readJsonBody(req));
     const tenant = await store.findTenantBySlug(body.tenantSlug);
-    if (!tenant) {
-      throw new ApiHttpError(401, { error: "unauthorized", message: "Invalid credentials" });
-    }
-    const user = await store.findUserByTenantEmail(tenant.id, body.email);
-    if (!user || !(await verifyPassword(body.password, user.passwordHash))) {
+    const user = tenant ? await store.findUserByTenantEmail(tenant.id, body.email) : undefined;
+    // Always verify against a real scrypt hash to reduce timing oracles.
+    const passwordOk = await verifyPassword(
+      body.password,
+      user?.passwordHash ?? (await getDummyPasswordHash()),
+    );
+    if (!tenant || !user || !passwordOk) {
       throw new ApiHttpError(401, { error: "unauthorized", message: "Invalid credentials" });
     }
     const memberships = await store.listMemberships(user.id);
-    const activeWorkspaceId = memberships[0]?.workspaceId;
+    const activeWorkspaceId = resolveActiveWorkspaceId(memberships);
     const token = mintSessionToken(
       {
         userId: user.id,
@@ -487,6 +542,13 @@ async function handleOptioApiRequest(
 
   if (path === "/workspaces" && method === "POST") {
     const claims = requireAuth(req, secret);
+    const existingMemberships = await store.listMemberships(claims.userId);
+    if (!canCreateWorkspace(existingMemberships)) {
+      throw new ApiHttpError(403, {
+        error: "forbidden",
+        message: "Owner or admin role required to create a workspace",
+      });
+    }
     const body = CreateWorkspaceSchema.parse(await readJsonBody(req));
     const workspace = await store.createWorkspace({
       tenantId: claims.tenantId,
@@ -516,8 +578,10 @@ async function handleOptioApiRequest(
 
   const connectionsMatch = /^\/workspaces\/([^/]+)\/connections(?:\/([^/]+))?$/.exec(path);
   if (connectionsMatch) {
-    const workspaceId = connectionsMatch[1]!;
-    const connectionId = connectionsMatch[2];
+    const workspaceId = parsePathUuid(connectionsMatch[1]!, "Workspace");
+    const connectionId = connectionsMatch[2]
+      ? parsePathUuid(connectionsMatch[2], "Connection")
+      : undefined;
     const claims = requireAuth(req, secret);
     const { membership } = await requireWorkspaceAccess(store, claims, workspaceId);
 
@@ -599,7 +663,7 @@ async function handleOptioApiRequest(
 
   const agentsMatch = /^\/workspaces\/([^/]+)\/agents$/.exec(path);
   if (agentsMatch && method === "GET") {
-    const workspaceId = agentsMatch[1]!;
+    const workspaceId = parsePathUuid(agentsMatch[1]!, "Workspace");
     const claims = requireAuth(req, secret);
     await requireWorkspaceAccess(store, claims, workspaceId);
     const rows = await store.listAgents(workspaceId);
@@ -609,7 +673,7 @@ async function handleOptioApiRequest(
 
   const skillsMatch = /^\/workspaces\/([^/]+)\/skills$/.exec(path);
   if (skillsMatch && method === "GET") {
-    const workspaceId = skillsMatch[1]!;
+    const workspaceId = parsePathUuid(skillsMatch[1]!, "Workspace");
     const claims = requireAuth(req, secret);
     await requireWorkspaceAccess(store, claims, workspaceId);
     const rows = await store.listSkills(workspaceId);

@@ -7,7 +7,8 @@ Glass / OpenWebUI UI is **out of scope** here (wires later in KitCollective/work
 
 - **Email/password** (ENG-22 / ENG-24 Decisions). Magic link is not in this snit.
 - Passwords are hashed with Node `crypto.scrypt` (`scrypt$n$r$p$salt$hash`). No plaintext passwords in responses or logs.
-- Sessions are HMAC-signed bearer tokens (`OPTIO_NEW_API_SESSION_SECRET`, min 16 chars). No session table in the ENG-24 schema.
+- Sessions are HMAC-signed bearer tokens (`OPTIO_NEW_API_SESSION_SECRET`, min 16 chars). **No session table / revoke list in v0** — TTL is 7 days; rotate the session secret to invalidate all tokens.
+- Register creates tenant + user (+ optional workspace) in one DB transaction (memory store rolls back on failure).
 
 ## Routes
 
@@ -19,7 +20,7 @@ Glass / OpenWebUI UI is **out of scope** here (wires later in KitCollective/work
 | `GET`                  | `/auth/me`                                  | Bearer required                                                    |
 | `GET`                  | `/memberships`                              | List workspace memberships                                         |
 | `POST`                 | `/memberships/switch`                       | `{ workspaceId }` → new token with active workspace                |
-| `POST`                 | `/workspaces`                               | Create workspace under the session tenant                          |
+| `POST`                 | `/workspaces`                               | Create workspace (bootstrap or owner/admin)                        |
 | `GET`/`POST`           | `/workspaces/:id/connections`               | List / create (`github` \| `linear` \| `slack` \| `mcp`)           |
 | `GET`/`PATCH`/`DELETE` | `/workspaces/:id/connections/:connectionId` | CRUD one connection                                                |
 | `GET`                  | `/workspaces/:id/agents`                    | Read-only catalog from Drizzle                                     |
@@ -31,8 +32,10 @@ Connection bodies accept only:
 - non-secret `config` (urls, scopes, owner/repo, team keys, …)
 - `enabled`
 
-Any plaintext secret field (`token`, `apiKey`, `password`, …) → `400 plaintext_secret_rejected`.
+Any plaintext secret **key** (`token`, `apiKey`, `password`, …) or known secret **value** shape (`ghp_…`, `lin_api_…`, …) → `400 plaintext_secret_rejected`.
 Credentials live in **Infisical per workspace** (path ref in DB only).
+
+Active workspace: set automatically when the user has exactly one membership; with multiple memberships call `POST /memberships/switch`.
 
 ## Run
 
@@ -46,6 +49,8 @@ npm run optio-api
 ```
 
 Or with the orchestrator process when `OPTIO_NEW_API_ENABLED=1` (same env vars; listens on `OPTIO_NEW_API_HOST` / `OPTIO_NEW_API_PORT`, default `127.0.0.1:3210`).
+
+The API opens its **own Drizzle/`pg` pool** for the `optio` catalog schema. The orchestrator step-cursor pool (`openOrchestratorDatabase`) stays separate.
 
 Migrations must already be applied (`npm run db:migrate` / orchestrator boot runs `runDrizzleMigrations`).
 
@@ -63,3 +68,4 @@ npx vitest run tests/optio-api.test.ts
 - Agent / skill / workflow builders
 - Storing connector secrets in Postgres
 - Magic-link auth
+- Session revoke/rotation UI
