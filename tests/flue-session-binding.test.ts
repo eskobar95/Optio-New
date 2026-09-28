@@ -10,6 +10,7 @@ import {
   formatAccumulatedFeedback,
 } from "../src/adapters/flue/review-feedback.js";
 import {
+  FLUE_FEEDBACK_MAX_ITEMS,
   FLUE_IMPLEMENT_BINDING_STAGE,
   InMemoryFlueSessionBindingStore,
   flueBindingKey,
@@ -131,6 +132,21 @@ describe("review → implement feedback stub", () => {
     expect(pending?.durableConversationId).toBe("");
     expect(pending?.feedback).toHaveLength(1);
   });
+
+  it("caps feedback at FLUE_FEEDBACK_MAX_ITEMS", () => {
+    const store = new InMemoryFlueSessionBindingStore();
+    for (let i = 0; i < FLUE_FEEDBACK_MAX_ITEMS + 5; i++) {
+      appendReviewFeedback(store, "t-cap", {
+        source: "review",
+        summary: `note-${i}`,
+        mustFix: [`fix-${i}`],
+      });
+    }
+    const binding = store.get("t-cap", FLUE_IMPLEMENT_BINDING_STAGE);
+    expect(binding?.feedback).toHaveLength(FLUE_FEEDBACK_MAX_ITEMS);
+    expect(binding?.feedback[0]?.summary).toBe("note-5");
+    expect(binding?.feedback.at(-1)?.summary).toBe(`note-${FLUE_FEEDBACK_MAX_ITEMS + 4}`);
+  });
 });
 
 describe("Jev skill-pick port stub", () => {
@@ -241,6 +257,104 @@ describe("Flue adapter session continuity", () => {
     expect(String(instructions)).toContain("follow spec");
     expect(String(instructions)).toContain("Accumulated review feedback");
     expect(String(instructions)).toContain("fix seam overlap");
+    expect(store.get("t-bind", FLUE_IMPLEMENT_BINDING_STAGE)?.feedback).toEqual([]);
+  });
+
+  it("keeps pending feedback through first accept and binds session ids", async () => {
+    const store = new InMemoryFlueSessionBindingStore();
+    appendReviewFeedback(store, "t-bind", {
+      source: "review",
+      summary: "early note",
+      mustFix: ["ship binding first"],
+    });
+
+    let instructions: unknown;
+    const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/dispatch")) {
+        instructions = parseBody(init).instructions;
+        return jsonResponse(200, {
+          sessionId: sessionIdA,
+          durableConversationId: "flue-conv-pending",
+          status: "accepted",
+        });
+      }
+      return jsonResponse(200, {
+        sessionId: sessionIdA,
+        branch: "flue/t-bind",
+        usageEvents: [],
+        status: "succeeded",
+      });
+    };
+
+    const agent = createFlueAdapter({ flue: { fetchImpl, sessionBinding: store } });
+    await agent.run(sampleInput());
+    expect(String(instructions)).toContain("early note");
+    expect(String(instructions)).toContain("ship binding first");
+    expect(store.get("t-bind", FLUE_IMPLEMENT_BINDING_STAGE)).toMatchObject({
+      flueSessionId: sessionIdA,
+      durableConversationId: "flue-conv-pending",
+      feedback: [],
+    });
+  });
+
+  it("puts binding on dispatch even when start fails", async () => {
+    const store = new InMemoryFlueSessionBindingStore();
+    const fetchImpl = async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/dispatch")) {
+        return jsonResponse(200, {
+          sessionId: sessionIdA,
+          durableConversationId: "flue-conv-partial",
+          status: "accepted",
+        });
+      }
+      return jsonResponse(503, { error: "unavailable" });
+    };
+
+    const agent = createFlueAdapter({
+      flue: { fetchImpl, sessionBinding: store, maxAttempts: 1 },
+    });
+    const output = await agent.run(sampleInput());
+    expect(output.status).toBe("failed");
+    expect(store.get("t-bind", FLUE_IMPLEMENT_BINDING_STAGE)?.durableConversationId).toBe(
+      "flue-conv-partial",
+    );
+  });
+
+  it("fail-opens when skill-pick throws", async () => {
+    const store = new InMemoryFlueSessionBindingStore();
+    const skillPick: JevSkillPickPort = {
+      async pickSkills() {
+        throw new Error("jev down");
+      },
+    };
+
+    let instructions: unknown;
+    const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/dispatch")) {
+        instructions = parseBody(init).instructions;
+        return jsonResponse(200, {
+          sessionId: sessionIdA,
+          durableConversationId: "flue-conv-failopen",
+          status: "accepted",
+        });
+      }
+      return jsonResponse(200, {
+        sessionId: sessionIdA,
+        branch: "flue/t-bind",
+        usageEvents: [],
+        status: "succeeded",
+      });
+    };
+
+    const agent = createFlueAdapter({
+      flue: { fetchImpl, sessionBinding: store, skillPick },
+    });
+    const output = await agent.run(sampleInput());
+    expect(output.status).toBe("succeeded");
+    expect(String(instructions ?? "")).not.toContain("Jev skill pick");
   });
 
   it("calls injectable skill-pick and attaches chosen skills to instructions", async () => {

@@ -24,18 +24,23 @@ import {
   createPassthroughJevSkillPick,
   formatSkillPickInstructions,
   type JevSkillPickPort,
+  type JevSkillPickResult,
 } from "./jev-lazy-load.js";
-import { formatAccumulatedFeedback } from "./review-feedback.js";
+import { clearReviewFeedback, formatAccumulatedFeedback } from "./review-feedback.js";
 import {
   FLUE_IMPLEMENT_BINDING_STAGE,
-  InMemoryFlueSessionBindingStore,
+  getDefaultFlueSessionBindingStore,
   type FlueSessionBindingStore,
 } from "./session-binding.js";
 
 export interface FlueAdapterDeps extends CodingAgentDeps {
   flue?: FlueClientOptions & {
     client?: FlueClient;
-    /** Optio-side task → Flue session map. Defaults to a fresh in-memory store. */
+    /**
+     * Optio-side task → Flue session map.
+     * Defaults to a process-scoped in-memory store (shared across adapter recreates).
+     * Inject a durable store for multi-process workers.
+     */
     sessionBinding?: FlueSessionBindingStore;
     /** Injectable Jev skill-pick stub (ENG-25 owns the real client). */
     skillPick?: JevSkillPickPort;
@@ -93,6 +98,23 @@ function mergeInstructionParts(...parts: Array<string | undefined>): string | un
   return merged.length > 0 ? merged.join("\n\n") : undefined;
 }
 
+/** Soft fail-open: skill-pick errors must not block implement (ENG-25 soft-gate). */
+async function pickSkillsFailOpen(
+  skillPick: JevSkillPickPort,
+  input: {
+    taskId: string;
+    stage: string;
+    prompt: string;
+    registry: readonly string[];
+  },
+): Promise<JevSkillPickResult> {
+  try {
+    return await skillPick.pickSkills(input);
+  } catch {
+    return { skillIds: [], reason: "skill_pick_fail_open" };
+  }
+}
+
 async function toDispatchBody(
   input: CodingAgentInput,
   options: {
@@ -105,7 +127,7 @@ async function toDispatchBody(
   const resumeId = binding?.durableConversationId?.trim();
   const feedbackBlock = formatAccumulatedFeedback(binding?.feedback ?? []);
 
-  const pick = await options.skillPick.pickSkills({
+  const pick = await pickSkillsFailOpen(options.skillPick, {
     taskId: input.metadata.task_id,
     stage: FLUE_IMPLEMENT_BINDING_STAGE,
     prompt: input.prompt,
@@ -147,7 +169,7 @@ export function createFlueAdapter(deps: FlueAdapterDeps = {}): CodingAgent {
       maxAttempts: flueOpts.maxAttempts,
       timeoutMs: flueOpts.timeoutMs,
     });
-  const sessionBinding = flueOpts.sessionBinding ?? new InMemoryFlueSessionBindingStore();
+  const sessionBinding = flueOpts.sessionBinding ?? getDefaultFlueSessionBindingStore();
   const skillPick = flueOpts.skillPick ?? createPassthroughJevSkillPick();
   const skillRegistry = flueOpts.skillRegistry ?? [];
 
@@ -160,17 +182,22 @@ export function createFlueAdapter(deps: FlueAdapterDeps = {}): CodingAgent {
           skillPick,
           skillRegistry,
         });
-        const { dispatch, start } = await client.dispatchAndStart(dispatchBody, {
+        const { start } = await client.dispatchAndStart(dispatchBody, {
           taskId: input.metadata.task_id,
+          onDispatched: (bound) => {
+            // Persist as soon as Flue accepts/resumes — even if start later fails.
+            sessionBinding.put({
+              taskId: input.metadata.task_id,
+              stage: FLUE_IMPLEMENT_BINDING_STAGE,
+              flueSessionId: bound.sessionId,
+              durableConversationId: bound.durableConversationId,
+            });
+          },
         });
 
-        // Persist accept/resume binding; preserve any accumulated review feedback.
-        sessionBinding.put({
-          taskId: input.metadata.task_id,
-          stage: FLUE_IMPLEMENT_BINDING_STAGE,
-          flueSessionId: dispatch.sessionId,
-          durableConversationId: dispatch.durableConversationId,
-        });
+        if (start.status === "succeeded") {
+          clearReviewFeedback(sessionBinding, input.metadata.task_id);
+        }
 
         const usage = usageFromEvents(start.usageEvents, input.metadata.model_id);
         const logs = mergeLogs(start.logs, start.prUrl);

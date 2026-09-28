@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import {
   FLUE_IMPLEMENT_BINDING_STAGE,
+  capFeedback,
   type FlueReviewFeedbackItem,
   type FlueSessionBinding,
   type FlueSessionBindingStore,
@@ -30,6 +31,7 @@ export type FlueReviewFeedback = z.infer<typeof FlueReviewFeedbackSchema>;
  * Append structured review feedback onto the implement binding for `taskId`.
  * If the implement session is not yet bound, creates a pending shell with empty
  * session ids so feedback is not lost before the first accept.
+ * Newest {@link capFeedback} window is kept.
  */
 export function appendReviewFeedback(
   store: FlueSessionBindingStore,
@@ -52,7 +54,23 @@ export function appendReviewFeedback(
     stage: FLUE_IMPLEMENT_BINDING_STAGE,
     flueSessionId: prior?.flueSessionId ?? "",
     durableConversationId: prior?.durableConversationId ?? "",
-    feedback: [...(prior?.feedback ?? []), item],
+    feedback: capFeedback([...(prior?.feedback ?? []), item]),
+  });
+}
+
+/** Drop accumulated feedback after a successful implement start (keeps session ids). */
+export function clearReviewFeedback(
+  store: FlueSessionBindingStore,
+  taskId: string,
+): FlueSessionBinding | undefined {
+  const prior = store.get(taskId, FLUE_IMPLEMENT_BINDING_STAGE);
+  if (!prior) return undefined;
+  return store.put({
+    taskId,
+    stage: FLUE_IMPLEMENT_BINDING_STAGE,
+    flueSessionId: prior.flueSessionId,
+    durableConversationId: prior.durableConversationId,
+    feedback: [],
   });
 }
 

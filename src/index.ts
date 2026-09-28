@@ -399,9 +399,13 @@ export {
   type FlueUsageEvent,
 } from "./adapters/flue/contract.js";
 export {
+  FLUE_FEEDBACK_MAX_ITEMS,
   FLUE_IMPLEMENT_BINDING_STAGE,
   InMemoryFlueSessionBindingStore,
+  capFeedback,
   flueBindingKey,
+  getDefaultFlueSessionBindingStore,
+  resetDefaultFlueSessionBindingStore,
   type FlueBindingStage,
   type FlueReviewFeedbackItem,
   type FlueSessionBinding,
@@ -411,6 +415,7 @@ export {
 export {
   FlueReviewFeedbackSchema,
   appendReviewFeedback,
+  clearReviewFeedback,
   formatAccumulatedFeedback,
   type FlueReviewFeedback,
 } from "./adapters/flue/review-feedback.js";

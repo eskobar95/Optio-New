@@ -174,19 +174,29 @@ describe("Flue CodingAgent adapter", () => {
     });
 
     const client = createFlueClient({ fetchImpl, maxAttempts: 3 });
-    await client.dispatchAndStart({
-      taskId: "t-flue",
-      worktreeId: "wt",
-      workflowId: "default-task",
-      stepId: "implementation",
-      agentId: "agents/implementation",
-      workspaceRef: "/tmp/wt",
-      prompt: "go",
-      sandboxMode: "local",
-      allowedTools: [],
-    });
+    const onDispatched = vi.fn();
+    await client.dispatchAndStart(
+      {
+        taskId: "t-flue",
+        worktreeId: "wt",
+        workflowId: "default-task",
+        stepId: "implementation",
+        agentId: "agents/implementation",
+        workspaceRef: "/tmp/wt",
+        prompt: "go",
+        sandboxMode: "local",
+        allowedTools: [],
+      },
+      { onDispatched },
+    );
     expect(dispatchCalls).toBe(1);
     expect(startCalls).toBe(3);
+    expect(onDispatched).toHaveBeenCalledTimes(1);
+    expect(onDispatched).toHaveBeenCalledWith({
+      sessionId,
+      durableConversationId: "flue-conv-start-retry",
+      status: "accepted",
+    });
   });
 
   it("does not retry on 4xx", async () => {

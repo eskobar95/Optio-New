@@ -9,7 +9,11 @@
 
 export const FLUE_IMPLEMENT_BINDING_STAGE = "implement" as const;
 
-export type FlueBindingStage = typeof FLUE_IMPLEMENT_BINDING_STAGE | string;
+/** Binding stage key. Durable implement sessions use {@link FLUE_IMPLEMENT_BINDING_STAGE}. */
+export type FlueBindingStage = string;
+
+/** Soft cap so accumulated review feedback cannot unbounded-bloat dispatch instructions. */
+export const FLUE_FEEDBACK_MAX_ITEMS = 20;
 
 /** Structured review feedback accumulated on the implement binding. */
 export interface FlueReviewFeedbackItem {
@@ -75,6 +79,31 @@ export class InMemoryFlueSessionBindingStore implements FlueSessionBindingStore 
   clear(taskId: string, stage: FlueBindingStage): void {
     this.rows.delete(flueBindingKey(taskId, stage));
   }
+}
+
+let defaultSessionBindingStore: FlueSessionBindingStore | undefined;
+
+/**
+ * Process-scoped default store so `createFlueAdapter()` / `createCodingAgent("flue")`
+ * recreates share continuity within one process. Inject a durable store for multi-process.
+ */
+export function getDefaultFlueSessionBindingStore(): FlueSessionBindingStore {
+  defaultSessionBindingStore ??= new InMemoryFlueSessionBindingStore();
+  return defaultSessionBindingStore;
+}
+
+/** Reset the process default (tests only). */
+export function resetDefaultFlueSessionBindingStore(): void {
+  defaultSessionBindingStore = undefined;
+}
+
+/** Keep the newest {@link FLUE_FEEDBACK_MAX_ITEMS} feedback entries. */
+export function capFeedback(
+  feedback: readonly FlueReviewFeedbackItem[],
+  max = FLUE_FEEDBACK_MAX_ITEMS,
+): FlueReviewFeedbackItem[] {
+  if (feedback.length <= max) return feedback.map(cloneFeedback);
+  return feedback.slice(feedback.length - max).map(cloneFeedback);
 }
 
 function cloneFeedback(item: FlueReviewFeedbackItem): FlueReviewFeedbackItem {
