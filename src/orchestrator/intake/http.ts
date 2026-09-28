@@ -23,11 +23,13 @@ import { GITHUB_WEBHOOK_PATH, handleGithubWebhook } from "./adapters/github.js";
 import { LINEAR_WEBHOOK_PATH, handleLinearWebhook } from "./adapters/linear.js";
 import { SLACK_WEBHOOK_PATH, handleSlackWebhook } from "./adapters/slack.js";
 import type { IntakeAdapterResult } from "./adapters/shared.js";
-import { commentQueuedOnIssue } from "../linear/comment.js";
+import { commentQueuedOnIssue, LINEAR_QUEUED_COMMENT } from "../linear/comment.js";
+import { commentOnIssue } from "../linear/status.js";
 import { enforceObservedLinearStatus } from "../linear/observe.js";
 import { createJevClient } from "../../../gateway/jev-router/jev-client.js";
 import {
   evaluateIntakeTriageWithGate,
+  IntakeTriageTimeoutError,
   type IntakeTriageDecision,
   type IntakeTriageLogFn,
 } from "../jev/intake-triage-gate.js";
@@ -119,8 +121,11 @@ export interface IntakeServerOptions {
   linearApiKey?: string;
   /** Catalog repo for accepted Linear issues. Blank fails an accept closed (503). */
   linearDefaultRepoId?: string;
-  /** Replaces the Linear GraphQL comment. Tests inject this. */
-  linearComment?: (issueId: string) => Promise<void>;
+  /**
+   * Replaces Linear GraphQL comments. Tests inject this.
+   * Second arg is the body (`queued` for Phase 1, or `[intake-triage] …` when triage skips).
+   */
+  linearComment?: (issueId: string, body?: string) => Promise<void>;
   /** GraphQL fetch for the Linear comment. Defaults to global fetch. */
   linearFetch?: typeof fetch;
   /**
@@ -286,12 +291,14 @@ function isDuplicatePipelineJob(error: unknown): boolean {
   return /already exists/i.test(message);
 }
 
+const INTAKE_ISSUE_BODY_MAX_CHARS = 4000;
+
 async function deliverLinearQueuedComment(
   issueId: string,
   options: IntakeServerOptions,
 ): Promise<void> {
   if (options.linearComment) {
-    await options.linearComment(issueId);
+    await options.linearComment(issueId, LINEAR_QUEUED_COMMENT);
     return;
   }
   const apiKey = options.linearApiKey?.trim() ?? "";
@@ -304,15 +311,50 @@ async function deliverLinearQueuedComment(
   await commentQueuedOnIssue({ apiKey, issueId, fetchImpl: options.linearFetch });
 }
 
+function formatIntakeTriageSkipComment(triage: IntakeTriageDecision): string {
+  const notes = triage.notes?.trim();
+  const lines = [`[intake-triage] ${triage.action}`];
+  if (notes) lines.push(`Notes: ${notes}`);
+  return lines.join("\n");
+}
+
+async function deliverLinearIssueComment(
+  issueId: string,
+  body: string,
+  options: IntakeServerOptions,
+): Promise<void> {
+  if (options.linearComment) {
+    await options.linearComment(issueId, body);
+    return;
+  }
+  const apiKey = options.linearApiKey?.trim() ?? "";
+  if (!apiKey) {
+    throw new IntakeHttpError(503, {
+      error: "linear_api_unconfigured",
+      message: "Linear API key is not configured",
+    });
+  }
+  await commentOnIssue({ apiKey, issueId, body, fetchImpl: options.linearFetch });
+}
+
+function issueIdentifierFromTaskId(taskId: string): string | undefined {
+  const trimmed = taskId.trim();
+  if (!trimmed.startsWith("lin-")) return undefined;
+  const identifier = trimmed.slice("lin-".length).trim();
+  return identifier || undefined;
+}
+
 async function runIntakeTriage(
   result: Extract<IntakeAdapterResult, { action: "enqueue" }>,
   options: IntakeServerOptions,
 ): Promise<IntakeTriageDecision> {
+  const cappedBody = result.intake.description.slice(0, INTAKE_ISSUE_BODY_MAX_CHARS);
+  const issueIdentifier = issueIdentifierFromTaskId(result.intake.taskId);
   if (options.intakeTriage) {
     return options.intakeTriage({
       taskId: result.intake.taskId,
       title: result.intake.title,
-      description: result.intake.description,
+      description: cappedBody,
       source: result.intake.source,
       ...(result.linearToStatus ? { linearToStatus: result.linearToStatus } : {}),
     });
@@ -338,6 +380,7 @@ async function runIntakeTriage(
       outcome: "passthrough",
       reason: "undecided",
       message: "jev_unconfigured",
+      ...(issueIdentifier ? { issue_identifier: issueIdentifier } : {}),
     });
     return decision;
   }
@@ -348,8 +391,9 @@ async function runIntakeTriage(
     state: {
       task_id: result.intake.taskId,
       issue_title: result.intake.title,
-      issue_body: result.intake.description,
+      issue_body: cappedBody,
       source: result.intake.source,
+      ...(issueIdentifier ? { issue_identifier: issueIdentifier } : {}),
       ...(result.linearToStatus ? { to_status: result.linearToStatus } : {}),
     },
     onLog,
@@ -361,12 +405,13 @@ async function enqueueAdapter(
   res: ServerResponse,
   options: IntakeServerOptions,
 ): Promise<void> {
-  // Gate #5 only on Linear status-change intake. Soft fail-open → enqueue.
+  // Gate #5 only on Linear status-change intake. Soft timeout → enqueue; other errors rethrow.
   if (result.intake.source === "linear" && result.linearIssueId) {
     let triage: IntakeTriageDecision;
     try {
       triage = await runIntakeTriage(result, options);
     } catch (error) {
+      if (!(error instanceof IntakeTriageTimeoutError)) throw error;
       // Soft seam: hard timeout must not block Phase 1 — passthrough to enqueue.
       console.log(
         JSON.stringify({
@@ -374,17 +419,22 @@ async function enqueueAdapter(
           task_id: result.intake.taskId,
           outcome: "passthrough",
           reason: "timeout",
-          message: error instanceof Error ? error.message : String(error),
+          message: error.message,
         }),
       );
       triage = {
         action: "enqueue",
         source: "passthrough",
         reason: "timeout",
-        message: error instanceof Error ? error.message : String(error),
+        message: error.message,
       };
     }
     if (triage.action !== "enqueue") {
+      await deliverLinearIssueComment(
+        result.linearIssueId,
+        formatIntakeTriageSkipComment(triage),
+        options,
+      );
       sendJson(res, 200, {
         accepted: false,
         reason: "intake_triage",

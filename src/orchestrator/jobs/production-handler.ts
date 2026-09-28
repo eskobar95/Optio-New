@@ -60,6 +60,7 @@ import {
   ciLogComment,
   decideAgentAdvance,
   decideHannesRejection,
+  escalationComment,
   mapCommitStatus,
   noteAgentStatusWrite,
   readBlindAlley,
@@ -954,7 +955,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
         "OPTIO_NEW_LINEAR_API_KEY is required to move a Linear issue",
       );
     }
-    return {
+    const ports: WorkflowPorts = {
       openDraft: async () => {
         await openPullRequest(ctx, { draft: true, base: LINEAR_PULL_REQUEST_BASE });
       },
@@ -1018,13 +1019,35 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
         const prescreen = await runReviewPrescreen(ctx, allPaths);
         if (prescreen.action === "escalate") {
           logStageEvent({
-            msg: "review pre-screen escalate; skipping Hannes",
+            msg: "review pre-screen escalate; linear Needs Human",
             taskId: ctx.taskId,
             sha,
             confidence: prescreen.confidence,
             notes: prescreen.notes,
           });
-          return;
+          const progress = await readLinearProgress(handle);
+          await applyWorkflowEffects(
+            {
+              ok: true,
+              halt: true,
+              reason: "review_prescreen_needs_human",
+              ciFailureCount: progress.ciFailureCount,
+              effects: [
+                {
+                  kind: "linear.escalate",
+                  comment: escalationComment({
+                    whenIso: new Date().toISOString(),
+                    why: "Jev review pre-screen escalated before Hannes dispatch",
+                    tried: "review_prescreen",
+                    failed: prescreen.notes?.trim() || "needs_human",
+                    next: "Triage the PR, then move back to In Progress when the agent should resume. Do not wait for [optio-review] — Hannes was not dispatched.",
+                  }),
+                },
+              ],
+            },
+            ports,
+          );
+          throw new Error("linear workflow escalated: review_prescreen_needs_human");
         }
         const reviewPaths = prescreen.paths.length > 0 ? prescreen.paths : allPaths;
         const specialists = reviewSpecialistsForPaths(reviewPaths);
@@ -1119,6 +1142,7 @@ export function createProductionStageHandler(options: ProductionStageOptions): S
       },
       escalationStatus: () => escalationTargetStatus({ apiKey, issueId, fetchImpl }),
     };
+    return ports;
   }
 
   async function finishReviewVerdict(
@@ -1439,7 +1463,7 @@ function reviewDispatchPrompt(
   ];
   if (focusPaths.length > 0) {
     lines.push(
-      `Jev review pre-screen focus paths (prioritize these): ${focusPaths.slice(0, 80).join(", ")}.`,
+      `Review only these paths (Jev pre-screen filter): ${focusPaths.slice(0, 80).join(", ")}. Ignore other changed files unless required to understand these.`,
     );
   }
   if (specialists.length > 0) {

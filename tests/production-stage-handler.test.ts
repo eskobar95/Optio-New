@@ -1031,6 +1031,219 @@ describe("production stage handler", () => {
     expect(git.calls.join("\n")).not.toContain("--force");
   });
 
+  it("escalates review pre-screen to Needs Human instead of silent-complete", async () => {
+    const taskId = "lin-ENG-25";
+    const issueId = "2174add1-f7c8-44e3-bbf3-2d60b5ea8bc9";
+    const { handle, worktrees } = worktreeFixture(taskId, true);
+    mkdirSync(join(handle.path, "..", ".prs"), { recursive: true });
+    writeFileSync(
+      join(handle.path, "..", ".prs", `${taskId}.json`),
+      `${JSON.stringify({
+        url: "https://github.com/acme/widgets/pull/25",
+        number: 25,
+        head: handle.branch,
+        base: "main",
+      })}\n`,
+    );
+    const agentCalls: CodingAgentInput[] = [];
+    const linearBodies: string[] = [];
+    const handler = createProductionStageHandler({
+      env: handlerEnv({
+        OPTIO_NEW_LINEAR_API_KEY: "lin_api_testkey12345678",
+        OPTIO_REVIEW_GITHUB_LOGINS: "hannes-bot",
+      }),
+      worktrees,
+      codingAgent: codingAgent(agentCalls),
+      reviewPrescreen: async () => ({
+        action: "escalate",
+        source: "review_prescreen",
+        reason: "needs_human",
+        confidence: 0.91,
+        paths: ["src/app.ts"],
+        notes: "policy risk",
+      }),
+      git: async (_cwd, args) => {
+        const command = args[0] === "-c" ? "commit" : args[0];
+        if (command === "rev-parse") return "ccc333";
+        if (command === "status") return "";
+        if (command === "diff") return "src/app.ts\ndocs/readme.md";
+        if (command === "push" || command === "add" || command === "commit") return "";
+        throw new Error(`unexpected git ${args.join(" ")}`);
+      },
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        const body = typeof init?.body === "string" ? init.body : undefined;
+        if (url.includes("api.linear.app/graphql")) {
+          if (body) linearBodies.push(body);
+          const query = body ? ((JSON.parse(body) as { query?: string }).query ?? "") : "";
+          if (query.includes("IssueStates")) {
+            return jsonResponse(200, {
+              data: {
+                issue: {
+                  team: {
+                    states: {
+                      nodes: [
+                        { id: "s-ip", name: "In Progress" },
+                        { id: "s-re", name: "Review" },
+                        { id: "s-nh", name: "Needs Human" },
+                      ],
+                    },
+                  },
+                },
+              },
+            });
+          }
+          return jsonResponse(200, {
+            data: { commentCreate: { success: true }, issueUpdate: { success: true } },
+          });
+        }
+        if (method === "GET" && url.includes("/actions/runs")) {
+          return jsonResponse(200, { total_count: 0, workflow_runs: [] });
+        }
+        if (method === "GET" && url.includes("/check-runs")) {
+          return jsonResponse(200, { total_count: 0, check_runs: [] });
+        }
+        if (method === "GET" && url.endsWith("/status")) {
+          return jsonResponse(200, { state: "success", statuses: [] });
+        }
+        if (method === "GET" && url.endsWith("/reviews")) return jsonResponse(200, []);
+        if (method === "GET" && /\/pulls\/\d+$/.test(url)) {
+          return jsonResponse(200, { draft: true, node_id: "PR_node_25", number: 25 });
+        }
+        if (method === "POST" && url === "https://api.github.com/graphql") {
+          return jsonResponse(200, {
+            data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } },
+          });
+        }
+        if (method === "GET" && /\/issues\/\d+\/comments/.test(url)) return jsonResponse(200, []);
+        if (method === "POST" && url.endsWith("/requested_reviewers")) {
+          return jsonResponse(201, { requested_reviewers: [{ login: "hannes-bot" }] });
+        }
+        if (method === "POST" && url.includes("/issues/") && url.endsWith("/comments")) {
+          return jsonResponse(201, { id: 9 });
+        }
+        return jsonResponse(500, { message: `unexpected ${method} ${url}` });
+      },
+    });
+    const ctx = {
+      ...step("ready", "record_ci_wait", taskId),
+      source: "linear" as const,
+      linearIssueId: issueId,
+    };
+    await expect(handler.run(ctx)).rejects.toThrow(/review_prescreen_needs_human/);
+    expect(agentCalls.some((call) => call.metadata.step_id === "dispatch_review")).toBe(false);
+    expect(linearBodies.some((body) => body.includes("s-nh"))).toBe(true);
+    expect(linearBodies.some((body) => body.includes("[escalate] Human help needed"))).toBe(true);
+    expect(linearBodies.some((body) => body.includes("policy risk"))).toBe(true);
+    expect(linearBodies.some((body) => body.includes("<!-- optio-review"))).toBe(false);
+  });
+
+  it("passes filtered review paths into the Hannes prompt", async () => {
+    const taskId = "lin-ENG-26";
+    const issueId = "2174add1-f7c8-44e3-bbf3-2d60b5ea8bc9";
+    const { handle, worktrees } = worktreeFixture(taskId, true);
+    mkdirSync(join(handle.path, "..", ".prs"), { recursive: true });
+    writeFileSync(
+      join(handle.path, "..", ".prs", `${taskId}.json`),
+      `${JSON.stringify({
+        url: "https://github.com/acme/widgets/pull/26",
+        number: 26,
+        head: handle.branch,
+        base: "main",
+      })}\n`,
+    );
+    const agentCalls: CodingAgentInput[] = [];
+    const handler = createProductionStageHandler({
+      env: handlerEnv({
+        OPTIO_NEW_LINEAR_API_KEY: "lin_api_testkey12345678",
+        OPTIO_REVIEW_GITHUB_LOGINS: "hannes-bot",
+      }),
+      worktrees,
+      codingAgent: codingAgent(agentCalls),
+      reviewPrescreen: async () => ({
+        action: "filter",
+        source: "review_prescreen",
+        label: "filter",
+        confidence: 0.88,
+        paths: ["src/app.ts"],
+      }),
+      git: async (_cwd, args) => {
+        const command = args[0] === "-c" ? "commit" : args[0];
+        if (command === "rev-parse") return "ddd444";
+        if (command === "status") return "";
+        if (command === "diff") return "src/app.ts\ndocs/readme.md";
+        if (command === "push" || command === "add" || command === "commit") return "";
+        throw new Error(`unexpected git ${args.join(" ")}`);
+      },
+      fetchImpl: async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        const body = typeof init?.body === "string" ? init.body : undefined;
+        if (url.includes("api.linear.app/graphql")) {
+          const query = body ? ((JSON.parse(body) as { query?: string }).query ?? "") : "";
+          if (query.includes("IssueStates")) {
+            return jsonResponse(200, {
+              data: {
+                issue: {
+                  team: {
+                    states: {
+                      nodes: [
+                        { id: "s-ip", name: "In Progress" },
+                        { id: "s-re", name: "Review" },
+                      ],
+                    },
+                  },
+                },
+              },
+            });
+          }
+          return jsonResponse(200, {
+            data: { commentCreate: { success: true }, issueUpdate: { success: true } },
+          });
+        }
+        if (method === "GET" && url.includes("/actions/runs")) {
+          return jsonResponse(200, { total_count: 0, workflow_runs: [] });
+        }
+        if (method === "GET" && url.includes("/check-runs")) {
+          return jsonResponse(200, { total_count: 0, check_runs: [] });
+        }
+        if (method === "GET" && url.endsWith("/status")) {
+          return jsonResponse(200, { state: "success", statuses: [] });
+        }
+        if (method === "GET" && url.endsWith("/reviews")) return jsonResponse(200, []);
+        if (method === "GET" && /\/pulls\/\d+$/.test(url)) {
+          return jsonResponse(200, { draft: true, node_id: "PR_node_26", number: 26 });
+        }
+        if (method === "POST" && url === "https://api.github.com/graphql") {
+          return jsonResponse(200, {
+            data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } },
+          });
+        }
+        if (method === "GET" && /\/issues\/\d+\/comments/.test(url)) return jsonResponse(200, []);
+        if (method === "POST" && url.endsWith("/requested_reviewers")) {
+          return jsonResponse(201, { requested_reviewers: [{ login: "hannes-bot" }] });
+        }
+        if (method === "POST" && url.includes("/issues/") && url.endsWith("/comments")) {
+          return jsonResponse(201, { id: 9 });
+        }
+        if (method === "POST" && url.endsWith("/reviews")) {
+          return jsonResponse(201, { id: 4, state: "APPROVED" });
+        }
+        return jsonResponse(500, { message: `unexpected ${method} ${url}` });
+      },
+    });
+    const ctx = {
+      ...step("ready", "record_ci_wait", taskId),
+      source: "linear" as const,
+      linearIssueId: issueId,
+    };
+    await handler.run(ctx);
+    const reviewCall = agentCalls.find((call) => call.metadata.step_id === "dispatch_review");
+    expect(reviewCall?.prompt).toContain("Review only these paths");
+    expect(reviewCall?.prompt).toContain("src/app.ts");
+  });
+
   it("returns a Hannes rejection to In Progress and does not merge", async () => {
     const taskId = "lin-ENG-7";
     const { handle, worktrees } = worktreeFixture(taskId, true);

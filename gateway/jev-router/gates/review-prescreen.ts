@@ -18,11 +18,13 @@ import {
 export const REVIEW_PRESCREEN_QUESTION = {
   type: "choice",
   instructions:
-    "Review pre-screen. Score the diff before the human/review agent (Hannes). Forward the full set when the change is reviewable; filter to the risky/relevant paths when most of the diff is noise; escalate when a human must triage first.",
+    "Review pre-screen. Score the diff before the human/review agent (Hannes). Forward the full set when the change is reviewable; filter to the risky/relevant paths when most of the diff is noise (Hannes will be told to review only those paths); escalate when a human must triage first (orchestrator moves to Needs Human — do not leave Review waiting silently).",
   criteria: {
     forward: "Full diff should go to the review agent as-is.",
-    filter: "Only a subset of diff_paths needs review. Return those in filtered_paths.",
-    needs_human: "Do not auto-dispatch the review agent. A human should triage first.",
+    filter:
+      "Only a subset of diff_paths needs review. Return those exact paths in filtered_paths (must be members of state.diff_paths).",
+    needs_human:
+      "Do not auto-dispatch the review agent. Escalate to Needs Human with a visible [escalate] signal.",
   },
 } as const;
 

@@ -248,13 +248,13 @@ SystemOne body: `{ state, questions: { review_prescreen: … }, model: "jev-1.13
 
 ### Output
 
-| Outcome                    | When                                                                        | Caller action (`applyReviewPrescreen`)                          |
-| -------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `decided` + `forward`      | confidence ≥ min                                                            | Dispatch Hannes on the full path set                            |
-| `decided` + `filter`       | confidence ≥ min; ≥1 path remains after registry filter                     | Dispatch Hannes focused on `filtered_paths`                     |
-| `escalate` + `needs_human` | confidence ≥ min                                                            | Skip Hannes auto-dispatch; leave Review for a human             |
-| `passthrough`              | timeout (soft), HTTP/network, undecided, low confidence, **filtered_empty** | `action: "forward"` + `source: "passthrough"` — full path set   |
-| `error`                    | timeout when `passthroughOnTimeout: false`                                  | throws `ReviewPrescreenTimeoutError` (still logged via `onLog`) |
+| Outcome                    | When                                                                        | Caller action (`applyReviewPrescreen` / `dispatchReview`)                                                                                       |
+| -------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `decided` + `forward`      | confidence ≥ min                                                            | Dispatch Hannes on the full path set                                                                                                            |
+| `decided` + `filter`       | confidence ≥ min; ≥1 path remains after registry filter                     | Dispatch Hannes with prompt **“Review only these paths”** for `filtered_paths`                                                                  |
+| `escalate` + `needs_human` | confidence ≥ min                                                            | Skip Hannes; apply `linear.escalate` → **Needs Human** (or In Progress fallback) with `[escalate]` + `[status]` — never silent-return in Review |
+| `passthrough`              | timeout (soft), HTTP/network, undecided, low confidence, **filtered_empty** | `action: "forward"` + `source: "passthrough"` — full path set                                                                                   |
+| `error`                    | timeout when `passthroughOnTimeout: false`                                  | throws `ReviewPrescreenTimeoutError` (still logged via `onLog`)                                                                                 |
 
 ### Hook
 
@@ -298,14 +298,14 @@ SystemOne body: `{ state, questions: { intake: … }, model: "jev-1.13.0" }`.
 
 ### Output
 
-| Outcome                    | When                                                    | Caller action (`applyIntakeTriage`)                               |
-| -------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------- |
-| `decided` + `enqueue`      | confidence ≥ min                                        | Continue Phase 1: enqueue + `queued` comment                      |
-| `decided` + `clarify`      | confidence ≥ min                                        | Respond `accepted: false` — **no** enqueue, **no** `queued`       |
-| `decided` + `reject`       | confidence ≥ min                                        | Respond `accepted: false` — **no** enqueue, **no** `queued`       |
-| `escalate` + `needs_human` | confidence ≥ min                                        | Respond `accepted: false` — **no** enqueue, **no** `queued`       |
-| `passthrough`              | timeout (soft), HTTP/network, undecided, low confidence | `action: "enqueue"` + `source: "passthrough"` — Phase 1 continues |
-| `error`                    | timeout when `passthroughOnTimeout: false`              | HTTP seam still fail-opens to enqueue (does not block Phase 1)    |
+| Outcome                    | When                                                    | Caller action (`applyIntakeTriage` / intake HTTP)                                                                |
+| -------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `decided` + `enqueue`      | confidence ≥ min                                        | Continue Phase 1: enqueue + `queued` comment                                                                     |
+| `decided` + `clarify`      | confidence ≥ min                                        | Linear `[intake-triage]` comment (action+notes); `accepted: false` — **no** enqueue, **no** `queued`             |
+| `decided` + `reject`       | confidence ≥ min                                        | Linear `[intake-triage]` comment (action+notes); `accepted: false` — **no** enqueue, **no** `queued`             |
+| `escalate` + `needs_human` | confidence ≥ min                                        | Linear `[intake-triage]` comment (action+notes); `accepted: false` — **no** enqueue, **no** `queued`             |
+| `passthrough`              | timeout (soft), HTTP/network, undecided, low confidence | `action: "enqueue"` + `source: "passthrough"` — Phase 1 continues                                                |
+| `error`                    | timeout when `passthroughOnTimeout: false`              | HTTP seam maps **only** `IntakeTriageTimeoutError` → enqueue; unexpected errors rethrow (do not fail-open blind) |
 
 ### Hook
 
