@@ -158,7 +158,7 @@ describe("Jev skill-pick port stub", () => {
       prompt: "do the thing",
       registry: ["tdd", "code-review"],
     });
-    expect(result).toEqual({ skillIds: [], reason: "passthrough_stub" });
+    expect(result).toEqual({ skillIds: [], mcpToolIds: [], reason: "passthrough_stub" });
     expect(formatSkillPickInstructions(result)).toBe("");
   });
 
@@ -393,7 +393,8 @@ describe("Flue adapter session continuity", () => {
       },
     });
     await agent.run(sampleInput());
-    expect(String(instructions)).toContain("Jev skill pick (stub)");
+    expect(String(instructions)).toContain("Jev skill pick");
     expect(String(instructions)).toContain("Skills: tdd");
+    expect(String(instructions)).not.toContain("(stub)");
   });
 });

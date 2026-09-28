@@ -42,10 +42,15 @@ export interface FlueAdapterDeps extends CodingAgentDeps {
      * Inject a durable store for multi-process workers.
      */
     sessionBinding?: FlueSessionBindingStore;
-    /** Injectable Jev skill-pick stub (ENG-25 owns the real client). */
+    /**
+     * Injectable Jev skill-pick port.
+     * Default: passthrough stub. Prefer `createJevSkillPickPort` (ENG-25 gate #3).
+     */
     skillPick?: JevSkillPickPort;
-    /** Optional skill registry passed to the skill-pick port. */
+    /** Full skill registry (allow-list max) passed to the skill-pick port. */
     skillRegistry?: readonly string[];
+    /** Full MCP capability/tool registry (allow-list max) passed to the skill-pick port. */
+    mcpRegistry?: readonly string[];
   };
 }
 
@@ -106,12 +111,15 @@ async function pickSkillsFailOpen(
     stage: string;
     prompt: string;
     registry: readonly string[];
+    mcpRegistry?: readonly string[];
+    workflowId?: string;
+    stepId?: string;
   },
 ): Promise<JevSkillPickResult> {
   try {
     return await skillPick.pickSkills(input);
   } catch {
-    return { skillIds: [], reason: "skill_pick_fail_open" };
+    return { skillIds: [], mcpToolIds: [], reason: "skill_pick_fail_open" };
   }
 }
 
@@ -121,6 +129,7 @@ async function toDispatchBody(
     sessionBinding: FlueSessionBindingStore;
     skillPick: JevSkillPickPort;
     skillRegistry: readonly string[];
+    mcpRegistry: readonly string[];
   },
 ): Promise<FlueDispatchRequest> {
   const binding = options.sessionBinding.get(input.metadata.task_id, FLUE_IMPLEMENT_BINDING_STAGE);
@@ -132,6 +141,9 @@ async function toDispatchBody(
     stage: FLUE_IMPLEMENT_BINDING_STAGE,
     prompt: input.prompt,
     registry: options.skillRegistry,
+    mcpRegistry: options.mcpRegistry,
+    workflowId: input.metadata.workflow_id,
+    stepId: input.metadata.step_id,
   });
   const skillBlock = formatSkillPickInstructions(pick);
 
@@ -172,6 +184,7 @@ export function createFlueAdapter(deps: FlueAdapterDeps = {}): CodingAgent {
   const sessionBinding = flueOpts.sessionBinding ?? getDefaultFlueSessionBindingStore();
   const skillPick = flueOpts.skillPick ?? createPassthroughJevSkillPick();
   const skillRegistry = flueOpts.skillRegistry ?? [];
+  const mcpRegistry = flueOpts.mcpRegistry ?? [];
 
   return {
     id: "flue",
@@ -181,6 +194,7 @@ export function createFlueAdapter(deps: FlueAdapterDeps = {}): CodingAgent {
           sessionBinding,
           skillPick,
           skillRegistry,
+          mcpRegistry,
         });
         const { start } = await client.dispatchAndStart(dispatchBody, {
           taskId: input.metadata.task_id,

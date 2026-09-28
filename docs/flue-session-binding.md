@@ -37,16 +37,20 @@ Structured payload (`source: "review" | "gate_retry" | "gate_send_back"`, `summa
 
 On the next implement `dispatch`, `formatAccumulatedFeedback` is merged into `instructions` so retry re-enters Flue with **accumulated context**, not a new task. After a **successful** `start`, feedback is cleared (`clearReviewFeedback`) so the next review cycle starts fresh. No new Flue HTTP endpoint in this stub.
 
-## Jev lazy-load / skill-pick (port only)
+## Jev lazy-load / skill-pick (ENG-25 gate #3)
 
-`JevSkillPickPort.pickSkills({ taskId, stage, prompt, registry })` is injectable. Default `createPassthroughJevSkillPick()` returns `{ skillIds: [] }` with no network. Adapter **fail-opens** to empty skills if the port throws (soft gate; ENG-25 owns real timeouts).
+`JevSkillPickPort.pickSkills({ taskId, stage, prompt, registry, mcpRegistry? })` is injectable.
 
-**Do not** invent a competing `jevClient` here. Real gates, cascade, confidence, and HTTP belong to ENG-25.
+- Default `createPassthroughJevSkillPick()` returns `{ skillIds: [] }` with no network.
+- Prefer `createJevSkillPickPort({ client, … })` — runs Jev (`jev-1.13.0`) over the full allow-list registry and returns a per-task subset. Soft timeout → empty selection (no cold reload of the whole library). Hard timeout throws; adapter **fail-opens** to empty skills if the port throws.
+- Chosen ids are merged into `dispatch` `instructions` via `formatSkillPickInstructions` before `start` (catalog ids only — not full skill bodies).
+
+Logs: task type, selected skills, outcome → `onLog` and optional `SkillPickLogStore` (`optio.skill_pick_logs`).
 
 ## Non-goals
 
 - Real Flue agent loop / cursor-agent I/O (ENG-21)
-- Real Jev client or gate sequence (ENG-25)
+- Gates #4–5 (review pre-screen / intake)
 - Gate UX (ENG-34)
 - Schema migration (`durable_conversation_id` already on `flue.sessions` from ENG-24)
 - Merge/deploy from this ticket alone

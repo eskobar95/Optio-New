@@ -1,5 +1,5 @@
 /**
- * Opt-in Jev plan gate helpers (ENG-25 gate #2).
+ * Opt-in Jev gate helpers (ENG-25).
  * Runnable TS lives here; docs pointer: orchestrator/jev/README.md.
  */
 export {
@@ -11,3 +11,18 @@ export {
   type PlanGateLogEntry,
   type PlanGateLogFn,
 } from "./plan-gate.js";
+export {
+  SkillPickTimeoutError,
+  applySkillPick,
+  evaluateSkillPickWithGate,
+  type SkillPickDecision,
+  type SkillPickLogEntry,
+  type SkillPickLogFn,
+  type SkillPickSource,
+} from "./skill-pick-gate.js";
+export {
+  createInMemorySkillPickLogStore,
+  type InMemorySkillPickLogStore,
+  type SkillPickLogRecord,
+  type SkillPickLogStore,
+} from "./skill-pick-log.js";

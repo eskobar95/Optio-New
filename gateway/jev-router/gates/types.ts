@@ -1,6 +1,6 @@
 /**
  * Jev gate sequence contracts (ENG-25).
- * Gates #1–2 implemented; #3–5 are typed stubs only.
+ * Gates #1–3 implemented; #4–5 are typed stubs only.
  */
 
 import { z } from "zod";
@@ -127,19 +127,64 @@ export const PlanGateSystemOneResponseSchema = z
   })
   .passthrough();
 
-// --- Stub contracts for gates #3–5 (types only; not implemented this PR) ---
+// --- Gate #3 — dynamic skill / MCP pick ---
 
 /**
- * Skill pick is dynamic later (full registry per agent). Do not hardcode allow-all.
- * This stub only shapes the future answer payload.
+ * Allow-list is the **maximum** permission set (full registry visible to the agent).
+ * Jev selects a per-task subset — never hardcode allow-all into context.
  */
+export const DEFAULT_SKILL_PICK_MIN_CONFIDENCE = 0.7;
+export const DEFAULT_SKILL_PICK_TIMEOUT_MS = 30_000;
+
+export const SkillPickGateConfigSchema = z
+  .object({
+    minConfidence: z.number().min(0).max(1).default(DEFAULT_SKILL_PICK_MIN_CONFIDENCE),
+    timeoutMs: z.number().int().positive().default(DEFAULT_SKILL_PICK_TIMEOUT_MS),
+    passthroughOnTimeout: z.boolean().default(true),
+  })
+  .strict();
+export type SkillPickGateConfig = z.infer<typeof SkillPickGateConfigSchema>;
+
+export const SkillPickGateStateSchema = z
+  .object({
+    task_id: z.string().optional(),
+    workflow_id: z.string().optional(),
+    step_id: z.string().optional(),
+    stage: z.string().optional(),
+    prompt: z.string().optional(),
+    task_type: z.string().optional(),
+    /** Full skill registry (allow-list max) visible to the picker. */
+    skill_registry: z.array(z.string().min(1)).optional(),
+    /** Full MCP capability / tool registry (allow-list max). */
+    mcp_registry: z.array(z.string().min(1)).optional(),
+    issue_title: z.string().optional(),
+    issue_body: z.string().optional(),
+  })
+  .passthrough();
+export type SkillPickGateState = z.infer<typeof SkillPickGateStateSchema>;
+
 export const SkillPickGateAnswerSchema = z
   .object({
     skill_ids: z.array(z.string().min(1)),
+    mcp_tool_ids: z.array(z.string().min(1)).optional(),
     confidence: z.number().min(0).max(1),
+    notes: z.string().optional(),
   })
   .strict();
 export type SkillPickGateAnswer = z.infer<typeof SkillPickGateAnswerSchema>;
+
+/** Wire response fragment under answers.skill_pick. */
+export const SkillPickGateSystemOneResponseSchema = z
+  .object({
+    answers: z
+      .object({
+        skill_pick: SkillPickGateAnswerSchema,
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
+// --- Stub contracts for gates #4–5 (types only; not implemented this PR) ---
 
 export const ReviewPrescreenAnswerSchema = z
   .object({
