@@ -9,6 +9,13 @@ export {
   type CascadeModelTier,
 } from "./cascade.js";
 export {
+  PLAN_GATE_QUESTION,
+  PlanGateTimeoutError,
+  runPlanGate,
+  type PlanGateOutcome,
+  type PlanGatePassthroughReason,
+} from "./plan.js";
+export {
   BackendCascadeAnswerSchema,
   BackendCascadeConfigSchema,
   BackendCascadeLabelSchema,
@@ -16,10 +23,16 @@ export {
   BackendCascadeSystemOneResponseSchema,
   DEFAULT_CASCADE_MIN_CONFIDENCE,
   DEFAULT_CASCADE_TIMEOUT_MS,
+  DEFAULT_PLAN_MIN_CONFIDENCE,
+  DEFAULT_PLAN_TIMEOUT_MS,
   IntakeTriageAnswerSchema,
   JEV_GATE_SEQUENCE,
   JevGateKindSchema,
   PlanGateAnswerSchema,
+  PlanGateConfigSchema,
+  PlanGateLabelSchema,
+  PlanGateStateSchema,
+  PlanGateSystemOneResponseSchema,
   ReviewPrescreenAnswerSchema,
   SkillPickGateAnswerSchema,
   type BackendCascadeAnswer,
@@ -29,6 +42,9 @@ export {
   type IntakeTriageAnswer,
   type JevGateKind,
   type PlanGateAnswer,
+  type PlanGateConfig,
+  type PlanGateLabel,
+  type PlanGateState,
   type ReviewPrescreenAnswer,
   type SkillPickGateAnswer,
 } from "./types.js";
