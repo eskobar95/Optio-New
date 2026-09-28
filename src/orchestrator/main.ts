@@ -26,6 +26,7 @@ import { createGuardedRepoWorktrees } from "./repos/router.js";
 import { readOrchestratorPort, redisConnectionOptions } from "./redis.js";
 import { getStageTracer } from "./telemetry/index.js";
 import { loadWorktreeRuntimeConfig } from "./worktrees/config.js";
+import { runDrizzleMigrations } from "../db/migrate-cli.js";
 
 async function readWorkflowYaml(): Promise<string | undefined> {
   const candidates = [
@@ -51,6 +52,9 @@ export async function startOrchestrator(): Promise<void> {
   if (!databaseUrl) {
     throw new Error("OPTIO_NEW_DATABASE_URL is required");
   }
+
+  // Forward catalog migrations (optio/flue) before app DDL-on-connect / traffic.
+  await runDrizzleMigrations(databaseUrl);
 
   const connection = redisConnectionOptions(redisUrl);
   const database = await openOrchestratorDatabase(databaseUrl);
