@@ -19,7 +19,7 @@ import {
 import type { JevClient } from "../../gateway/jev-router/jev-client.js";
 import { createCodexAdapter } from "./codex/index.js";
 import type { CodingAgent } from "./coding-agent.js";
-import { createCursorAdapter } from "./cursor/index.js";
+import { createCursorAdapter, type CursorAdapterDeps } from "./cursor/index.js";
 import { createFlueAdapter, type FlueAdapterDeps } from "./flue/index.js";
 import type { CodingAgentDeps } from "./runtime.js";
 
@@ -136,7 +136,7 @@ export async function resolveCodingBackendWithCascade(
 
 export function createCodingAgent(
   id: CodingBackendId,
-  deps: CodingAgentDeps & FlueAdapterDeps = {},
+  deps: CodingAgentDeps & FlueAdapterDeps & CursorAdapterDeps = {},
 ): CodingAgent {
   if (id === "cursor") return createCursorAdapter(deps);
   if (id === "flue") return createFlueAdapter(deps);

@@ -2,6 +2,7 @@
  * Cursor CLI headless CodingAgent (SPEC §13.2, §14.1).
  * Subscription path only: CURSOR_API_KEY → https://api2.cursor.sh.
  * Does not set OPENAI_BASE_URL and does not MITM agent.v1.
+ * ENG-21: thin in-loop wrapper ports (compaction / warden / pick / DecisionPort).
  */
 
 import type { CodingAgent, CodingAgentInput, CodingAgentOutput } from "../coding-agent.js";
@@ -22,9 +23,22 @@ import {
   type CodingAgentDeps,
 } from "../runtime.js";
 import { cursorImplementPrompt } from "./implement-feedback.js";
+import {
+  compactCliStdout,
+  prepareCursorInvoke,
+  resolveWrapperPorts,
+  type CursorWrapperPorts,
+} from "./wrapper.js";
 
 /** Native Cursor API host. Not a local LiteLLM or Caveman URL. */
 export const CURSOR_NATIVE_API_ENDPOINT = "https://api2.cursor.sh";
+
+export interface CursorAdapterDeps extends CodingAgentDeps {
+  /** Optional in-loop control ports. Omitted fields use passthrough defaults. */
+  wrapper?: Partial<CursorWrapperPorts>;
+  /** Soft timeout for DecisionPort (ms). Default 50. */
+  wrapperDecisionTimeoutMs?: number;
+}
 
 const STRIP_FROM_CURSOR = [
   "OPENAI_BASE_URL",
@@ -66,6 +80,7 @@ function cursorRequest(
   input: CodingAgentInput,
   env: NodeJS.ProcessEnv,
   sandbox: AgentSandbox,
+  prompt: string,
 ): CliRunRequest {
   const command = env.CURSOR_AGENT_BIN?.trim() || "agent";
   const args = [
@@ -79,7 +94,7 @@ function cursorRequest(
   ];
   const model = input.metadata.model_id?.trim();
   if (model) args.push("--model", model);
-  args.push(cursorImplementPrompt(input));
+  args.push(prompt);
 
   return {
     command,
@@ -90,7 +105,9 @@ function cursorRequest(
   };
 }
 
-export function createCursorAdapter(deps: CodingAgentDeps = {}): CodingAgent {
+export function createCursorAdapter(deps: CursorAdapterDeps = {}): CodingAgent {
+  const ports = resolveWrapperPorts(deps.wrapper ?? {});
+
   return {
     id: "cursor",
     async run(input: CodingAgentInput): Promise<CodingAgentOutput> {
@@ -107,14 +124,28 @@ export function createCursorAdapter(deps: CodingAgentDeps = {}): CodingAgent {
         if (!apiKey) {
           return credentialsFailure("cursor", input, "missing_credentials");
         }
+
+        const basePrompt = cursorImplementPrompt(input);
+        const prepared = await prepareCursorInvoke({
+          prompt: basePrompt,
+          allowedTools: input.allowed_tools,
+          stepId: input.metadata.step_id,
+          ports,
+          decisionTimeoutMs: deps.wrapperDecisionTimeoutMs,
+        });
+        if (!prepared.ok) {
+          return permissionDeniedRun("cursor", input, prepared.observation);
+        }
+
         const result = await invokeCli(
           deps.runner ?? spawnCli,
-          cursorRequest(input, env, auth.sandbox),
+          cursorRequest(input, env, auth.sandbox, prepared.prompt),
         );
+        const stdout = await compactCliStdout(ports, result.stdout, deps.wrapperDecisionTimeoutMs);
         return mapCliToOutput({
           provider: "cursor",
           input,
-          result,
+          result: stdout === result.stdout ? result : { ...result, stdout },
           secrets: [apiKey],
         });
       });
