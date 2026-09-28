@@ -179,12 +179,29 @@ export async function startOrchestrator(): Promise<void> {
 
   logStageEvent({ msg: "orchestrator listening", port });
 
+  // Optional catalog API (ENG-23) — separate port; Glass UI wires later in workplace.
+  let apiServer: import("node:http").Server | undefined;
+  let apiDb: import("../db/client.js").OptioDb | undefined;
+  if (process.env.OPTIO_NEW_API_ENABLED?.trim() === "1") {
+    const { startOptioApiFromEnv } = await import("../api/http.js");
+    const started = await startOptioApiFromEnv(process.env);
+    apiServer = started.server;
+    apiDb = started.db;
+    logStageEvent({
+      msg: "optio-api listening",
+      host: started.host,
+      port: started.port,
+    });
+  }
+
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
     logStageEvent({ msg: "orchestrator stopping", signal });
     server.close();
+    apiServer?.close();
+    await apiDb?.close();
     await Promise.all(workers.map((worker) => worker.close()));
     await flow.close();
     await Promise.all([planQueue.close(), implementQueue.close(), mergeQueue.close()]);
