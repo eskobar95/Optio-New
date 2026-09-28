@@ -7,9 +7,10 @@
 import { createCodexAdapter } from "./codex/index.js";
 import type { CodingAgent } from "./coding-agent.js";
 import { createCursorAdapter } from "./cursor/index.js";
+import { createFlueAdapter, type FlueAdapterDeps } from "./flue/index.js";
 import type { CodingAgentDeps } from "./runtime.js";
 
-export type CodingBackendId = "cursor" | "codex";
+export type CodingBackendId = "cursor" | "codex" | "flue";
 
 export interface CodingBackendSelection {
   /** Workflow step `coding_backend`. Wins over the global default. */
@@ -36,7 +37,7 @@ function blankToNull(value: string | null | undefined): string | null {
 }
 
 export function isCodingBackendId(value: string): value is CodingBackendId {
-  return value === "cursor" || value === "codex";
+  return value === "cursor" || value === "codex" || value === "flue";
 }
 
 /** Resolve which CodingAgent runs. Never guesses a provider. */
@@ -53,7 +54,11 @@ export function resolveCodingBackend(selection: CodingBackendSelection): CodingB
   return chosen;
 }
 
-export function createCodingAgent(id: CodingBackendId, deps: CodingAgentDeps = {}): CodingAgent {
+export function createCodingAgent(
+  id: CodingBackendId,
+  deps: CodingAgentDeps & FlueAdapterDeps = {},
+): CodingAgent {
   if (id === "cursor") return createCursorAdapter(deps);
+  if (id === "flue") return createFlueAdapter(deps);
   return createCodexAdapter(deps);
 }

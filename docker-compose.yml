@@ -7,6 +7,7 @@
 # orchestrator is profiles `full` and `orchestrator`. eve-runner is profiles `full` and `eve` on 127.0.0.1:3210.
 # learning-worker is profile `learn` (queue optio.learn).
 # `--profile harness` adds kit-harness on 127.0.0.1:3200.
+# `--profile flue` adds the Flue agent-harness sidecar stub on 127.0.0.1:3220 (ENG-26).
 # Factory data plane: docker compose --profile full --profile harness up -d
 # Host ports: OPTIO_NEW_REDIS_HOST_PORT, OPTIO_NEW_POSTGRES_HOST_PORT, OPTIO_NEW_LITELLM_HOST_PORT.
 name: optio-new
@@ -221,6 +222,38 @@ services:
           "node",
           "-e",
           "fetch('http://127.0.0.1:'+(process.env.KIT_HARNESS_PORT||3200)+'/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # Flue agent-harness sidecar stub (ENG-26). Off unless `--profile flue`.
+  # Optio re-dispatches on failure; a Flue crash must not take Optio down.
+  flue:
+    profiles: ["flue"]
+    build:
+      context: .
+      dockerfile: Dockerfile.flue
+    restart: unless-stopped
+    init: true
+    environment:
+      FLUE_PORT: ${FLUE_PORT:-3220}
+      FLUE_HOST: "0.0.0.0"
+    ports:
+      - "127.0.0.1:${FLUE_PORT:-3220}:${FLUE_PORT:-3220}"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:'+(process.env.FLUE_PORT||3220)+'/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 30s
       timeout: 5s
