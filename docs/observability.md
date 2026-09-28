@@ -27,7 +27,7 @@ Stage start/end, failure reason, token or cost rows, and per-step agent actions 
 
 `session.queue` stays on `SessionTelemetry` (`src/orchestrator/sessions`). The session gate does not require an exporter.
 
-`invokeSpecialist` emits `specialist.call`. `WorktreeManager` emits `worktree.create` when a checkout is first added and `worktree.remove` when that directory is deleted. Both spans carry `task_id` and `worktree_id`. Returning an existing checkout does not emit a second create. `reap({ merged: false })` while `retainOnFailure` is true does not emit remove. `jev.decision` is a reserved name without a call site yet. See `docs/ops/worktree-isolation.md`.
+`invokeSpecialist` emits `specialist.call`. `WorktreeManager` emits `worktree.create` when a checkout is first added and `worktree.remove` when that directory is deleted. Both spans carry `task_id` and `worktree_id`. Returning an existing checkout does not emit a second create. `reap({ merged: false })` while `retainOnFailure` is true does not emit remove. `jev.decision` is emitted by the ENG-27 Jev MCP soft tools (`createOtelJevMcpTelemetry`). See `docs/ops/worktree-isolation.md`.
 
 The collector stub is `deploy/otel-collector-config.yaml` (Compose profile `observability`, loopback `4317`/`4318`, debug exporter).
 

@@ -21,7 +21,7 @@ Source: [`src/adapters/cursor/wrapper.ts`](../src/adapters/cursor/wrapper.ts). W
 4. `invokeCli` with the (possibly annotated) prompt; subscription path stays `CURSOR_API_KEY` → `https://api2.cursor.sh`.
 5. `compactCliStdout`: if stdout JSON has a `turns` array, run DecisionPort (compact) / `CompactionPort` and rewrite those turns only. Normal Cursor result JSON has no `turns` → stdout unchanged.
 
-Mid-run tool gates inside the Cursor process need ENG-27 MCP. This stub only exposes the port surface, pre-spawn hooks, and optional post-CLI transcript compaction.
+Mid-run tool gates inside the Cursor process need [ENG-27 MCP](jev-mcp.md). This stub only exposes the port surface, pre-spawn hooks, and optional post-CLI transcript compaction.
 
 ## Injecting ports
 
@@ -47,9 +47,9 @@ Out of scope for this PR (no live eval). When Jev drives compaction:
 
 ## Out of scope
 
-- Real Jev client / ENG-25 gate sequence
-- ENG-27 MCP mid-run server
+- Real Jev client / ENG-25 gate sequence (see [jev-gates.md](jev-gates.md))
 - Flue HTTP loop / sidecar changes
 - Multi-tenant UI
+- Cursor MCP spawn-config wiring (see [jev-mcp.md](jev-mcp.md) for the ENG-27 server)
 
 Related: ENG-22 (parent), ENG-25, ENG-26, ENG-27.

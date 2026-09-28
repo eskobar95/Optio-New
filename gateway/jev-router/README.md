@@ -6,6 +6,8 @@ Hop 1 (which CodingAgent backend) is served by the kit-harness sidecar, not this
 
 **Soft Jev gates (ENG-25):** ordered cascade / plan / skill-pick / review / intake contracts live in `gates/` with shared `createJevClient` (`jev-1.13.0`, timeout → passthrough). Documented in [docs/jev-gates.md](../../docs/jev-gates.md). Gates #1 (`backend_cascade`) and #2 (`plan`) are implemented; #3–5 are stub types. Hop-2 plugins above stay fail-closed and unchanged.
 
+**Mid-run MCP (ENG-27):** soft `jev_evaluate` / `jev_decide` for Cursor CLI live in `mcp/` — stdio Content-Length JSON-RPC, soft timeout → passthrough. See [docs/jev-mcp.md](../../docs/jev-mcp.md). Run with `npm run jev-mcp`.
+
 ```ts
 interface JevRouter {
   decide(state: RoutingState): Promise<RoutingDecision>;

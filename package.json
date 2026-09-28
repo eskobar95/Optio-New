@@ -23,6 +23,7 @@
     "eval:live": "HARNESS_EVAL_LIVE=1 vitest run tests/eval/harness-eval.test.ts",
     "learn-worker": "tsc -p tsconfig.learning-worker.json && node dist/main.js",
     "eve-runner": "tsc -p tsconfig.eve.json && node dist/src/eve/cli.js",
+    "jev-mcp": "tsc -p tsconfig.jev-mcp.json && node dist/src/jev-mcp/main.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",

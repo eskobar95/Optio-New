@@ -148,10 +148,11 @@ Zod answer shapes live in `gateway/jev-router/gates/types.ts` (`SkillPickGateAns
 
 - Jev as Cursor session LLM
 - Code generation via Jev
-- ENG-27 MCP mid-run server
 - ENG-36 Flue session store ownership
 - UI
 - Rewriting kit-harness `/v1/route-model` Hop-1 labels (`cursor_subscription` / `codex_gateway`)
+
+Mid-run Cursor MCP soft tools: [jev-mcp.md](jev-mcp.md) (ENG-27).
 
 ## Related code
 
