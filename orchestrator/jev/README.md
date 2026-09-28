@@ -13,4 +13,6 @@ Hop 2 plugins (`jev`, `poorjev`, `laya`, `rules`) live in `gateway/jev-router/`.
 
 Gate sequence (cascade → plan → skill pick → review pre-screen → intake): [docs/jev-gates.md](../../docs/jev-gates.md). Shared client: `gateway/jev-router/jev-client.ts` (`createJevClient`, pin `jev-1.13.0`).
 
+**Gate #2 (plan) opt-in seam:** `src/orchestrator/jev/plan-gate.ts` — `evaluatePlanWithGate` / `applyPlanGate` after planner, before implement. Not wired into `processStageJob` by default.
+
 See `docs/SPEC.md` §9 and §14.3.
