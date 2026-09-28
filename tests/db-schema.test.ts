@@ -2,15 +2,24 @@ import { getTableColumns, getTableName, getTableUniqueName } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { resolveDatabaseUrl } from "../src/db/client.js";
 import {
+  agentConnections,
   agentSkills,
   agents,
+  connections,
   flueSchema,
   optioSchema,
   sessions,
+  skillPickLogs,
   skills,
+  stageJevGates,
   tenants,
+  transcriptEvents,
+  transcripts,
+  users,
   workflowAgents,
+  workflowStages,
   workflows,
+  workspaceMemberships,
   workspaces,
 } from "../src/db/schema/index.js";
 
@@ -24,11 +33,20 @@ describe("drizzle catalog schemas (ENG-24)", () => {
     const cases = [
       [tenants, "optio.tenants"],
       [workspaces, "optio.workspaces"],
+      [users, "optio.users"],
+      [workspaceMemberships, "optio.workspace_memberships"],
       [agents, "optio.agents"],
       [skills, "optio.skills"],
       [workflows, "optio.workflows"],
       [agentSkills, "optio.agent_skills"],
       [workflowAgents, "optio.workflow_agents"],
+      [connections, "optio.connections"],
+      [agentConnections, "optio.agent_connections"],
+      [workflowStages, "optio.workflow_stages"],
+      [stageJevGates, "optio.stage_jev_gates"],
+      [transcripts, "optio.transcripts"],
+      [transcriptEvents, "optio.transcript_events"],
+      [skillPickLogs, "optio.skill_pick_logs"],
       [sessions, "flue.sessions"],
     ] as const;
 
@@ -39,11 +57,41 @@ describe("drizzle catalog schemas (ENG-24)", () => {
     }
   });
 
-  it("keeps secret values out of column set (refs only)", () => {
-    expect(Object.keys(getTableColumns(workspaces))).toContain("infisicalEnvSlug");
-    expect(Object.keys(getTableColumns(workspaces))).not.toContain("token");
-    expect(Object.keys(getTableColumns(agents))).toEqual(
-      expect.arrayContaining(["kind", "instructionsRef", "enabled"]),
+  it("keeps connector secrets out of column set (Infisical refs only)", () => {
+    const workspaceCols = Object.keys(getTableColumns(workspaces));
+    expect(workspaceCols).toContain("infisicalEnvSlug");
+    expect(workspaceCols).toContain("defaultCodingBackend");
+    expect(workspaceCols).not.toContain("token");
+
+    const connectionCols = Object.keys(getTableColumns(connections));
+    expect(connectionCols).toContain("infisicalSecretPath");
+    expect(connectionCols).not.toContain("token");
+    expect(connectionCols).not.toContain("apiKey");
+
+    const agentCols = Object.keys(getTableColumns(agents));
+    expect(agentCols).toEqual(
+      expect.arrayContaining([
+        "kind",
+        "instructionsRef",
+        "model",
+        "sandboxMode",
+        "tools",
+        "subagents",
+        "enabled",
+      ]),
+    );
+  });
+
+  it("models append-only transcript events with compaction counters", () => {
+    const cols = Object.keys(getTableColumns(transcriptEvents));
+    expect(cols).toEqual(
+      expect.arrayContaining(["seq", "content", "compacted", "compactedTokens", "cacheWrites"]),
+    );
+    expect(Object.keys(getTableColumns(stageJevGates))).toEqual(
+      expect.arrayContaining(["gateKind", "timeoutMs", "passthroughOnTimeout"]),
+    );
+    expect(Object.keys(getTableColumns(sessions))).toEqual(
+      expect.arrayContaining(["optioTranscriptId", "durableConversationId"]),
     );
   });
 

@@ -12,6 +12,11 @@ export const workspaces = optioSchema.table(
     slug: text("slug").notNull(),
     /** Infisical environment slug — secret values stay out of the DB. */
     infisicalEnvSlug: text("infisical_env_slug"),
+    /**
+     * Default coding backend for the workspace.
+     * e.g. cursor-cli | flue | codex — Cursor CLI reached via ENG-21 wrapper.
+     */
+    defaultCodingBackend: text("default_coding_backend").notNull().default("cursor-cli"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

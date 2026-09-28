@@ -4,10 +4,10 @@ Postgres schemas / migrations for sessions, budgets, fingerprints, step cursors,
 
 ## Two migration tracks
 
-| Track                 | Path                     | Role                                                                                                                                                       |
-| --------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Legacy (frozen)**   | `state/migrations/*.sql` | Historical DDL applied on connect by `createPg*Store` / `openOrchestratorDatabase` for `public.*` runtime tables. **Do not renumber, rewrite, or delete.** |
-| **Forward (Drizzle)** | `drizzle/`               | Catalog schemas `optio` + `flue` (ENG-24). Generate with `npm run db:generate`; apply with `npm run db:migrate` (`drizzle-kit migrate`).                   |
+| Track                 | Path                     | Role                                                                                                                                                                                                                         |
+| --------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Legacy (frozen)**   | `state/migrations/*.sql` | Historical DDL applied on connect by `createPg*Store` / `openOrchestratorDatabase` for `public.*` runtime tables. **Do not renumber, rewrite, or delete.**                                                                   |
+| **Forward (Drizzle)** | `drizzle/`               | Catalog schemas `optio` + `flue` (ENG-24): tenants, workspaces, users/membership, agents/skills/workflows/stages, connections, Jev gates, transcripts. Generate with `npm run db:generate`; apply with `npm run db:migrate`. |
 
 `003_pipeline_stage_run.sql` is the per-stage timing, usage, and agent-action table. `createPgStageRunStore` applies it on connect. `004_session_artifacts.sql` is the per-task plan, pull request link, stage outcome, and last error. `openOrchestratorDatabase` applies that DDL with the step cursor.
 
