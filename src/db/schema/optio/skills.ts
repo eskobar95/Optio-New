@@ -11,9 +11,18 @@ export const skills = optioSchema.table(
       .references(() => workspaces.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
-    /** Path to skill SoT (e.g. `.cursor/skills/<id>/SKILL.md`). */
+    /**
+     * Path to SKILL.md SoT (folder + YAML frontmatter + Markdown body),
+     * e.g. `.cursor/skills/<id>/SKILL.md`.
+     */
     bodyRef: text("body_ref").notNull(),
+    /** Optional skill folder path (parent of SKILL.md). */
+    folderRef: text("folder_ref"),
+    /** Optional YAML config SoT alongside SKILL.md. */
+    configRef: text("config_ref"),
     description: text("description"),
+    /** When true, catalog (name+description) first; full SKILL.md on select. */
+    lazyLoadBody: boolean("lazy_load_body").notNull().default(true),
     enabled: boolean("enabled").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

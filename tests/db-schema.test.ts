@@ -4,15 +4,19 @@ import { DEFAULT_LOCAL_DATABASE_URL, resolveDatabaseUrl } from "../src/db/databa
 import { resolveMigrationsFolder } from "../src/db/migrate-cli.js";
 import {
   agentConnections,
+  agentMcpTools,
   agentSkills,
+  agentSubagents,
   agents,
   codingBackendEnum,
   connectionKindEnum,
   connections,
   flueSchema,
   jevGateKindEnum,
+  mcpTools,
   optioSchema,
   sessions,
+  skillMcpTools,
   skillPickLogs,
   skills,
   stageJevGates,
@@ -21,13 +25,15 @@ import {
   transcripts,
   users,
   workflowAgents,
+  workflowConnections,
+  workflowStageTypeEnum,
   workflowStages,
   workflows,
   workspaceMemberships,
   workspaces,
 } from "../src/db/schema/index.js";
 
-describe("drizzle catalog schemas (ENG-24)", () => {
+describe("drizzle catalog schemas (ENG-24 / ENG-35)", () => {
   it("exposes optio and flue pg schemas", () => {
     expect(optioSchema.schemaName).toBe("optio");
     expect(flueSchema.schemaName).toBe("flue");
@@ -43,9 +49,14 @@ describe("drizzle catalog schemas (ENG-24)", () => {
       [skills, "optio.skills"],
       [workflows, "optio.workflows"],
       [agentSkills, "optio.agent_skills"],
+      [agentSubagents, "optio.agent_subagents"],
       [workflowAgents, "optio.workflow_agents"],
       [connections, "optio.connections"],
       [agentConnections, "optio.agent_connections"],
+      [workflowConnections, "optio.workflow_connections"],
+      [mcpTools, "optio.mcp_tools"],
+      [agentMcpTools, "optio.agent_mcp_tools"],
+      [skillMcpTools, "optio.skill_mcp_tools"],
       [workflowStages, "optio.workflow_stages"],
       [stageJevGates, "optio.stage_jev_gates"],
       [transcripts, "optio.transcripts"],
@@ -76,14 +87,44 @@ describe("drizzle catalog schemas (ENG-24)", () => {
     expect(agentCols).toEqual(
       expect.arrayContaining([
         "kind",
+        "description",
         "instructionsRef",
+        "configRef",
         "model",
         "sandboxMode",
         "tools",
         "subagents",
+        "lazyLoadBody",
         "enabled",
       ]),
     );
+
+    const skillCols = Object.keys(getTableColumns(skills));
+    expect(skillCols).toEqual(
+      expect.arrayContaining(["bodyRef", "folderRef", "configRef", "lazyLoadBody", "description"]),
+    );
+
+    const mcpCols = Object.keys(getTableColumns(mcpTools));
+    expect(mcpCols).toEqual(
+      expect.arrayContaining(["name", "slug", "description", "endpoint", "enabled"]),
+    );
+    expect(mcpCols).not.toContain("infisicalSecretPath");
+    expect(mcpCols).not.toContain("token");
+  });
+
+  it("models ordered workflow stages with type/config and integration refs", () => {
+    const stageCols = Object.keys(getTableColumns(workflowStages));
+    expect(stageCols).toEqual(
+      expect.arrayContaining(["sortOrder", "stageType", "config", "agentId", "connectionId"]),
+    );
+    expect(workflowStageTypeEnum.enumValues).toEqual([
+      "agent",
+      "custom_agent",
+      "gate",
+      "aggregator",
+      "branch",
+      "integration",
+    ]);
   });
 
   it("models append-only transcript events with compaction counters", () => {
