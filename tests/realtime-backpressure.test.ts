@@ -93,6 +93,28 @@ describe("OutboundQueue backpressure", () => {
     // Status always survives; the expendable heartbeat is evicted to make room.
     expect(sent.some((f) => f.type === "run.status")).toBe(true);
     expect(sent.filter((f) => f.type === "heartbeat")).toHaveLength(0);
+    expect(queue.stats.heartbeatsCoalesced).toBe(1);
+  });
+
+  it("coalesces heartbeats to the freshest ts instead of queueing", () => {
+    const { queue, sent } = makeQueue(10);
+    queue.enqueue(heartbeat);
+    queue.enqueue({ ...heartbeat, ts: 11, payload: { ts: 11 } });
+    expect(queue.depth).toBe(1);
+    expect(queue.stats.heartbeatsCoalesced).toBe(1);
+    queue.flush();
+    expect(sent).toHaveLength(1);
+    expect((sent[0] as Extract<OutboundFrame, { type: "heartbeat" }>).payload.ts).toBe(11);
+  });
+
+  it("does not coalesce a token across an intervening non-token frame", () => {
+    const { queue, sent } = makeQueue(10);
+    queue.enqueue(token("r-1", "a"));
+    queue.enqueue(heartbeat);
+    queue.enqueue(token("r-1", "b"));
+    // Coalescing across the heartbeat would reorder text; keep them separate.
+    queue.flush();
+    expect(sent.filter((f) => f.type === "run.token")).toHaveLength(2);
   });
 
   it("clear() empties the buffer without sending", () => {

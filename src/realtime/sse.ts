@@ -60,12 +60,9 @@ export function parseSseChunk(chunk: string): ParsedSseFrame[] {
   return frames;
 }
 
-/** Decode an SSE `data:` payload into a live event, rejecting token/tool events. */
+/** Decode an SSE `data:` payload into a live event, rejecting out-of-contract types. */
 export function decodeSseEvent(data: string): LiveEvent {
   const frame = decodeOutboundFrame(data);
-  if (frame.type === "run.token" || frame.type === "run.tool") {
-    throw new Error(`event type ${frame.type} is not allowed on the SSE fallback`);
-  }
   if (!isSseFallbackEvent(frame as LiveEvent)) {
     throw new Error(`event type ${frame.type} is not part of the SSE fallback contract`);
   }
@@ -98,15 +95,19 @@ export class SseStatusSource {
     this.#options = options;
   }
 
+  /** Safe to call again — closes any existing client first. */
   start(): void {
+    this.stop();
     const client = this.#options.open(this.#options.url);
     this.#client = client;
     for (const type of SSE_STATUS_EVENT_TYPES) {
       client.addEventListener(type, (evt) => {
         try {
           this.#options.onEvent(decodeSseEvent(evt.data));
-        } catch {
-          // Ignore malformed/out-of-contract frames on the fallback path.
+        } catch (error) {
+          // Malformed/out-of-contract frame: surface it, keep the stream alive.
+          this.#options.onError?.();
+          void error;
         }
       });
     }

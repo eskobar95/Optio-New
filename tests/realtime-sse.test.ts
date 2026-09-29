@@ -86,4 +86,48 @@ describe("SSE fallback contract", () => {
     source.stop();
     expect(closed).toBe(true);
   });
+
+  it("start() is idempotent and closes the previous client", () => {
+    let openCount = 0;
+    let closeCount = 0;
+    const source = new SseStatusSource({
+      url: "https://api.test/realtime/status",
+      open: () => {
+        openCount += 1;
+        return {
+          close: () => {
+            closeCount += 1;
+          },
+          addEventListener: () => {},
+        };
+      },
+      onEvent: () => {},
+    });
+
+    source.start();
+    source.start();
+    // Second start must close the first client, not leak it.
+    expect(openCount).toBe(2);
+    expect(closeCount).toBe(1);
+  });
+
+  it("reports malformed frames via onError", () => {
+    const handlers = new Map<string, (evt: { data: string }) => void>();
+    let errors = 0;
+    const source = new SseStatusSource({
+      url: "https://api.test/realtime/status",
+      open: () => ({
+        close: () => {},
+        addEventListener: (type, handler) => handlers.set(type, handler),
+      }),
+      onEvent: () => {},
+      onError: () => {
+        errors += 1;
+      },
+    });
+
+    source.start();
+    handlers.get("run.status")?.({ data: "not json" });
+    expect(errors).toBe(1);
+  });
 });

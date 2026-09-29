@@ -10,6 +10,10 @@ export interface BackpressureStats {
   flushed: number;
   tokensDropped: number;
   tokensCoalesced: number;
+  /** Heartbeats collapsed to the latest ts in the queue. */
+  heartbeatsCoalesced: number;
+  /** Non-critical, non-token frames (e.g. heartbeat) dropped under pressure. */
+  expendableDropped: number;
   criticalForced: number;
   depth: number;
 }
@@ -36,6 +40,8 @@ export class OutboundQueue {
     flushed: 0,
     tokensDropped: 0,
     tokensCoalesced: 0,
+    heartbeatsCoalesced: 0,
+    expendableDropped: 0,
     criticalForced: 0,
     depth: 0,
   };
@@ -59,6 +65,14 @@ export class OutboundQueue {
         this.stats.depth = this.#queue.length;
         return;
       }
+    } else if (frame.type === "heartbeat") {
+      // Only the freshest heartbeat matters — collapse instead of queueing.
+      const idx = this.#queue.findIndex((f) => f.type === "heartbeat");
+      if (idx >= 0) {
+        this.#queue[idx] = frame;
+        this.stats.heartbeatsCoalesced += 1;
+        return;
+      }
     }
 
     if (this.#queue.length >= this.capacity) {
@@ -73,8 +87,8 @@ export class OutboundQueue {
         this.stats.depth = this.#queue.length;
         return;
       } else {
-        // Non-critical non-token (e.g. heartbeat, tool): drop if full.
-        this.stats.tokensDropped += 1;
+        // Non-critical non-token (e.g. heartbeat): drop if full.
+        this.stats.expendableDropped += 1;
         this.stats.depth = this.#queue.length;
         return;
       }
@@ -105,38 +119,40 @@ export class OutboundQueue {
     this.stats.depth = 0;
   }
 
+  /**
+   * Coalesce only with the immediately preceding frame when it is a matching
+   * token. Looking further back would reorder text across intervening frames.
+   */
   #tryCoalesceToken(frame: Extract<OutboundFrame, { type: "run.token" }>): boolean {
-    for (let i = this.#queue.length - 1; i >= 0; i -= 1) {
-      const existing = this.#queue[i];
-      if (!isTokenEvent(existing)) continue;
-      if (
-        existing.payload.runId === frame.payload.runId &&
-        existing.payload.sessionId === frame.payload.sessionId &&
-        existing.channel === frame.channel
-      ) {
-        const mergedText =
-          existing.payload.text.length + frame.payload.text.length <= 4096
-            ? existing.payload.text + frame.payload.text
-            : frame.payload.text;
-        this.#queue[i] = {
-          ...frame,
-          payload: { ...frame.payload, text: mergedText },
-          // Keep the newer seq so catchup ordering stays consistent with latest.
-        };
-        return true;
-      }
-      // Only coalesce against the most recent matching token; stop at first token mismatch batch.
-      break;
+    const existing = this.#queue[this.#queue.length - 1];
+    if (!existing || !isTokenEvent(existing)) return false;
+    if (
+      existing.payload.runId !== frame.payload.runId ||
+      existing.payload.sessionId !== frame.payload.sessionId ||
+      existing.channel !== frame.channel
+    ) {
+      return false;
     }
-    return false;
+    const mergedText =
+      existing.payload.text.length + frame.payload.text.length <= 4096
+        ? existing.payload.text + frame.payload.text
+        : frame.payload.text;
+    // Keep the newer seq/ts so catchup ordering matches the latest token.
+    this.#queue[this.#queue.length - 1] = {
+      ...frame,
+      payload: { ...frame.payload, text: mergedText },
+    };
+    return true;
   }
 
   #evictOldestToken(): boolean {
     const idx = this.#queue.findIndex((f) => isTokenEvent(f) || !isCriticalOutbound(f));
     if (idx < 0) return false;
     const removed = this.#queue.splice(idx, 1)[0];
-    if (removed && (isTokenEvent(removed) || !isCriticalOutbound(removed))) {
+    if (removed && isTokenEvent(removed)) {
       this.stats.tokensDropped += 1;
+    } else if (removed) {
+      this.stats.expendableDropped += 1;
     }
     return true;
   }

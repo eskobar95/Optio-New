@@ -59,7 +59,10 @@ function makeManualScheduler() {
       timers.push(handle);
       return handle;
     },
-    cancelSchedule: () => {},
+    cancelSchedule: (handle: unknown) => {
+      const index = timers.indexOf(handle as { fn: () => void; ms: number });
+      if (index >= 0) timers.splice(index, 1);
+    },
     runNext: () => {
       const next = timers.shift();
       next?.fn();
@@ -180,6 +183,70 @@ describe("LiveSocketEventSource", () => {
     socket.open();
     socket.deliver({ type: "error", code: "auth_required", message: "nope", status: 401 });
     expect(source.state).toBe("closed");
+  });
+
+  it("cancels a pending reconnect timer on start() (no double socket)", () => {
+    const scheduler = makeManualScheduler();
+    const sockets: ScriptedSocket[] = [];
+    let opened = 0;
+    const source = new LiveSocketEventSource({
+      connect: () => {
+        opened += 1;
+        const socket = new ScriptedSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      channels: [SESSION_A],
+      onEvent: () => {},
+      schedule: scheduler.schedule,
+      cancelSchedule: scheduler.cancelSchedule,
+    });
+
+    source.start();
+    sockets[0]!.open();
+    sockets[0]!.serverClose(1006, "drop");
+    expect(scheduler.timers).toHaveLength(1);
+
+    source.start();
+    expect(scheduler.timers).toHaveLength(0);
+    expect(opened).toBe(2);
+  });
+
+  it("reports connect failures via onTransportError instead of swallowing them", () => {
+    const errors: unknown[] = [];
+    const scheduler = makeManualScheduler();
+    const source = new LiveSocketEventSource({
+      connect: () => {
+        throw new Error("boom");
+      },
+      channels: [SESSION_A],
+      onEvent: () => {},
+      onTransportError: (e) => errors.push(e),
+      schedule: scheduler.schedule,
+      cancelSchedule: () => {},
+    });
+    source.start();
+    expect(errors).toHaveLength(1);
+    expect((errors[0] as Error).message).toBe("boom");
+    expect(scheduler.timers).toHaveLength(1);
+  });
+
+  it("surfaces malformed frames via onTransportError and keeps the socket open", () => {
+    const errors: unknown[] = [];
+    const socket = new ScriptedSocket();
+    const source = new LiveSocketEventSource({
+      connect: () => socket,
+      channels: [SESSION_A],
+      onEvent: () => {},
+      onTransportError: (e) => errors.push(e),
+      schedule: makeManualScheduler().schedule,
+      cancelSchedule: () => {},
+    });
+    source.start();
+    socket.open();
+    socket.onmessage?.("not json");
+    expect(errors).toHaveLength(1);
+    expect(source.state).toBe("open");
   });
 
   it("subscribe/unsubscribe update the frame sent and setFocused downgrades", () => {

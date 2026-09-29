@@ -44,6 +44,8 @@ export interface RealtimeConnectionOptions {
   /** Auto-flush outbound queue after each enqueue (default true for sync tests). */
   autoFlush?: boolean;
   heartbeat?: boolean;
+  /** Invoked when the connection closes itself (401, idle timeout, …) so a hub can unregister it. */
+  onClosed?: (connectionId: string) => void;
 }
 
 export class RealtimeConnection {
@@ -66,6 +68,8 @@ export class RealtimeConnection {
   readonly #requireAuth: boolean;
   readonly #unsubFanout: () => void;
   readonly #heartbeat: HeartbeatScheduler | null;
+  readonly #onClosed: ((connectionId: string) => void) | undefined;
+  #chain: Promise<void> | null = null;
   #closed = false;
 
   constructor(id: string, options: RealtimeConnectionOptions) {
@@ -79,6 +83,7 @@ export class RealtimeConnection {
     this.#now = options.now ?? Date.now;
     this.#autoFlush = options.autoFlush ?? true;
     this.#requireAuth = options.requireAuth ?? !(this.#auth instanceof AllowAllAuth);
+    this.#onClosed = options.onClosed;
 
     this.outbound = new OutboundQueue({
       send: (frame) => {
@@ -94,6 +99,11 @@ export class RealtimeConnection {
         now: this.#now,
         nextSeq: () => this.clock.next(),
         onBeat: (event) => {
+          // No inbound activity for the idle window → close instead of beating forever.
+          if (this.#heartbeat?.checkIdle()) {
+            this.close(4408, "idle_timeout");
+            return;
+          }
           this.catchup.push(event);
           this.#enqueue(event);
         },
@@ -120,7 +130,27 @@ export class RealtimeConnection {
       this.#sendError("invalid_frame", message, 400);
       return;
     }
-    void this.#dispatch(frame);
+
+    // Async auth must not let later frames race ahead of verification. Chain
+    // frames in arrival order; sync frames dispatch immediately when no auth is
+    // in flight.
+    if (frame.type === "auth" || this.#chain) {
+      const prev = this.#chain ?? Promise.resolve();
+      const tracked = prev
+        .then(() => this.#dispatch(frame))
+        .catch((err) => this.#onDispatchError(err))
+        .finally(() => {
+          if (this.#chain === tracked) this.#chain = null;
+        });
+      this.#chain = tracked;
+      return;
+    }
+    void this.#dispatch(frame).catch((err) => this.#onDispatchError(err));
+  }
+
+  #onDispatchError(err: unknown): void {
+    const message = err instanceof Error ? err.message : "dispatch failed";
+    this.#sendError("internal_error", message, 500);
   }
 
   close(code = 1000, reason = "bye"): void {
@@ -131,6 +161,7 @@ export class RealtimeConnection {
     this.subscriptions.clear();
     this.outbound.clear();
     this.#socket.close(code, reason);
+    this.#onClosed?.(this.id);
   }
 
   /** Publish a live event into the hub fan-out (and catchup buffer via local subscriber). */
@@ -349,6 +380,9 @@ export class RealtimeHub {
       requireAuth: options.requireAuth,
       heartbeat: options.heartbeat,
       autoFlush: options.autoFlush,
+      onClosed: (connectionId) => {
+        this.#connections.delete(connectionId);
+      },
     });
     this.#connections.set(id, conn);
     return conn;

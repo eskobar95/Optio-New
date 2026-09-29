@@ -9,7 +9,7 @@
  * UI code consumes `onEvent` / `send` and does not care which origin is active.
  */
 import { decodeOutboundFrame, encodeFrame } from "./framing.js";
-import { decideReconnect, type ReconnectPolicyOptions } from "./reconnect.js";
+import { decideReconnect, shouldStopReconnect, type ReconnectPolicyOptions } from "./reconnect.js";
 import type { ChannelId, ClientFrame, LiveEvent, OutboundFrame } from "./types.js";
 
 export type LiveEventSourceState = "idle" | "connecting" | "open" | "reconnecting" | "closed";
@@ -32,6 +32,8 @@ export interface LiveEventSourceOptions {
   reconnect?: ReconnectPolicyOptions;
   onEvent: (event: LiveEvent) => void;
   onState?: (state: LiveEventSourceState) => void;
+  /** Reports transport-level failures (connect errors, protocol errors). */
+  onTransportError?: (error: unknown) => void;
   /** Injectable scheduler so tests run without real timers. */
   schedule?: (fn: () => void, ms: number) => unknown;
   cancelSchedule?: (handle: unknown) => void;
@@ -112,9 +114,15 @@ export class LiveSocketEventSource {
     return this.dispatcher.lastSeq;
   }
 
-  /** Open the socket (or start the reconnect loop). */
+  /** Open the socket (or start the reconnect loop). Safe to call again. */
   start(): void {
     this.#stopped = false;
+    // Drop any pending reconnect so a second start() cannot race into two sockets.
+    if (this.#timer !== null) {
+      this.#cancel(this.#timer);
+      this.#timer = null;
+    }
+    this.#attempt = 0;
     this.#open();
   }
 
@@ -159,7 +167,8 @@ export class LiveSocketEventSource {
     let socket: LiveSocket;
     try {
       socket = this.#options.connect();
-    } catch {
+    } catch (error) {
+      this.#options.onTransportError?.(error);
       this.#scheduleReconnect();
       return;
     }
@@ -180,8 +189,14 @@ export class LiveSocketEventSource {
     };
 
     socket.onmessage = (data) => {
-      const frame = this.dispatcher.push(data);
-      if (frame.type === "error" && frame.status === 401) {
+      let frame: OutboundFrame;
+      try {
+        frame = this.dispatcher.push(data);
+      } catch (error) {
+        this.#options.onTransportError?.(error);
+        return;
+      }
+      if (frame.type === "error" && shouldStopReconnect(frame.status)) {
         // Unauthorized: stop the reconnect loop and force re-login.
         this.stop(4401, "unauthorized");
       }
@@ -190,16 +205,16 @@ export class LiveSocketEventSource {
     socket.onclose = (_code, _reason, status) => {
       this.#socket = null;
       if (this.#stopped) return;
-      if (status === 401) {
+      if (shouldStopReconnect(status)) {
         this.stop(4401, "unauthorized");
         return;
       }
-      this.#scheduleReconnect();
+      this.#scheduleReconnect(status);
     };
   }
 
-  #scheduleReconnect(): void {
-    const decision = decideReconnect(this.#attempt, undefined, this.#options.reconnect);
+  #scheduleReconnect(status?: number): void {
+    const decision = decideReconnect(this.#attempt, status, this.#options.reconnect);
     if (decision.stop) {
       this.stop(4401, "unauthorized");
       return;
@@ -237,6 +252,7 @@ export class TauriLiveEventSource {
   readonly dispatcher: LiveEventDispatcher;
   readonly #bridge: TauriEventBridge;
   readonly #onState: ((s: LiveEventSourceState) => void) | undefined;
+  readonly #onTransportError: ((error: unknown) => void) | undefined;
   #unlisten: (() => void) | null = null;
   #state: LiveEventSourceState = "idle";
 
@@ -244,20 +260,31 @@ export class TauriLiveEventSource {
     bridge: TauriEventBridge,
     onEvent: (event: LiveEvent) => void,
     onState?: (s: LiveEventSourceState) => void,
+    onTransportError?: (error: unknown) => void,
   ) {
     this.#bridge = bridge;
     this.dispatcher = new LiveEventDispatcher(onEvent);
     this.#onState = onState;
+    this.#onTransportError = onTransportError;
   }
 
   get state(): LiveEventSourceState {
     return this.#state;
   }
 
+  /** Safe to call again — replaces any existing listener. */
   async start(): Promise<void> {
+    if (this.#unlisten) {
+      this.#unlisten();
+      this.#unlisten = null;
+    }
     this.#setState("connecting");
     this.#unlisten = await this.#bridge.listen(TAURI_EVENT_TOPIC, (payload) => {
-      this.dispatcher.push(payload);
+      try {
+        this.dispatcher.push(payload);
+      } catch (error) {
+        this.#onTransportError?.(error);
+      }
     });
     this.#setState("open");
   }

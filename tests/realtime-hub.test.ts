@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { decodeOutboundFrame } from "../src/realtime/framing.js";
 import { RealtimeConnection, RealtimeHub, type RealtimeSocket } from "../src/realtime/hub.js";
 import { StaticTokenAuth } from "../src/realtime/auth.js";
@@ -214,6 +214,42 @@ describe("RealtimeConnection lifecycle", () => {
     expect(socket.sent.length).toBe(before);
   });
 
+  it("unregisters from the hub when the connection closes itself (401)", async () => {
+    const hub = new RealtimeHub({ auth: new StaticTokenAuth("good") });
+    const socket = new FakeSocket();
+    const conn = hub.attach(socket, { requireAuth: true });
+    expect(hub.size).toBe(1);
+    conn.handleMessage(JSON.stringify({ type: "subscribe", channels: [SESSION_A] }));
+    await flushMicrotasks();
+    expect(conn.closed).toBe(true);
+    // Self-close must not leak the connection in the hub registry.
+    expect(hub.size).toBe(0);
+  });
+
+  it("keeps frame order for pipelined frames", async () => {
+    const hub = new RealtimeHub({ auth: new StaticTokenAuth("good") });
+    const socket = new FakeSocket();
+    const conn = hub.attach(socket, { requireAuth: true });
+    // Send auth + subscribe back-to-back before the auth promise resolves.
+    conn.handleMessage(JSON.stringify({ type: "auth", token: "good" }));
+    conn.handleMessage(JSON.stringify({ type: "subscribe", channels: [SESSION_A] }));
+    await flushMicrotasks();
+    await flushMicrotasks();
+    const types = socket.sent.map((s) => decodeOutboundFrame(s).type);
+    expect(types).toEqual(["auth.ack", "subscribe.ack", "snapshot"]);
+  });
+
+  it("answers ping even when an async auth is in flight", async () => {
+    const hub = new RealtimeHub({ auth: new StaticTokenAuth("good") });
+    const socket = new FakeSocket();
+    const conn = hub.attach(socket, { requireAuth: true });
+    conn.handleMessage(JSON.stringify({ type: "auth", token: "good" }));
+    conn.handleMessage(JSON.stringify({ type: "ping", ts: 9 }));
+    await flushMicrotasks();
+    const types = socket.sent.map((s) => decodeOutboundFrame(s).type);
+    expect(types).toEqual(["auth.ack", "pong"]);
+  });
+
   it("exposes channel parsing errors as 400 frames", () => {
     const hub = new RealtimeHub();
     const socket = new FakeSocket();
@@ -230,5 +266,24 @@ describe("RealtimeConnection lifecycle", () => {
     expect(conn.id).toBe("conn-x");
     conn.close();
     expect(conn.closed).toBe(true);
+  });
+
+  it("closes the connection when the idle timeout elapses", () => {
+    vi.useFakeTimers();
+    try {
+      let now = 0;
+      const socket = new FakeSocket();
+      const hub = new RealtimeHub({ now: () => now });
+      const conn = hub.attach(socket, { heartbeat: true });
+
+      // Exceed the 75s idle window without any inbound activity, then let a beat fire.
+      now = 100_000;
+      vi.advanceTimersByTime(25_000);
+
+      expect(conn.closed).toBe(true);
+      expect(socket.closed?.code).toBe(4408);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

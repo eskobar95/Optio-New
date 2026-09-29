@@ -99,12 +99,14 @@ retains only lightweight events, never transcripts.
 Per-socket bounded outbound queue (`OUTBOUND_QUEUE_CAP`, default 1000).
 Policy (`src/realtime/backpressure.ts`):
 
-- Consecutive `run.token` frames for the same run + channel **coalesce**.
+- Consecutive `run.token` frames for the same run + channel **coalesce** (only
+  against the immediately preceding frame, so text is never reordered).
+- Heartbeats coalesce to the freshest `ts`.
 - Under capacity pressure **tokens and expendable frames (heartbeat) are dropped**.
 - `run.status`, `run.error`, `error`, `snapshot`, and acks are **critical** and are
   never dropped — the queue evicts an expendable frame to make room.
-- Counters (`tokensDropped`, `tokensCoalesced`, `criticalForced`, `depth`) are
-  exposed for metrics.
+- Counters (`tokensDropped`, `tokensCoalesced`, `heartbeatsCoalesced`,
+  `expendableDropped`, `criticalForced`, `depth`) are exposed for metrics.
 
 Coalesce window `TOKEN_COALESCE_WINDOW_MS` (default 32 ms) targets 16–50 ms.
 
@@ -118,9 +120,12 @@ Coalesce window `TOKEN_COALESCE_WINDOW_MS` (default 32 ms) targets 16–50 ms.
 | On 401             | **stop** the reconnect loop and force re-login            |
 
 The server sends `heartbeat` on `system:status`; any inbound frame (including
-`pong`) resets the idle clock. The client source (`src/realtime/client.ts`)
-tracks `lastSeq`, auths on open, subscribes with catchup, and reconnects with
-backoff.
+`pong`) resets the idle clock. When the connection is created with
+`heartbeat: true`, the hub also **enforces** the idle timeout: a beat that finds
+no inbound activity within `IDLE_TIMEOUT_MS` closes the socket with code `4408`
+(`idle_timeout`) instead of beating forever. The client source
+(`src/realtime/client.ts`) tracks `lastSeq`, auths on open, subscribes with
+catchup, and reconnects with backoff.
 
 ### Auth
 
