@@ -21,9 +21,10 @@ import { createCodexAdapter } from "./codex/index.js";
 import type { CodingAgent } from "./coding-agent.js";
 import { createCursorAdapter, type CursorAdapterDeps } from "./cursor/index.js";
 import { createFlueAdapter, type FlueAdapterDeps } from "./flue/index.js";
+import { createOptioRunAdapter, type OptioRunAdapterDeps } from "./optio-run/index.js";
 import type { CodingAgentDeps } from "./runtime.js";
 
-export type CodingBackendId = "cursor" | "codex" | "flue";
+export type CodingBackendId = "cursor" | "codex" | "flue" | "optio-run";
 
 export interface CodingBackendSelection {
   /** Workflow step `coding_backend`. Wins over the global default. */
@@ -66,7 +67,7 @@ function blankToNull(value: string | null | undefined): string | null {
 }
 
 export function isCodingBackendId(value: string): value is CodingBackendId {
-  return value === "cursor" || value === "codex" || value === "flue";
+  return value === "cursor" || value === "codex" || value === "flue" || value === "optio-run";
 }
 
 /** Resolve which CodingAgent runs. Never guesses a provider. */
@@ -136,9 +137,10 @@ export async function resolveCodingBackendWithCascade(
 
 export function createCodingAgent(
   id: CodingBackendId,
-  deps: CodingAgentDeps & FlueAdapterDeps & CursorAdapterDeps = {},
+  deps: CodingAgentDeps & FlueAdapterDeps & CursorAdapterDeps & OptioRunAdapterDeps = {},
 ): CodingAgent {
   if (id === "cursor") return createCursorAdapter(deps);
   if (id === "flue") return createFlueAdapter(deps);
+  if (id === "optio-run") return createOptioRunAdapter(deps);
   return createCodexAdapter(deps);
 }
