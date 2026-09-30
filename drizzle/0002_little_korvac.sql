@@ -46,10 +46,12 @@ ALTER TABLE "optio"."workspace_memberships" DROP CONSTRAINT "workspace_membershi
 --> statement-breakpoint
 ALTER TABLE "optio"."workspaces" DROP CONSTRAINT "workspaces_tenant_id_tenants_id_fk";
 --> statement-breakpoint
+ALTER TABLE "optio"."agents" ALTER COLUMN "sandbox_mode" DROP DEFAULT;--> statement-breakpoint
 ALTER TABLE "optio"."agents" ALTER COLUMN "sandbox_mode" SET DATA TYPE "optio"."sandbox_mode" USING "sandbox_mode"::"optio"."sandbox_mode";--> statement-breakpoint
 ALTER TABLE "optio"."agents" ALTER COLUMN "sandbox_mode" SET DEFAULT 'local'::"optio"."sandbox_mode";--> statement-breakpoint
 ALTER TABLE "optio"."connections" ALTER COLUMN "kind" SET DATA TYPE "optio"."connection_kind" USING "kind"::"optio"."connection_kind";--> statement-breakpoint
 ALTER TABLE "optio"."stage_jev_gates" ALTER COLUMN "gate_kind" SET DATA TYPE "optio"."jev_gate_kind" USING "gate_kind"::"optio"."jev_gate_kind";--> statement-breakpoint
+ALTER TABLE "optio"."workspaces" ALTER COLUMN "default_coding_backend" DROP DEFAULT;--> statement-breakpoint
 ALTER TABLE "optio"."workspaces" ALTER COLUMN "default_coding_backend" SET DATA TYPE "optio"."coding_backend" USING "default_coding_backend"::"optio"."coding_backend";--> statement-breakpoint
 ALTER TABLE "optio"."workspaces" ALTER COLUMN "default_coding_backend" SET DEFAULT 'cursor-cli'::"optio"."coding_backend";--> statement-breakpoint
 ALTER TABLE "optio"."agent_connections" ADD CONSTRAINT "agent_connections_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "optio"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
