@@ -28,7 +28,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "ci": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run smoke"
+    "ci": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run smoke",
+    "contracts:export": "tsx scripts/contracts-export.ts"
   },
   "engines": {
     "node": ">=20"
@@ -49,6 +50,7 @@
     "@eslint/js": "^9.17.0",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.23.1",
+    "ajv": "^8.20.0",
     "drizzle-kit": "^0.31.11",
     "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.1.0",
