@@ -11,3 +11,4 @@ MAP.md
 .agents/
 .cursor/skills/caveman/
 .cursor/skills/caveman-*/
+src/platform/contracts/generated
