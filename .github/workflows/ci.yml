@@ -16,6 +16,27 @@ jobs:
     name: lint + typecheck + test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Real Postgres and Redis (the images in docker-compose.yml) so the
+    # integration tests that skip without these URLs run here.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: optio
+          # No password in the file: the container lives only for this job.
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: optio_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U optio" --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      OPTIO_NEW_DATABASE_URL: postgres://optio@localhost:5432/optio_ci
+      OPTIO_NEW_REDIS_URL: redis://localhost:6379
     steps:
       - name: Checkout
         uses: actions/checkout@v4
