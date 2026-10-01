@@ -7,6 +7,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { redactSecrets } from "../../security/redact.js";
 import { PIPELINE_STAGES, type PipelineStage } from "../jobs/stages.js";
+import type pg from "pg";
+import type { SqlExecutor } from "../../db/executor.js";
+import type { TenantContext } from "../../config/tenant.js";
+import { tenantExecutor } from "../../db/with-tenant.js";
 
 export type StageRunStatus = "running" | "completed" | "failed";
 
@@ -101,9 +105,7 @@ export interface StageRunLog {
   inspect(taskId: string): Promise<TaskRunView>;
 }
 
-export interface SqlExecutor {
-  query(sql: string, params?: readonly unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
-}
+export type { SqlExecutor };
 
 function measured(entry: StageUsageReport): boolean {
   return [entry.inputTokens, entry.outputTokens, entry.cachedTokens, entry.costUsd].some(
@@ -407,22 +409,15 @@ export function createSqlStageRunStore(db: SqlExecutor): StageRunStore {
 }
 
 export async function createPgStageRunStore(
-  connectionString: string,
-): Promise<StageRunStore & { close(): Promise<void> }> {
-  const { Pool } = await import("pg");
-  const pool = new Pool({ connectionString });
-  const db: SqlExecutor = {
-    async query(sql, params) {
-      const result = await pool.query(sql, params as unknown[] | undefined);
-      return { rows: result.rows as Record<string, unknown>[] };
-    },
-  };
+  pool: pg.Pool,
+  tenant: TenantContext,
+): Promise<StageRunStore> {
+  const db = tenantExecutor(pool, tenant);
   await db.query(loadPipelineStageRunDdl());
   const store = createSqlStageRunStore(db);
   return {
     get: (taskId, sessionId, stage) => store.get(taskId, sessionId, stage),
     save: (record) => store.save(record),
     listByTask: (taskId) => store.listByTask(taskId),
-    close: () => pool.end(),
   };
 }

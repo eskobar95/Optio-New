@@ -5,6 +5,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LearningSource } from "./observation.js";
+import type pg from "pg";
+import type { SqlExecutor } from "../../db/executor.js";
+import type { TenantContext } from "../../config/tenant.js";
+import { tenantExecutor } from "../../db/with-tenant.js";
 
 export interface LearningOccurrence {
   key: string;
@@ -42,9 +46,7 @@ export interface LearningStore {
   listByField(field: string, limit: number): Promise<LearningRecord[]>;
 }
 
-export interface SqlExecutor {
-  query(sql: string, params?: readonly unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
-}
+export type { SqlExecutor };
 
 export function resolveLearningsMigrationPath(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -129,23 +131,16 @@ export function createSqlLearningStore(db: SqlExecutor): LearningStore {
 }
 
 export async function createPgLearningStore(
-  connectionString: string,
-): Promise<LearningStore & { close(): Promise<void> }> {
-  const { Pool } = await import("pg");
-  const pool = new Pool({ connectionString });
-  const db: SqlExecutor = {
-    async query(sql, params) {
-      const result = await pool.query(sql, params as unknown[] | undefined);
-      return { rows: result.rows as Record<string, unknown>[] };
-    },
-  };
+  pool: pg.Pool,
+  tenant: TenantContext,
+): Promise<LearningStore> {
+  const db = tenantExecutor(pool, tenant);
   await db.query(loadLearningsDdl());
   const store = createSqlLearningStore(db);
   return {
     get: (fingerprint) => store.get(fingerprint),
     save: (record) => store.save(record),
     listByField: (field, limit) => store.listByField(field, limit),
-    close: () => pool.end(),
   };
 }
 

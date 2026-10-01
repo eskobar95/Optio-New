@@ -3,6 +3,8 @@
  * A threshold crossing opens a GitHub meta-issue when token and repo are set.
  * OPTIO_LEARN_FILE_GITHUB=0 stores the draft only.
  */
+import { resolveTenantContext } from "../../config/tenant.js";
+import { closeSharedPool, getSharedPool } from "../../db/pool.js";
 import { createMetaIssuePublisherFromEnv, githubMetaIssuesEnabled } from "./publisher.js";
 import { readLearningConfig } from "./process.js";
 import { createPgLearningStore } from "./store.js";
@@ -22,7 +24,10 @@ if (!redisUrl || !databaseUrl) {
   process.exit(1);
 }
 
-const store = await createPgLearningStore(databaseUrl);
+const store = await createPgLearningStore(
+  getSharedPool(databaseUrl),
+  resolveTenantContext(process.env),
+);
 const config = readLearningConfig();
 const handle = startLearningWorker(
   {
@@ -49,7 +54,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => {
     void handle
       .close()
-      .then(() => store.close())
+      .then(() => closeSharedPool())
       .then(() => process.exit(0));
   });
 }

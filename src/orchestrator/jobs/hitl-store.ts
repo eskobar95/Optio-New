@@ -16,6 +16,9 @@ import {
   type HitlStatus,
   type HitlStore,
 } from "./hitl.js";
+import type pg from "pg";
+import type { TenantContext } from "../../config/tenant.js";
+import { tenantExecutor } from "../../db/with-tenant.js";
 
 const MIGRATION = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -229,16 +232,10 @@ export function createSqlHitlStore(db: SqlExecutor): HitlStore & HitlSignalStore
 }
 
 export async function createPgHitlStore(
-  connectionString: string,
-): Promise<HitlStore & HitlSignalStore & { close(): Promise<void> }> {
-  const { Pool } = await import("pg");
-  const pool = new Pool({ connectionString });
-  const db: SqlExecutor = {
-    async query(sql, params) {
-      const result = await pool.query(sql, params as unknown[] | undefined);
-      return { rows: result.rows as Record<string, unknown>[] };
-    },
-  };
+  pool: pg.Pool,
+  tenant: TenantContext,
+): Promise<HitlStore & HitlSignalStore> {
+  const db = tenantExecutor(pool, tenant);
   await db.query(loadHitlApprovalDdl());
   const store = createSqlHitlStore(db);
   return {
@@ -248,6 +245,5 @@ export async function createPgHitlStore(
     list: (taskId, sessionId) => store.list(taskId, sessionId),
     note: (signal) => store.note(signal),
     read: (taskId, sessionId, point) => store.read(taskId, sessionId, point),
-    close: () => pool.end(),
   };
 }

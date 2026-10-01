@@ -97,3 +97,28 @@ describe("resolveTenantContext", () => {
     expect(resolveTenantContext({ OPTIO_TENANT_ID: "t" })).toEqual({ tenantId: "t" });
   });
 });
+
+describe("shared pool", () => {
+  it("is the only place besides the migration CLI that creates a pg.Pool", async () => {
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const offenders: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (
+          entry.name.endsWith(".ts") &&
+          /new (pg\.)?Pool\(/.test(readFileSync(full, "utf8"))
+        ) {
+          offenders.push(full);
+        }
+      }
+    };
+    walk("src");
+    expect(offenders.sort()).toEqual([
+      join("src", "db", "migrate-cli.ts"),
+      join("src", "db", "pool.ts"),
+    ]);
+  });
+});

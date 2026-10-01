@@ -12,6 +12,8 @@ import { Redis } from "ioredis";
 import { readPlanStage } from "./jobs/hello-world.js";
 import { createIntakeServer } from "./intake/http.js";
 import { dumpSessionArtifactTrail, readArtifactLimits } from "./artifacts/index.js";
+import { resolveTenantContext } from "../config/tenant.js";
+import { closeSharedPool, getSharedPool } from "../db/pool.js";
 import { loadTaskBudgetCaps, createPgUsageStore, readTaskBudgetStatus } from "./jobs/budget.js";
 import { applyHitlDecision, createHitlQueuePort, loadHitlConfig } from "./jobs/hitl.js";
 import { createPgHitlStore } from "./jobs/hitl-store.js";
@@ -57,9 +59,11 @@ export async function startOrchestrator(): Promise<void> {
   await runDrizzleMigrations(databaseUrl);
 
   const connection = redisConnectionOptions(redisUrl);
-  const database = await openOrchestratorDatabase(databaseUrl);
+  const pool = getSharedPool(databaseUrl);
+  const tenant = resolveTenantContext(process.env);
+  const database = await openOrchestratorDatabase(pool, tenant);
   const cursors = database.cursors;
-  const stageRuns = await createPgStageRunStore(databaseUrl);
+  const stageRuns = await createPgStageRunStore(pool, tenant);
   const runLog = createStageRunLog(stageRuns);
   const repoCatalog = loadRepoCatalog(process.env);
   const worktreeConfig = loadWorktreeRuntimeConfig(process.env);
@@ -71,8 +75,8 @@ export async function startOrchestrator(): Promise<void> {
   const workflowRepoId = workflowYaml === undefined ? undefined : readWorkflowRepoId(workflowYaml);
   const hitlConfig = loadHitlConfig(process.env, workflowYaml);
   const caps = loadTaskBudgetCaps(process.env, workflowYaml);
-  const hitlState = await createPgHitlStore(databaseUrl);
-  const usage = await createPgUsageStore(databaseUrl);
+  const hitlState = await createPgHitlStore(pool, tenant);
+  const usage = await createPgUsageStore(pool, tenant);
   const planQueue = new Queue(STAGE_QUEUES.plan, { connection });
   const implementQueue = new Queue(STAGE_QUEUES.implement, { connection });
   const mergeQueue = new Queue(STAGE_QUEUES.merge, { connection });
@@ -179,16 +183,12 @@ export async function startOrchestrator(): Promise<void> {
 
   logStageEvent({ msg: "orchestrator listening", port });
 
-  // Optional catalog API (ENG-23) — separate port + own Drizzle pool (cursor pool stays separate).
+  // Optional catalog API (ENG-23) — separate port; shares the process pool.
   let apiServer: import("node:http").Server | undefined;
-  let apiDb: import("../db/client.js").OptioDb | undefined;
-  let apiOwnsDb = false;
   if (process.env.OPTIO_NEW_API_ENABLED?.trim() === "1") {
     const { startOptioApiFromEnv } = await import("../api/http.js");
     const started = await startOptioApiFromEnv(process.env);
     apiServer = started.server;
-    apiDb = started.db;
-    apiOwnsDb = started.ownsDb;
     logStageEvent({
       msg: "optio-api listening",
       host: started.host,
@@ -203,14 +203,10 @@ export async function startOrchestrator(): Promise<void> {
     logStageEvent({ msg: "orchestrator stopping", signal });
     server.close();
     apiServer?.close();
-    if (apiOwnsDb) await apiDb?.close();
     await Promise.all(workers.map((worker) => worker.close()));
     await flow.close();
     await Promise.all([planQueue.close(), implementQueue.close(), mergeQueue.close()]);
-    await database.close();
-    await stageRuns.close();
-    await hitlState.close();
-    await usage.close();
+    await closeSharedPool();
     redis.disconnect();
     process.exit(0);
   };

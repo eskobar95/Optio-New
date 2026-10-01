@@ -11,7 +11,6 @@ describe.skipIf(!databaseUrl)("withTenant against Postgres", () => {
   let pool: pg.Pool;
 
   beforeAll(async () => {
-    await runDrizzleMigrations(databaseUrl);
     pool = getSharedPool(databaseUrl as string);
     await pool.query("DROP TABLE IF EXISTS with_tenant_probe");
     await pool.query("CREATE TABLE with_tenant_probe (id text PRIMARY KEY)");
@@ -68,14 +67,24 @@ describe.skipIf(!databaseUrl)("withTenant against Postgres", () => {
     const res = await pool.query("SELECT id FROM with_tenant_probe WHERE id IN ('r1','r2')");
     expect(res.rows).toHaveLength(0);
   });
+});
 
+describe.skipIf(!databaseUrl)("legacy tenant migration", () => {
   it("has the legacy tenant and workspace after migrate, and migrate is repeatable", async () => {
     await runDrizzleMigrations(databaseUrl);
-    const t = await pool.query("SELECT slug FROM optio.tenants WHERE id = $1", [LEGACY_TENANT_ID]);
-    const w = await pool.query("SELECT tenant_id FROM optio.workspaces WHERE id = $1", [
-      LEGACY_WORKSPACE_ID,
-    ]);
-    expect(t.rows[0]?.slug).toBe("legacy");
-    expect(w.rows[0]?.tenant_id).toBe(LEGACY_TENANT_ID);
+    await runDrizzleMigrations(databaseUrl);
+    const pool = getSharedPool(databaseUrl as string);
+    try {
+      const t = await pool.query("SELECT slug FROM optio.tenants WHERE id = $1", [
+        LEGACY_TENANT_ID,
+      ]);
+      const w = await pool.query("SELECT tenant_id FROM optio.workspaces WHERE id = $1", [
+        LEGACY_WORKSPACE_ID,
+      ]);
+      expect(t.rows[0]?.slug).toBe("legacy");
+      expect(w.rows[0]?.tenant_id).toBe(LEGACY_TENANT_ID);
+    } finally {
+      await closeSharedPool();
+    }
   });
 });
