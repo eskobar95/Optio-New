@@ -5,12 +5,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type pg from "pg";
+import type { TenantContext } from "../../config/tenant.js";
+import type { SqlExecutor } from "../../db/executor.js";
+import { tenantExecutor } from "../../db/with-tenant.js";
 import { redactSecrets } from "../../security/redact.js";
 import { PIPELINE_STAGES, type PipelineStage } from "../jobs/stages.js";
-import type pg from "pg";
-import type { SqlExecutor } from "../../db/executor.js";
-import type { TenantContext } from "../../config/tenant.js";
-import { tenantExecutor } from "../../db/with-tenant.js";
 
 export type StageRunStatus = "running" | "completed" | "failed";
 
@@ -104,8 +104,6 @@ export interface StageRunLog {
   ): Promise<void>;
   inspect(taskId: string): Promise<TaskRunView>;
 }
-
-export type { SqlExecutor };
 
 function measured(entry: StageUsageReport): boolean {
   return [entry.inputTokens, entry.outputTokens, entry.cachedTokens, entry.costUsd].some(

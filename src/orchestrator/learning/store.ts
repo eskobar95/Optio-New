@@ -4,11 +4,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { LearningSource } from "./observation.js";
 import type pg from "pg";
-import type { SqlExecutor } from "../../db/executor.js";
 import type { TenantContext } from "../../config/tenant.js";
+import type { SqlExecutor } from "../../db/executor.js";
 import { tenantExecutor } from "../../db/with-tenant.js";
+import type { LearningSource } from "./observation.js";
 
 export interface LearningOccurrence {
   key: string;
@@ -45,8 +45,6 @@ export interface LearningStore {
   save(record: LearningRecord): Promise<void>;
   listByField(field: string, limit: number): Promise<LearningRecord[]>;
 }
-
-export type { SqlExecutor };
 
 export function resolveLearningsMigrationPath(): string {
   const here = dirname(fileURLToPath(import.meta.url));

@@ -30,13 +30,11 @@ import {
   type WorkspaceRow,
 } from "./store.js";
 
+/** Drizzle wraps driver errors in `DrizzleQueryError`; the pg error is its `cause`. */
 function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: string }).code === "23505"
-  );
+  if (typeof error !== "object" || error === null) return false;
+  if ((error as { code?: string }).code === "23505") return true;
+  return isUniqueViolation((error as { cause?: unknown }).cause);
 }
 
 function mapTenant(row: typeof tenants.$inferSelect): TenantRow {
@@ -97,49 +95,52 @@ function mapConnection(row: typeof connections.$inferSelect): ConnectionRow {
   };
 }
 
-export function createDrizzleOptioApiStore(db: OptioDb): OptioApiStore {
+export function createDrizzleOptioApiStore(optio: OptioDb): OptioApiStore {
+  const { run } = optio;
   return {
     async registerBootstrap(input: RegisterBootstrapInput): Promise<RegisterBootstrapResult> {
       try {
-        return await db.transaction(async (tx) => {
-          const [tenantRow] = await tx
-            .insert(tenants)
-            .values({ name: input.tenantName, slug: input.tenantSlug })
-            .returning();
-          if (!tenantRow) throw new Error("tenant insert returned no row");
-          const [userRow] = await tx
-            .insert(users)
-            .values({
-              tenantId: tenantRow.id,
-              email: input.email.toLowerCase(),
-              passwordHash: input.passwordHash,
-            })
-            .returning();
-          if (!userRow) throw new Error("user insert returned no row");
-          if (!input.workspace) {
-            return { tenant: mapTenant(tenantRow), user: mapUser(userRow) };
-          }
-          const [workspaceRow] = await tx
-            .insert(workspaces)
-            .values({
-              tenantId: tenantRow.id,
-              name: input.workspace.name,
-              slug: input.workspace.slug,
-              infisicalEnvSlug: input.workspace.infisicalEnvSlug ?? input.workspace.slug,
-            })
-            .returning();
-          if (!workspaceRow) throw new Error("workspace insert returned no row");
-          await tx.insert(workspaceMemberships).values({
-            userId: userRow.id,
-            workspaceId: workspaceRow.id,
-            role: "owner",
-          });
-          return {
-            tenant: mapTenant(tenantRow),
-            user: mapUser(userRow),
-            workspace: mapWorkspace(workspaceRow),
-          };
-        });
+        return await run((db) =>
+          db.transaction(async (tx) => {
+            const [tenantRow] = await tx
+              .insert(tenants)
+              .values({ name: input.tenantName, slug: input.tenantSlug })
+              .returning();
+            if (!tenantRow) throw new Error("tenant insert returned no row");
+            const [userRow] = await tx
+              .insert(users)
+              .values({
+                tenantId: tenantRow.id,
+                email: input.email.toLowerCase(),
+                passwordHash: input.passwordHash,
+              })
+              .returning();
+            if (!userRow) throw new Error("user insert returned no row");
+            if (!input.workspace) {
+              return { tenant: mapTenant(tenantRow), user: mapUser(userRow) };
+            }
+            const [workspaceRow] = await tx
+              .insert(workspaces)
+              .values({
+                tenantId: tenantRow.id,
+                name: input.workspace.name,
+                slug: input.workspace.slug,
+                infisicalEnvSlug: input.workspace.infisicalEnvSlug ?? input.workspace.slug,
+              })
+              .returning();
+            if (!workspaceRow) throw new Error("workspace insert returned no row");
+            await tx.insert(workspaceMemberships).values({
+              userId: userRow.id,
+              workspaceId: workspaceRow.id,
+              role: "owner",
+            });
+            return {
+              tenant: mapTenant(tenantRow),
+              user: mapUser(userRow),
+              workspace: mapWorkspace(workspaceRow),
+            };
+          }),
+        );
       } catch (error) {
         if (isUniqueViolation(error)) {
           throw new StoreConflictError("tenant slug or user email already exists");
@@ -150,10 +151,9 @@ export function createDrizzleOptioApiStore(db: OptioDb): OptioApiStore {
 
     async createTenant(input) {
       try {
-        const [row] = await db
-          .insert(tenants)
-          .values({ name: input.name, slug: input.slug })
-          .returning();
+        const [row] = await run((db) =>
+          db.insert(tenants).values({ name: input.name, slug: input.slug }).returning(),
+        );
         if (!row) throw new Error("tenant insert returned no row");
         return mapTenant(row);
       } catch (error) {
@@ -165,25 +165,29 @@ export function createDrizzleOptioApiStore(db: OptioDb): OptioApiStore {
     },
 
     async findTenantBySlug(slug) {
-      const [row] = await db.select().from(tenants).where(eq(tenants.slug, slug)).limit(1);
+      const [row] = await run((db) =>
+        db.select().from(tenants).where(eq(tenants.slug, slug)).limit(1),
+      );
       return row ? mapTenant(row) : undefined;
     },
 
     async findTenantById(id) {
-      const [row] = await db.select().from(tenants).where(eq(tenants.id, id)).limit(1);
+      const [row] = await run((db) => db.select().from(tenants).where(eq(tenants.id, id)).limit(1));
       return row ? mapTenant(row) : undefined;
     },
 
     async createUser(input) {
       try {
-        const [row] = await db
-          .insert(users)
-          .values({
-            tenantId: input.tenantId,
-            email: input.email.toLowerCase(),
-            passwordHash: input.passwordHash,
-          })
-          .returning();
+        const [row] = await run((db) =>
+          db
+            .insert(users)
+            .values({
+              tenantId: input.tenantId,
+              email: input.email.toLowerCase(),
+              passwordHash: input.passwordHash,
+            })
+            .returning(),
+        );
         if (!row) throw new Error("user insert returned no row");
         return mapUser(row);
       } catch (error) {
@@ -195,31 +199,35 @@ export function createDrizzleOptioApiStore(db: OptioDb): OptioApiStore {
     },
 
     async findUserByTenantEmail(tenantId, email) {
-      const [row] = await db
-        .select()
-        .from(users)
-        .where(and(eq(users.tenantId, tenantId), eq(users.email, email.toLowerCase())))
-        .limit(1);
+      const [row] = await run((db) =>
+        db
+          .select()
+          .from(users)
+          .where(and(eq(users.tenantId, tenantId), eq(users.email, email.toLowerCase())))
+          .limit(1),
+      );
       return row ? mapUser(row) : undefined;
     },
 
     async findUserById(id) {
-      const [row] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+      const [row] = await run((db) => db.select().from(users).where(eq(users.id, id)).limit(1));
       return row ? mapUser(row) : undefined;
     },
 
     async createWorkspace(input) {
       try {
-        const [row] = await db
-          .insert(workspaces)
-          .values({
-            tenantId: input.tenantId,
-            name: input.name,
-            slug: input.slug,
-            infisicalEnvSlug: input.infisicalEnvSlug ?? null,
-            defaultCodingBackend: input.defaultCodingBackend ?? "cursor-cli",
-          })
-          .returning();
+        const [row] = await run((db) =>
+          db
+            .insert(workspaces)
+            .values({
+              tenantId: input.tenantId,
+              name: input.name,
+              slug: input.slug,
+              infisicalEnvSlug: input.infisicalEnvSlug ?? null,
+              defaultCodingBackend: input.defaultCodingBackend ?? "cursor-cli",
+            })
+            .returning(),
+        );
         if (!row) throw new Error("workspace insert returned no row");
         return mapWorkspace(row);
       } catch (error) {
@@ -231,36 +239,42 @@ export function createDrizzleOptioApiStore(db: OptioDb): OptioApiStore {
     },
 
     async findWorkspaceById(id) {
-      const [row] = await db.select().from(workspaces).where(eq(workspaces.id, id)).limit(1);
+      const [row] = await run((db) =>
+        db.select().from(workspaces).where(eq(workspaces.id, id)).limit(1),
+      );
       return row ? mapWorkspace(row) : undefined;
     },
 
     async upsertMembership(input) {
-      const [row] = await db
-        .insert(workspaceMemberships)
-        .values({
-          userId: input.userId,
-          workspaceId: input.workspaceId,
-          role: input.role,
-        })
-        .onConflictDoUpdate({
-          target: [workspaceMemberships.userId, workspaceMemberships.workspaceId],
-          set: { role: input.role, updatedAt: new Date() },
-        })
-        .returning();
+      const [row] = await run((db) =>
+        db
+          .insert(workspaceMemberships)
+          .values({
+            userId: input.userId,
+            workspaceId: input.workspaceId,
+            role: input.role,
+          })
+          .onConflictDoUpdate({
+            target: [workspaceMemberships.userId, workspaceMemberships.workspaceId],
+            set: { role: input.role, updatedAt: new Date() },
+          })
+          .returning(),
+      );
       if (!row) throw new Error("membership upsert returned no row");
       return mapMembership(row);
     },
 
     async listMemberships(userId) {
-      const rows = await db
-        .select({
-          membership: workspaceMemberships,
-          workspace: workspaces,
-        })
-        .from(workspaceMemberships)
-        .innerJoin(workspaces, eq(workspaceMemberships.workspaceId, workspaces.id))
-        .where(eq(workspaceMemberships.userId, userId));
+      const rows = await run((db) =>
+        db
+          .select({
+            membership: workspaceMemberships,
+            workspace: workspaces,
+          })
+          .from(workspaceMemberships)
+          .innerJoin(workspaces, eq(workspaceMemberships.workspaceId, workspaces.id))
+          .where(eq(workspaceMemberships.userId, userId)),
+      );
       return rows.map((row): MembershipView => ({
         ...mapMembership(row.membership),
         workspace: mapWorkspace(row.workspace),
@@ -268,49 +282,54 @@ export function createDrizzleOptioApiStore(db: OptioDb): OptioApiStore {
     },
 
     async findMembership(userId, workspaceId) {
-      const [row] = await db
-        .select()
-        .from(workspaceMemberships)
-        .where(
-          and(
-            eq(workspaceMemberships.userId, userId),
-            eq(workspaceMemberships.workspaceId, workspaceId),
-          ),
-        )
-        .limit(1);
+      const [row] = await run((db) =>
+        db
+          .select()
+          .from(workspaceMemberships)
+          .where(
+            and(
+              eq(workspaceMemberships.userId, userId),
+              eq(workspaceMemberships.workspaceId, workspaceId),
+            ),
+          )
+          .limit(1),
+      );
       return row ? mapMembership(row) : undefined;
     },
 
     async listConnections(workspaceId) {
-      const rows = await db
-        .select()
-        .from(connections)
-        .where(eq(connections.workspaceId, workspaceId));
+      const rows = await run((db) =>
+        db.select().from(connections).where(eq(connections.workspaceId, workspaceId)),
+      );
       return rows.map(mapConnection);
     },
 
     async findConnection(workspaceId, connectionId) {
-      const [row] = await db
-        .select()
-        .from(connections)
-        .where(and(eq(connections.workspaceId, workspaceId), eq(connections.id, connectionId)))
-        .limit(1);
+      const [row] = await run((db) =>
+        db
+          .select()
+          .from(connections)
+          .where(and(eq(connections.workspaceId, workspaceId), eq(connections.id, connectionId)))
+          .limit(1),
+      );
       return row ? mapConnection(row) : undefined;
     },
 
     async createConnection(input) {
       try {
-        const [row] = await db
-          .insert(connections)
-          .values({
-            workspaceId: input.workspaceId,
-            kind: input.kind,
-            name: input.name,
-            infisicalSecretPath: input.infisicalSecretPath,
-            config: input.config ?? {},
-            enabled: input.enabled ?? true,
-          })
-          .returning();
+        const [row] = await run((db) =>
+          db
+            .insert(connections)
+            .values({
+              workspaceId: input.workspaceId,
+              kind: input.kind,
+              name: input.name,
+              infisicalSecretPath: input.infisicalSecretPath,
+              config: input.config ?? {},
+              enabled: input.enabled ?? true,
+            })
+            .returning(),
+        );
         if (!row) throw new Error("connection insert returned no row");
         return mapConnection(row);
       } catch (error) {
@@ -325,19 +344,21 @@ export function createDrizzleOptioApiStore(db: OptioDb): OptioApiStore {
       const existing = await this.findConnection(workspaceId, connectionId);
       if (!existing) return undefined;
       try {
-        const [row] = await db
-          .update(connections)
-          .set({
-            ...(patch.name !== undefined ? { name: patch.name } : {}),
-            ...(patch.infisicalSecretPath !== undefined
-              ? { infisicalSecretPath: patch.infisicalSecretPath }
-              : {}),
-            ...(patch.config !== undefined ? { config: patch.config } : {}),
-            ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
-            updatedAt: new Date(),
-          })
-          .where(and(eq(connections.workspaceId, workspaceId), eq(connections.id, connectionId)))
-          .returning();
+        const [row] = await run((db) =>
+          db
+            .update(connections)
+            .set({
+              ...(patch.name !== undefined ? { name: patch.name } : {}),
+              ...(patch.infisicalSecretPath !== undefined
+                ? { infisicalSecretPath: patch.infisicalSecretPath }
+                : {}),
+              ...(patch.config !== undefined ? { config: patch.config } : {}),
+              ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+              updatedAt: new Date(),
+            })
+            .where(and(eq(connections.workspaceId, workspaceId), eq(connections.id, connectionId)))
+            .returning(),
+        );
         return row ? mapConnection(row) : undefined;
       } catch (error) {
         if (isUniqueViolation(error)) {
@@ -348,40 +369,46 @@ export function createDrizzleOptioApiStore(db: OptioDb): OptioApiStore {
     },
 
     async deleteConnection(workspaceId, connectionId) {
-      const deleted = await db
-        .delete(connections)
-        .where(and(eq(connections.workspaceId, workspaceId), eq(connections.id, connectionId)))
-        .returning({ id: connections.id });
+      const deleted = await run((db) =>
+        db
+          .delete(connections)
+          .where(and(eq(connections.workspaceId, workspaceId), eq(connections.id, connectionId)))
+          .returning({ id: connections.id }),
+      );
       return deleted.length > 0;
     },
 
     async listAgents(workspaceId): Promise<AgentCatalogRow[]> {
-      const rows = await db
-        .select({
-          id: agents.id,
-          workspaceId: agents.workspaceId,
-          name: agents.name,
-          kind: agents.kind,
-          model: agents.model,
-          enabled: agents.enabled,
-        })
-        .from(agents)
-        .where(eq(agents.workspaceId, workspaceId));
+      const rows = await run((db) =>
+        db
+          .select({
+            id: agents.id,
+            workspaceId: agents.workspaceId,
+            name: agents.name,
+            kind: agents.kind,
+            model: agents.model,
+            enabled: agents.enabled,
+          })
+          .from(agents)
+          .where(eq(agents.workspaceId, workspaceId)),
+      );
       return rows;
     },
 
     async listSkills(workspaceId): Promise<SkillCatalogRow[]> {
-      const rows = await db
-        .select({
-          id: skills.id,
-          workspaceId: skills.workspaceId,
-          name: skills.name,
-          slug: skills.slug,
-          description: skills.description,
-          enabled: skills.enabled,
-        })
-        .from(skills)
-        .where(eq(skills.workspaceId, workspaceId));
+      const rows = await run((db) =>
+        db
+          .select({
+            id: skills.id,
+            workspaceId: skills.workspaceId,
+            name: skills.name,
+            slug: skills.slug,
+            description: skills.description,
+            enabled: skills.enabled,
+          })
+          .from(skills)
+          .where(eq(skills.workspaceId, workspaceId)),
+      );
       return rows;
     },
   };

@@ -19,7 +19,6 @@ export {
   createPgStepCursorStore,
   createSqlStepCursorStore,
   loadPipelineStepCursorDdl,
-  type SqlExecutor,
   type StepCursor,
   type StepCursorStatus,
   type StepCursorStore,

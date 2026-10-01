@@ -28,7 +28,6 @@ export {
   type LearningOccurrence,
   type LearningRecord,
   type LearningStore,
-  type SqlExecutor,
 } from "./store.js";
 export { budgetProposal, renderMetaIssue, type MetaIssueDraft } from "./template.js";
 export {

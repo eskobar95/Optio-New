@@ -11,12 +11,12 @@ import { fileURLToPath } from "node:url";
 import { UnrecoverableError } from "bullmq";
 import { parse } from "yaml";
 import { z } from "zod";
-import type { StageStepUsage } from "./stage-result.js";
-import { PIPELINE_STAGES, type PipelineStage } from "./stages.js";
-import type { SqlExecutor } from "./cursor.js";
 import type pg from "pg";
 import type { TenantContext } from "../../config/tenant.js";
+import type { SqlExecutor } from "../../db/executor.js";
 import { tenantExecutor } from "../../db/with-tenant.js";
+import type { StageStepUsage } from "./stage-result.js";
+import { PIPELINE_STAGES, type PipelineStage } from "./stages.js";
 
 /** 200k tokens: one plan+implement slice, not an unbounded agent loop. */
 export const DEFAULT_TASK_MAX_TOKENS = 400_000;

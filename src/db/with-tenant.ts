@@ -8,6 +8,22 @@ export async function withTenant<T>(
   ctx: TenantContext,
   fn: (db: SqlExecutor) => Promise<T>,
 ): Promise<T> {
+  return withTenantClient(pool, ctx, (client) =>
+    fn({
+      async query(sql, params) {
+        const res = await client.query(sql, params as unknown[] | undefined);
+        return { rows: res.rows as Record<string, unknown>[] };
+      },
+    }),
+  );
+}
+
+/** Like `withTenant`, but hands `fn` the transaction's connection (for Drizzle). */
+export async function withTenantClient<T>(
+  pool: pg.Pool,
+  ctx: TenantContext,
+  fn: (client: pg.PoolClient) => Promise<T>,
+): Promise<T> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -16,12 +32,7 @@ export async function withTenant<T>(
     if (ctx.workspaceId) {
       await client.query("SELECT set_config('app.workspace_id', $1, true)", [ctx.workspaceId]);
     }
-    const result = await fn({
-      async query(sql, params) {
-        const res = await client.query(sql, params as unknown[] | undefined);
-        return { rows: res.rows as Record<string, unknown>[] };
-      },
-    });
+    const result = await fn(client);
     await client.query("COMMIT");
     return result;
   } catch (error) {

@@ -4,11 +4,11 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PIPELINE_STAGES, type PipelineStage } from "./stages.js";
 import type pg from "pg";
-import type { SqlExecutor } from "../../db/executor.js";
 import type { TenantContext } from "../../config/tenant.js";
+import type { SqlExecutor } from "../../db/executor.js";
 import { tenantExecutor } from "../../db/with-tenant.js";
+import { PIPELINE_STAGES, type PipelineStage } from "./stages.js";
 
 export const STEP_CURSOR_STATUSES = ["pending", "running", "completed", "failed"] as const;
 
@@ -27,8 +27,6 @@ export interface StepCursorStore {
   get(taskId: string, sessionId: string, stage: PipelineStage): Promise<StepCursor | undefined>;
   save(cursor: StepCursor): Promise<void>;
 }
-
-export type { SqlExecutor };
 
 const MIGRATION_FILE = join(
   dirname(fileURLToPath(import.meta.url)),

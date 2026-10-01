@@ -4,7 +4,10 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { SqlExecutor } from "./cursor.js";
+import type pg from "pg";
+import type { TenantContext } from "../../config/tenant.js";
+import type { SqlExecutor } from "../../db/executor.js";
+import { tenantExecutor } from "../../db/with-tenant.js";
 import {
   HITL_POINTS,
   HITL_SOURCES,
@@ -16,9 +19,6 @@ import {
   type HitlStatus,
   type HitlStore,
 } from "./hitl.js";
-import type pg from "pg";
-import type { TenantContext } from "../../config/tenant.js";
-import { tenantExecutor } from "../../db/with-tenant.js";
 
 const MIGRATION = join(
   dirname(fileURLToPath(import.meta.url)),

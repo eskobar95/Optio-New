@@ -274,7 +274,6 @@ export {
   type HitlRecord,
   type PipelineRunResult,
   type PipelineStage,
-  type SqlExecutor,
   type OrchestratorDatabase,
   type StageCheckpoint,
   type StageJobResult,
@@ -700,3 +699,4 @@ export {
   type EvalFixture,
   type EvalReport,
 } from "./eval/harness-eval.js";
+export type { SqlExecutor } from "./db/executor.js";
