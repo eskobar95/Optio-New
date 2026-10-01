@@ -11,9 +11,12 @@ import { fileURLToPath } from "node:url";
 import { UnrecoverableError } from "bullmq";
 import { parse } from "yaml";
 import { z } from "zod";
+import type pg from "pg";
+import type { TenantContext } from "../../config/tenant.js";
+import type { SqlExecutor } from "../../db/executor.js";
+import { tenantExecutor } from "../../db/with-tenant.js";
 import type { StageStepUsage } from "./stage-result.js";
 import { PIPELINE_STAGES, type PipelineStage } from "./stages.js";
-import type { SqlExecutor } from "./cursor.js";
 
 /** 200k tokens: one plan+implement slice, not an unbounded agent loop. */
 export const DEFAULT_TASK_MAX_TOKENS = 400_000;
@@ -544,22 +547,15 @@ export function createSqlUsageStore(db: SqlExecutor): UsageStore {
 }
 
 export async function createPgUsageStore(
-  connectionString: string,
-): Promise<UsageStore & { close(): Promise<void> }> {
-  const { Pool } = await import("pg");
-  const pool = new Pool({ connectionString });
-  const db: SqlExecutor = {
-    async query(sql, params) {
-      const result = await pool.query(sql, params as unknown[] | undefined);
-      return { rows: result.rows as Record<string, unknown>[] };
-    },
-  };
+  pool: pg.Pool,
+  tenant: TenantContext,
+): Promise<UsageStore> {
+  const db = tenantExecutor(pool, tenant);
   await db.query(loadTaskUsageDdl());
   const store = createSqlUsageStore(db);
   return {
     get: (taskId, sessionId) => store.get(taskId, sessionId),
     add: (taskId, sessionId, stage, delta, updatedAt) =>
       store.add(taskId, sessionId, stage, delta, updatedAt),
-    close: () => pool.end(),
   };
 }

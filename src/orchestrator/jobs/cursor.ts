@@ -4,6 +4,10 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type pg from "pg";
+import type { TenantContext } from "../../config/tenant.js";
+import type { SqlExecutor } from "../../db/executor.js";
+import { tenantExecutor } from "../../db/with-tenant.js";
 import { PIPELINE_STAGES, type PipelineStage } from "./stages.js";
 
 export const STEP_CURSOR_STATUSES = ["pending", "running", "completed", "failed"] as const;
@@ -22,10 +26,6 @@ export interface StepCursor {
 export interface StepCursorStore {
   get(taskId: string, sessionId: string, stage: PipelineStage): Promise<StepCursor | undefined>;
   save(cursor: StepCursor): Promise<void>;
-}
-
-export interface SqlExecutor {
-  query(sql: string, params?: readonly unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
 }
 
 const MIGRATION_FILE = join(
@@ -139,21 +139,14 @@ export function createSqlStepCursorStore(db: SqlExecutor): StepCursorStore {
 }
 
 export async function createPgStepCursorStore(
-  connectionString: string,
-): Promise<StepCursorStore & { close(): Promise<void> }> {
-  const { Pool } = await import("pg");
-  const pool = new Pool({ connectionString });
-  const db: SqlExecutor = {
-    async query(sql, params) {
-      const result = await pool.query(sql, params as unknown[] | undefined);
-      return { rows: result.rows as Record<string, unknown>[] };
-    },
-  };
+  pool: pg.Pool,
+  tenant: TenantContext,
+): Promise<StepCursorStore> {
+  const db = tenantExecutor(pool, tenant);
   await db.query(loadPipelineStepCursorDdl());
   const store = createSqlStepCursorStore(db);
   return {
     get: (taskId, sessionId, stage) => store.get(taskId, sessionId, stage),
     save: (cursor) => store.save(cursor),
-    close: () => pool.end(),
   };
 }

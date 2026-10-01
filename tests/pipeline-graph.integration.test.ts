@@ -1,6 +1,8 @@
 /**
  * Optional Redis / Postgres proof. Skipped unless the env URL is set, so CI stays green.
  */
+import { resolveTenantContext } from "../src/config/tenant.js";
+import { closeSharedPool, getSharedPool } from "../src/db/pool.js";
 import { FlowProducer } from "bullmq";
 import { describe, expect, it } from "vitest";
 import {
@@ -71,7 +73,10 @@ describe.skipIf(!databaseUrl)("Postgres step cursor integration", () => {
     if (!databaseUrl) {
       return;
     }
-    const store = await createPgStepCursorStore(databaseUrl);
+    const store = await createPgStepCursorStore(
+      getSharedPool(databaseUrl),
+      resolveTenantContext({}),
+    );
     const taskId = `pg-${Date.now()}`;
     const sessionId = `session-${Date.now()}`;
     const calls: string[] = [];
@@ -98,11 +103,11 @@ describe.skipIf(!databaseUrl)("Postgres step cursor integration", () => {
       expect(calls).toEqual(["plan:invoke_planner"]);
       expect(resumed.status).toBe("completed");
     } finally {
-      const { Pool } = await import("pg");
-      const pool = new Pool({ connectionString: databaseUrl });
-      await pool.query("DELETE FROM pipeline_step_cursor WHERE task_id = $1", [taskId]);
-      await pool.end();
-      await store.close();
+      await getSharedPool(databaseUrl).query(
+        "DELETE FROM pipeline_step_cursor WHERE task_id = $1",
+        [taskId],
+      );
+      await closeSharedPool();
     }
   }, 30_000);
 });

@@ -5,7 +5,9 @@
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { ZodError, z } from "zod";
+import { resolveTenantContext } from "../config/tenant.js";
 import { createDb, type OptioDb } from "../db/client.js";
+import { getSharedPool } from "../db/pool.js";
 import { createDrizzleOptioApiStore } from "./drizzle-store.js";
 import { getDummyPasswordHash, hashPassword, verifyPassword } from "./password.js";
 import {
@@ -176,7 +178,7 @@ export function createOptioApiServer(options: OptioApiServerOptions): Server {
   });
 }
 
-/** Build a production server backed by Drizzle + Postgres. Caller owns `db.close()`. */
+/** Build a production server backed by Drizzle + Postgres. The caller owns the pool. */
 export function createDrizzleOptioApiServer(
   db: OptioDb,
   options?: Omit<OptioApiServerOptions, "store" | "checkDb">,
@@ -184,29 +186,22 @@ export function createDrizzleOptioApiServer(
   return createOptioApiServer({
     ...options,
     store: createDrizzleOptioApiStore(db),
-    checkDb: async () => {
-      try {
-        await db.pool.query("select 1");
-        return true;
-      } catch {
-        return false;
-      }
-    },
+    checkDb: () => db.ping(),
   });
 }
 
 export async function startOptioApiFromEnv(
   env: NodeJS.ProcessEnv = process.env,
   options?: { db?: OptioDb },
-): Promise<{ server: Server; db: OptioDb; host: string; port: number; ownsDb: boolean }> {
-  const ownsDb = !options?.db;
+): Promise<{ server: Server; db: OptioDb; host: string; port: number; ownsPool: boolean }> {
+  const ownsPool = !options?.db;
   let db = options?.db;
   if (!db) {
     const databaseUrl = env.OPTIO_NEW_DATABASE_URL?.trim();
     if (!databaseUrl) {
       throw new Error("OPTIO_NEW_DATABASE_URL is required for the catalog API");
     }
-    db = createDb(databaseUrl);
+    db = createDb(getSharedPool(databaseUrl), resolveTenantContext(env));
   }
   const { host, port } = resolveOptioApiListen(env);
   const server = createDrizzleOptioApiServer(db, {
@@ -216,7 +211,7 @@ export async function startOptioApiFromEnv(
     server.once("error", reject);
     server.listen(port, host, () => resolve());
   });
-  return { server, db, host, port, ownsDb };
+  return { server, db, host, port, ownsPool };
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {

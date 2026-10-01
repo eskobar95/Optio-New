@@ -52,14 +52,16 @@ export function createInMemorySkillPickLogStore(): InMemorySkillPickLogStore {
 export function createDrizzleSkillPickLogStore(db: OptioDb): SkillPickLogStore {
   return {
     async append(record: SkillPickLogRecord): Promise<void> {
-      await db.insert(skillPickLogs).values({
-        workspaceId: record.workspaceId,
-        taskId: record.taskId,
-        taskType: record.taskType,
-        agentId: record.agentId,
-        selectedSkillIds: record.selectedSkillIds,
-        outcome: record.outcome,
-      });
+      await db.run((tx) =>
+        tx.insert(skillPickLogs).values({
+          workspaceId: record.workspaceId,
+          taskId: record.taskId,
+          taskType: record.taskType,
+          agentId: record.agentId,
+          selectedSkillIds: record.selectedSkillIds,
+          outcome: record.outcome,
+        }),
+      );
     },
   };
 }
